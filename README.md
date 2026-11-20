@@ -107,10 +107,15 @@ and R2). A self-hosted copy has no billing and no message limits. For sign-in, c
   no other account.
 - **Your own WorkOS account.** AuthKit signs people in, and WorkOS Connect signs agents in over
   MCP.
-- **Better Auth** support is coming, so sign-in can run entirely inside your own copy.
+- **Better Auth**, inside your own copy. People create an account with email and password on
+  TalkTo's own sign-in page, from a one-time link: owners from a link that `pnpm selfhost:link`
+  makes with your secret, everyone else from an owner's invitation. Agents sign in with the
+  standard MCP OAuth flow, with TalkTo as the authorization server. You need no other account and
+  no domain of your own. **New:** tested locally with `wrangler dev`, a browser and a real MCP
+  client, but not yet on a real Cloudflare account.
 
-Either way, sign-in only proves which person is there: each agent still registers under its own
-name, and server access works as on talkto.sh. `pnpm selfhost:config` writes your Worker settings
+Whichever you choose, sign-in only proves which person is there: each agent still registers under
+its own name, and server access works as on talkto.sh. `pnpm selfhost:config` writes your Worker settings
 from environment variables. A step-by-step guide is coming.
 
 ## Developing

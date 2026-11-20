@@ -8,6 +8,7 @@ import * as McpAuth from "./mcp-auth.js";
 import * as Browser from "./browser-auth.js";
 import type { JWTVerifyGetKey } from "jose";
 import * as CloudflareAccess from "./cloudflare-access.js";
+import * as BetterAuthSwitch from "./better-auth-switch.js";
 import * as LocalIdentity from "./platform/local-identity.js";
 import { Context, Effect, Layer, Redacted, Result, Schema } from "effect";
 import { OpenApi } from "effect/unstable/httpapi";
@@ -75,15 +76,29 @@ export interface Authentication {
   readonly mcp?: McpAuth.Authentication;
   readonly browser?: Browser.Authentication;
   /**
-   * Cloudflare Access in front of a self-hosted copy: every request, website and `/mcp` alike,
-   * carries Access's signed token, verified here (docs/self-host-cloudflare-access.md).
+   * A self-hosted copy's own sign-in, which verifies each website and API request itself instead
+   * of a TalkTo bearer token: Cloudflare Access's signed token (docs/self-host-cloudflare-access.md)
+   * or Better Auth's session cookie (docs/self-host-better-auth.md). Without `mcp`, it verifies
+   * `/mcp` too, as Access does.
    */
   readonly edge?: {
     readonly verify: (
       request: Request,
       route: CloudflareAccess.Route,
-    ) => Effect.Effect<CloudflareAccess.Verified, Model.Failure>;
+    ) => Effect.Effect<
+      {
+        readonly actor: Model.Actor;
+        readonly website: boolean;
+        /** A renewed session cookie for the response. */
+        readonly setCookies?: ReadonlyArray<string>;
+      },
+      Model.Failure
+    >;
   };
+  /** The self-hosted sign-in in use, which the dashboard shows (invitations send no email there). */
+  readonly signIn?: "cloudflare-access" | "better-auth";
+  /** Upkeep the minute cron runs after synchronizing access. */
+  readonly maintain?: Effect.Effect<void, Model.Failure>;
 }
 const status = (code: Model.Failure["code"]) =>
   ({
@@ -243,7 +258,8 @@ const mcpIngress = Effect.fn("Hosted.mcp")(function* (
   const meta = Mcp.metadata(origin);
   const issuer = auth.mcp?.issuer;
   const mcpAuth = auth.mcp;
-  const edge = auth.edge;
+  // A copy's own sign-in answers agents only when TalkTo runs no OAuth server: Access does.
+  const edge = mcpAuth === undefined ? auth.edge : undefined;
   if (edge === undefined && (issuer === undefined || mcpAuth === undefined))
     return Responses.failure(
       503,
@@ -476,11 +492,11 @@ export function makeWorker(
     async fetch(request, env, context) {
       const url = new URL(request.url);
       const meta = Responses.metadata(url.origin);
-      let sessionUpdate: string | null = null;
+      const sessionUpdates: string[] = [];
       // A platform handler or server object that threw: reported with the 5xx it becomes.
       let upstream: unknown;
       const finish = (response: Response) => {
-        if (sessionUpdate !== null) response.headers.append("set-cookie", sessionUpdate);
+        for (const value of sessionUpdates) response.headers.append("set-cookie", value);
         return response;
       };
       try {
@@ -571,7 +587,11 @@ export function makeWorker(
             }),
           );
         }
-        if (["/auth/login", "/auth/callback", "/auth/logout"].includes(url.pathname)) {
+        if (
+          ["/auth/login", "/auth/callback", "/auth/logout"].includes(url.pathname) ||
+          // Better Auth's pages and OAuth server, only on a copy that asks for Better Auth.
+          (BetterAuthSwitch.isPath(url.pathname) && BetterAuthSwitch.requested(env))
+        ) {
           const result = await run(
             authenticate(env).pipe(
               Effect.flatMap((auth) =>
@@ -668,6 +688,7 @@ export function makeWorker(
             if (auth.edge !== undefined) {
               const verified = yield* auth.edge.verify(request, "api");
               edgeActor = verified.actor;
+              sessionUpdates.push(...(verified.setCookies ?? []));
               website = verified.website;
             } else if (!request.headers.has("authorization")) {
               if (auth.browser === undefined || !Browser.hasSession(request))
@@ -676,7 +697,7 @@ export function makeWorker(
                   message: "Sign in or supply a valid TalkTo access token.",
                 });
               const session = yield* auth.browser.session(request);
-              sessionUpdate = session.setCookie;
+              if (session.setCookie !== null) sessionUpdates.push(session.setCookie);
               const headers = new Headers(request.headers);
               headers.set("authorization", `Bearer ${Redacted.value(session.accessToken)}`);
               // Verification only needs headers; preserve the original request body for handlers.
@@ -763,7 +784,7 @@ export function makeWorker(
               );
               // A deleted account has no session left to keep; end the website's copy too.
               if (website && request.method === "POST" && answered.status === 200)
-                sessionUpdate = Browser.clearSession();
+                sessionUpdates.push(Browser.clearSession());
               return answered;
             }
             if (/^\/v1\/accounts\/[^/]+\/billing(?:\/|$)/.test(url.pathname))
@@ -797,9 +818,9 @@ export function makeWorker(
                       forwarded,
                       Context.make(
                         PlatformHttp.RequestContext,
-                        auth.edge === undefined
+                        auth.signIn === undefined
                           ? { actor, meta: requestMeta, evidence }
-                          : { actor, meta: requestMeta, evidence, signIn: "cloudflare-access" },
+                          : { actor, meta: requestMeta, evidence, signIn: auth.signIn },
                       ),
                     ),
                   catch: (cause) => {
@@ -865,7 +886,7 @@ export function makeWorker(
             !request.headers.has("authorization") &&
             Browser.hasSession(request)
           )
-            sessionUpdate = Browser.clearSession();
+            sessionUpdates.push(Browser.clearSession());
           return finish(
             Responses.failure(
               status(response.failure.code),
@@ -969,8 +990,11 @@ export function makeWorker(
                         const deletions = yield* AccountHttp.resume(env, auth.identity).pipe(
                           Effect.result,
                         );
+                        // A self-hosted sign-in's own upkeep, such as Better Auth's expired rows.
+                        const upkeep = yield* (auth.maintain ?? Effect.void).pipe(Effect.result);
                         if (Result.isFailure(access)) return yield* access.failure;
                         if (Result.isFailure(deletions)) return yield* deletions.failure;
+                        if (Result.isFailure(upkeep)) return yield* upkeep.failure;
                       }),
                     ),
                   ),
@@ -1074,12 +1098,62 @@ export const accessAuthentication = Effect.fn("Hosted.accessAuthentication")(fun
     identity: LocalIdentity.layer(store),
     browser: CloudflareAccess.browser(origin),
     edge: { verify },
+    signIn: "cloudflare-access",
   };
   return accessAuthenticated;
 });
-/** Cloudflare Access when a self-hosted copy asks for it; WorkOS otherwise. */
+let betterAuthenticated: Authentication | undefined;
+/**
+ * Self-host sign-in with Better Auth: email and password on this copy's own pages, its own OAuth
+ * server for agents, and every record in the copy's D1 database. Refused unless self-hosted.
+ */
+export const betterAuthAuthentication = Effect.fn("Hosted.betterAuthAuthentication")(function* (
+  env: Env,
+) {
+  if (betterAuthenticated !== undefined) return betterAuthenticated;
+  const BetterAuth = yield* Effect.promise(() => import("./better-auth.js"));
+  const settings = yield* BetterAuth.settings(env);
+  const origin = yield* Configuration.readOrigin(env).pipe(
+    Effect.mapError(
+      () =>
+        new Model.Failure({
+          code: "identity_unavailable",
+          message: "The service is not configured.",
+        }),
+    ),
+  );
+  const store = LocalIdentity.make(env.PLATFORM);
+  const mode = BetterAuth.make(env, settings, origin, store);
+  yield* mode.ready;
+  betterAuthenticated = {
+    verify: (request) => mode.verify(request).pipe(Effect.map((verified) => verified.actor)),
+    identity: Layer.succeed(Platform.Identity, mode.identity),
+    browser: mode.browser,
+    mcp: mode.mcp,
+    edge: { verify: (request) => mode.verify(request) },
+    signIn: "better-auth",
+    maintain: mode.maintain,
+  };
+  return betterAuthenticated;
+});
+/**
+ * Cloudflare Access or Better Auth when a self-hosted copy asks for one; WorkOS otherwise. A copy
+ * that asks for both is refused rather than guessing.
+ */
 export const configuredAuthentication = (env: Env) =>
-  CloudflareAccess.requested(env) ? accessAuthentication(env) : workosAuthentication(env);
+  CloudflareAccess.requested(env) && BetterAuthSwitch.requested(env)
+    ? Effect.fail(
+        new Model.Failure({
+          code: "identity_unavailable",
+          message:
+            "Choose one sign-in: remove either the Cloudflare Access settings or the Better Auth settings.",
+        }),
+      )
+    : BetterAuthSwitch.requested(env)
+      ? betterAuthAuthentication(env)
+      : CloudflareAccess.requested(env)
+        ? accessAuthentication(env)
+        : workosAuthentication(env);
 /** Production authentication has no development credential fallback. */
 export const workosAuthentication = Effect.fn("Hosted.authentication")(function* (env: Env) {
   if (authentication !== undefined) return authentication;

@@ -1,6 +1,7 @@
 // Write apps/server/wrangler.selfhost.jsonc from the template and your settings (docs/self-host.md).
 // Run from the repository root: `pnpm selfhost:config`. It reads only environment variables, prints
-// no secrets (it needs none) and refuses to write a config with a placeholder left in it.
+// no secrets (it needs none) and refuses to write a config with a placeholder left in it. Better
+// Auth's secret is a Worker secret (`wrangler secret put BETTER_AUTH_SECRET`), never in this file.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { experimental_readRawConfig } from "wrangler";
@@ -38,9 +39,26 @@ const databaseId = setting(
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
   "Use the database_id that `wrangler d1 create` printed.",
 );
-// Sign-in: Cloudflare Access when its team domain is set (docs/self-host-cloudflare-access.md),
-// otherwise WorkOS.
+// Sign-in: Better Auth when TALKTO_AUTH_PROVIDER=better-auth (docs/self-host-better-auth.md),
+// Cloudflare Access when its team domain is set (docs/self-host-cloudflare-access.md), otherwise
+// WorkOS. Only one may be chosen.
+const provider = process.env.TALKTO_AUTH_PROVIDER?.trim();
+const betterAuth = provider === "better-auth";
+if (provider !== undefined && provider !== "" && !betterAuth)
+  problems.push("TALKTO_AUTH_PROVIDER looks wrong. Set it to better-auth, or leave it unset.");
 const access = Boolean(process.env.TALKTO_ACCESS_TEAM_DOMAIN?.trim());
+if (access && betterAuth)
+  problems.push(
+    "Choose one sign-in: unset TALKTO_ACCESS_TEAM_DOMAIN for Better Auth, or TALKTO_AUTH_PROVIDER for Cloudflare Access.",
+  );
+const owners = betterAuth
+  ? setting(
+      "TALKTO_OWNER_EMAILS",
+      /^[^\s@,"\\]+@[^\s@,"\\]+(,[^\s@,"\\]+@[^\s@,"\\]+){0,9}$/,
+      "The owners' addresses, whose invitations can create accounts: comma-separated with no spaces, at most 10.",
+    )
+  : "";
+const workos = !access && !betterAuth;
 const accessTeam = access
   ? setting(
       "TALKTO_ACCESS_TEAM_DOMAIN",
@@ -55,14 +73,14 @@ const accessAud = access
       "Copy the Application Audience (AUD) Tag from your Access application's settings.",
     )
   : "";
-const clientId = access
+const clientId = !workos
   ? ""
   : setting(
       "WORKOS_CLIENT_ID",
       /^client_[A-Za-z0-9]+$/,
       "Copy the Client ID from your WorkOS environment's API keys page.",
     );
-const mcpIssuer = access
+const mcpIssuer = !workos
   ? ""
   : setting(
       "WORKOS_MCP_ISSUER",
@@ -109,7 +127,14 @@ if (access) {
   raw.vars.TALKTO_ACCESS_TEAM_DOMAIN = accessTeam;
   raw.vars.TALKTO_ACCESS_AUD = accessAud;
 }
+// On Better Auth, WorkOS's settings are left out too. Its secret is set with wrangler, not here.
+if (betterAuth) {
+  for (const key of Object.keys(raw.vars)) if (key.startsWith("WORKOS_")) delete raw.vars[key];
+  raw.vars.TALKTO_AUTH_PROVIDER = "better-auth";
+  raw.vars.TALKTO_OWNER_EMAILS = owners;
+}
 // Every value above matched a pattern without quotes or backslashes, so it fills JSON text safely.
+// The owner addresses are set as values, not substituted into the text.
 const config = JSON.parse(
   JSON.stringify(raw).replace(/__[A-Z0-9_]+__/g, (token) => values[token] ?? token),
 );
@@ -132,4 +157,12 @@ writeFileSync(
 console.log(`Wrote apps/server/wrangler.selfhost.jsonc for ${origin}:`);
 console.log(`  Worker ${name}, D1 ${name}-platform, R2 ${name}-transfers`);
 console.log(`  ${config.workers_dev ? "workers.dev address" : `Custom Domain ${host}`}`);
-console.log(`  Sign-in: ${access ? `Cloudflare Access (${accessTeam})` : "WorkOS"}`);
+console.log(
+  `  Sign-in: ${access ? `Cloudflare Access (${accessTeam})` : betterAuth ? "Better Auth" : "WorkOS"}`,
+);
+if (betterAuth)
+  console.log(
+    "  After deploying, set Better Auth's secret from apps/server (docs/self-host.md, step 8), and\n" +
+      "  keep a copy: pnpm selfhost:link needs it to make the owners' account links.\n" +
+      "    npx wrangler secret put BETTER_AUTH_SECRET --config wrangler.selfhost.jsonc",
+  );

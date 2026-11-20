@@ -12,7 +12,7 @@ export type TalkToServer = Server;
 export const WorkspaceQuota = Sentry.instrumentDurableObjectWithSentry(Telemetry.options, Quota);
 export type WorkspaceQuota = Quota;
 
-/** Hosted API with WorkOS or, on a self-hosted copy, Cloudflare Access authentication, platform management, and direct server routing. */
+/** Hosted API with WorkOS or, on a self-hosted copy, Cloudflare Access or Better Auth authentication, platform management, and direct server routing. */
 export default Sentry.withSentry(
   Telemetry.options,
   Telemetry.monitored(Hosted.makeWorker(Hosted.configuredAuthentication)),

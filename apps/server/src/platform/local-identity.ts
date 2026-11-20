@@ -6,9 +6,9 @@ import * as Platform from "./service.js";
 
 /**
  * People, organizations and invitations kept in the copy's own D1 database, for self-hosted copies
- * that sign people in with Cloudflare Access instead of WorkOS
- * (docs/self-host-cloudflare-access.md). Nothing here sends email: an invitation is accepted the
- * first time its email signs in.
+ * that sign people in with Cloudflare Access (docs/self-host-cloudflare-access.md) or Better Auth
+ * (docs/self-host-better-auth.md) instead of WorkOS. Nothing here sends email: an invitation is
+ * accepted the first time its email signs in.
  */
 
 /** How long an invitation stays open, as on WorkOS. Resending renews it. */
@@ -116,15 +116,37 @@ const invitation = (row: InvitationRow, at: M.Timestamp): P.Invitation => ({
   expiresAt: row.expires_at,
 });
 
+/** A new person's ID and name, when the sign-in provider chose them. */
+export interface Newcomer {
+  readonly id?: P.UserId;
+  readonly name?: string;
+}
+
 /** What the store adds to `Platform.Identity`: recording a verified sign-in. */
 export interface SignIns {
   /**
-   * The person's user ID for an email Access signed in. The first sign-in creates it, as does the
-   * first sign-in after the person deleted their account; each sign-in records the time and
-   * accepts the email's pending invitations. Each isolate reads it at most once every few minutes
-   * per email.
+   * The person's user ID for a signed-in email. The first sign-in creates it, as does the first
+   * sign-in after the person deleted their account; each sign-in records the time and accepts the
+   * email's pending invitations. Each isolate reads it at most once every few minutes per email.
+   * `newcomer` names a person this call creates; an existing person keeps their ID and name.
    */
-  readonly identify: (email: string) => Effect.Effect<P.UserId, Model.Failure>;
+  readonly identify: (email: string, newcomer?: Newcomer) => Effect.Effect<P.UserId, Model.Failure>;
+  /**
+   * The same, without accepting any invitation. Better Auth mode uses it: there an address is not
+   * proven, so a membership comes only from the invitation code the person presents.
+   */
+  readonly record: (email: string, newcomer?: Newcomer) => Effect.Effect<P.UserId, Model.Failure>;
+  /**
+   * Accept one invitation for the person, only while it is open and sent to their address.
+   * Answers whether they are now a member through it.
+   */
+  readonly acceptInvitation: (
+    id: P.UserId,
+    email: string,
+    invitationId: P.InvitationId,
+  ) => Effect.Effect<boolean, Model.Failure>;
+  /** The user ID already recorded for an email, without recording a sign-in. */
+  readonly existing: (email: string) => Effect.Effect<P.UserId | null, Model.Failure>;
 }
 
 /** The D1 store, as the `Platform.Identity` service and the sign-in recorder. */
@@ -247,30 +269,64 @@ export const make = (database: D1Database) => {
   });
 
   const known = new Map<string, { readonly id: P.UserId; readonly until: number }>();
-  const signIns: SignIns = {
-    identify: Effect.fn("LocalIdentity.identify")(function* (email) {
-      const address = email.toLowerCase();
-      const clock = yield* Clock.currentTimeMillis;
-      const cached = known.get(address);
-      if (cached !== undefined && cached.until > clock) return cached.id;
-      const at = yield* now;
-      // A new random ID only when the email has no row: on the first sign-in, or after the person
-      // deleted their account, whose old ID stays retired.
-      const found = yield* run(() =>
-        sql(
-          `INSERT INTO local_users(id,email,first_name,last_name,created_at,seen_at)
+  const remember = Effect.fn("LocalIdentity.remember")(function* (
+    email: string,
+    newcomer: Newcomer,
+    accepting: boolean,
+  ) {
+    const address = email.toLowerCase();
+    const clock = yield* Clock.currentTimeMillis;
+    const cached = known.get(address);
+    if (cached !== undefined && cached.until > clock) return cached.id;
+    const at = yield* now;
+    // A new random ID only when the email has no row: on the first sign-in, or after the person
+    // deleted their account, whose old ID stays retired.
+    const found = yield* run(() =>
+      sql(
+        `INSERT INTO local_users(id,email,first_name,last_name,created_at,seen_at)
            VALUES (?,?,?,NULL,?,?)
            ON CONFLICT(email) DO UPDATE SET seen_at=excluded.seen_at
            RETURNING id`,
-          [`user_${randomId()}`, address, address.split("@")[0] ?? null, at, at],
-        ).first(),
+        [
+          newcomer.id ?? `user_${randomId()}`,
+          address,
+          newcomer.name ?? address.split("@")[0] ?? null,
+          at,
+          at,
+        ],
+      ).first(),
+    );
+    const id = yield* Schema.decodeUnknownEffect(Schema.Struct({ id: P.UserId }))(found).pipe(
+      Effect.mapError(unavailable),
+    );
+    if (accepting) yield* accept(id.id, address, at);
+    known.set(address, { id: id.id, until: clock + seenEveryMs });
+    return id.id;
+  });
+  const signIns: SignIns = {
+    identify: (email, newcomer = {}) => remember(email, newcomer, true),
+    record: (email, newcomer = {}) => remember(email, newcomer, false),
+    acceptInvitation: Effect.fn("LocalIdentity.acceptInvitation")(
+      function* (id, email, invitationId) {
+        const at = yield* now;
+        const found = yield* row(
+          InvitationRow,
+          `SELECT * FROM local_invitations WHERE id=? AND state='pending' AND expires_at>?`,
+          [invitationId, at],
+        );
+        if (found === undefined || found.email !== email.toLowerCase()) return false;
+        yield* join(found.organization_id, id, "member", at, found.id);
+        const joined = yield* invitationById(found.id);
+        return joined.state === "accepted" && joined.accepted_user_id === id;
+      },
+    ),
+    existing: Effect.fn("LocalIdentity.existing")(function* (email) {
+      const found = yield* row(
+        Schema.Struct({ id: P.UserId }),
+        `SELECT id FROM local_users WHERE email=?`,
+        [email.toLowerCase()],
       );
-      const id = yield* Schema.decodeUnknownEffect(Schema.Struct({ id: P.UserId }))(found).pipe(
-        Effect.mapError(unavailable),
-      );
-      yield* accept(id.id, address, at);
-      known.set(address, { id: id.id, until: clock + seenEveryMs });
-      return id.id;
+      return found?.id ?? null;
     }),
   };
 
@@ -282,7 +338,8 @@ export const make = (database: D1Database) => {
         id: found.id,
         email: found.email,
         // Access signed the person in with this address: an identity provider or a one-time PIN
-        // has checked it.
+        // has checked it. Better Auth admits an address only as a configured owner or with the
+        // invitation sent to it (docs/self-host-better-auth.md).
         emailVerified: true,
         firstName: found.first_name,
         lastName: found.last_name,

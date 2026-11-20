@@ -133,6 +133,21 @@ export function isApiRequest(value: string): boolean {
   }
 }
 
+/*
+  The reasons this client aborted its own fetches with. A fetch wrapper outside this code, such as
+  a browser extension, can derive a promise from an aborted fetch and leave it unhandled; the
+  browser then reports this reason as an unhandled rejection although the read was only cancelled.
+*/
+const cancelledRequests = new WeakSet<DOMException>();
+
+const recordCancellation = (signal: AbortSignal) => {
+  const reason: unknown = signal.reason;
+  if (reason instanceof DOMException) cancelledRequests.add(reason);
+};
+
+/** Whether this is the abort reason of a request this client cancelled itself. */
+export const isCancelledRequest = (reason: DOMException): boolean => cancelledRequests.has(reason);
+
 /** Adapt the single Effect boundary to Query; abort reaches the underlying HTTP request. */
 export async function request<A, E>(
   operation: Effect.Effect<A, E>,
@@ -177,6 +192,10 @@ export async function request<A, E>(
         if (value) headers.set(name, value);
       }
     }
+    // Effect aborts this signal when the request is interrupted: Query cancelled it.
+    const abort = options?.signal;
+    if (abort?.aborted) recordCancellation(abort);
+    else abort?.addEventListener("abort", () => recordCancellation(abort), { once: true });
     // A read the page started before the dashboard loaded answers its first matching request.
     const early = takeEarlyResponse(url, method);
     return (early ?? transport(input, { ...options, headers })).then((response) => {

@@ -359,10 +359,12 @@ export const Api = HttpApi.make("talkto-platform").add(
               mcpUrl: Schema.String,
               instructionsUrl: Schema.String,
               /**
-               * Present on a self-hosted copy that signs people in with Cloudflare Access: there,
-               * invitations send no email and are accepted at the invitee's first sign-in.
+               * Present on a self-hosted copy that signs people in with Cloudflare Access or Better
+               * Auth: there, invitations send no email. With Access they are accepted at the
+               * invitee's first sign-in; with Better Auth the invitee creates an account from the
+               * invitation's sign-up link.
                */
-              signIn: Schema.optionalKey(Schema.Literal("cloudflare-access")),
+              signIn: Schema.optionalKey(Schema.Literals(["cloudflare-access", "better-auth"])),
             }),
           }),
         ),

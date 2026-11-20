@@ -19,8 +19,8 @@ export class RequestContext extends Context.Service<
     readonly meta: Envelope.Meta;
     /** Absent for adapters that never claim offers; treated as no website session. */
     readonly evidence?: Model.Evidence;
-    /** Set on a self-hosted copy that signs people in with Cloudflare Access. */
-    readonly signIn?: "cloudflare-access";
+    /** Set on a self-hosted copy that signs people in with Cloudflare Access or Better Auth. */
+    readonly signIn?: "cloudflare-access" | "better-auth";
   }
 >()("@talkto/platform/RequestContext") {}
 /** An exhausted invitation budget: 429 with the retry time; the Worker adds Retry-After. */

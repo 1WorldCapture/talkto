@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createServer as createHttpServer } from "node:http";
 import { createServer } from "vite";
 import * as Sentry from "@sentry/react";
 
@@ -104,4 +105,73 @@ test("browser query and mutation failures reach Sentry once, with permission and
   );
   assert.equal(events[3].exception.values[0].type, "TypeError");
   assert.doesNotMatch(JSON.stringify(events), /PRIVATE_/);
+});
+
+test("a cancelled request's abort, left unhandled by an outside fetch wrapper, is not reported", async (t) => {
+  const vite = await createServer({
+    server: { middlewareMode: true, hmr: false },
+    appType: "custom",
+  });
+  t.after(() => vite.close());
+  const { createServices } = await vite.ssrLoadModule("/src/session.tsx");
+  const { request } = await vite.ssrLoadModule("/src/api.ts");
+  const { reportError } = await vite.ssrLoadModule("/src/telemetry.ts");
+  const server = createHttpServer(() => undefined);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const address = server.address();
+  assert.ok(address?.port);
+  // Some browser extensions wrap fetch and derive a promise they never handle. In a browser its
+  // rejection reaches Sentry's unhandled-rejection handler; here the test reads that reason.
+  const original = globalThis.fetch;
+  const derived = [];
+  globalThis.fetch = (...args) => {
+    const response = original(...args);
+    derived.push(
+      response
+        .then(() => undefined)
+        .then(
+          () => null,
+          (reason) => reason,
+        ),
+    );
+    return response;
+  };
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  const { api } = createServices(`http://127.0.0.1:${address.port}`);
+  const controller = new AbortController();
+  const pending = request(api.platform.currentUser(), controller.signal);
+  const settled = pending.then(
+    () => "resolved",
+    () => "rejected",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  controller.abort();
+  assert.equal(await settled, "rejected");
+  const unhandled = await Promise.all(derived);
+  assert.equal(unhandled.length, 1);
+  assert.equal(unhandled[0]?.name, "AbortError");
+  const event = () => ({
+    exception: {
+      values: [
+        {
+          type: "AbortError",
+          value: "PRIVATE_REASON",
+          mechanism: { type: "auto.browser.global_handlers.onunhandledrejection", handled: false },
+        },
+      ],
+    },
+  });
+  assert.equal(reportError(event(), { originalException: unhandled[0] }), null);
+  // Any other AbortError is still reported, scrubbed.
+  const other = reportError(event(), {
+    originalException: new DOMException("PRIVATE_REASON", "AbortError"),
+  });
+  assert.equal(other?.exception?.values?.[0]?.type, "AbortError");
+  assert.doesNotMatch(JSON.stringify(other), /PRIVATE_/);
 });

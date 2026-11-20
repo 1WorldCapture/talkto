@@ -47,21 +47,34 @@ export interface Configuration {
 
 const read = Effect.gen(function* () {
   // The identity environment: on a self-hosted copy that signs people in with Cloudflare Access
-  // (docs/self-host-cloudflare-access.md), the Access team; otherwise WorkOS's client.
+  // (docs/self-host-cloudflare-access.md), the Access team; with Better Auth, the copy itself;
+  // otherwise WorkOS's client.
   const accessTeam = yield* Config.schema(
     Schema.String.check(
       Schema.isPattern(/^https:\/\/[a-z0-9][a-z0-9-]{0,62}\.cloudflareaccess\.com$/),
     ),
     "TALKTO_ACCESS_TEAM_DOMAIN",
   ).pipe(Config.option);
-  // Only a self-hosted copy can sign in with Access (CloudflareAccess.settings refuses otherwise).
+  // Better Auth keeps its people in this copy (docs/self-host-better-auth.md): its own origin.
+  const betterAuth = yield* Config.schema(
+    Schema.Literal("better-auth"),
+    "TALKTO_AUTH_PROVIDER",
+  ).pipe(Config.option);
+  const origin = yield* Config.schema(
+    Schema.String.check(Schema.isPattern(/^https?:\/\/[^/]+$/)),
+    "TALKTO_SERVICE_ORIGIN",
+  ).pipe(Config.option);
+  const selfHosted = yield* Entitlements.selfHosted;
+  // Only a self-hosted copy can sign in with Access or Better Auth (their settings refuse otherwise).
   const namespace =
-    Option.isSome(accessTeam) && (yield* Entitlements.selfHosted)
-      ? `access:${new URL(accessTeam.value).hostname}`
-      : `workos:${yield* Config.schema(
-          Schema.String.check(Schema.isPattern(/^client_[A-Za-z0-9]+$/)),
-          "WORKOS_CLIENT_ID",
-        )}`;
+    Option.isSome(betterAuth) && Option.isSome(origin) && selfHosted
+      ? `better-auth:${new URL(origin.value).host}`
+      : Option.isSome(accessTeam) && selfHosted
+        ? `access:${new URL(accessTeam.value).hostname}`
+        : `workos:${yield* Config.schema(
+            Schema.String.check(Schema.isPattern(/^client_[A-Za-z0-9]+$/)),
+            "WORKOS_CLIENT_ID",
+          )}`;
   const unlimitedAccounts = yield* Entitlements.unlimitedAccounts;
   const observationDays = yield* Config.schema(Limit(90), "TALKTO_STARTER_OBSERVATION_DAYS").pipe(
     Config.withDefault(defaults.observationDays),

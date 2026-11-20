@@ -130,7 +130,7 @@ const peopleLimited = (error: Error | null) =>
   error instanceof ApiError && error.code === "people_limit_reached";
 
 /** Copy a join link; where the browser refuses, show it to copy by hand. */
-function CopyLink({
+export function CopyLink({
   link,
   label = "Copy link",
 }: {

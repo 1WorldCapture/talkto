@@ -14,12 +14,14 @@
     "test": "pnpm build && wrangler deploy --config wrangler.test.jsonc --dry-run --outdir dist/test && wrangler deploy --config wrangler.platform-test.jsonc --dry-run --outdir dist/platform-test && wrangler deploy --config wrangler.telemetry-test.jsonc --dry-run --outdir dist/telemetry-test && node --test --test-timeout=60000 test/*.test.mjs"
   },
   "dependencies": {
+    "@better-auth/oauth-provider": "1.7.27",
     "@modelcontextprotocol/server": "2.0.0",
     "@sentry/cloudflare": "10.74.0",
     "@talkto/api": "workspace:*",
     "@talkto/telemetry": "workspace:*",
     "@workos-inc/node": "10.13.0",
     "aws4fetch": "1.0.20",
+    "better-auth": "1.7.27",
     "effect": "catalog:",
     "jose": "6.2.12",
     "stripe": "22.6.2"

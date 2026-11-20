@@ -136,6 +136,19 @@ export async function start(t, options = {}) {
     selfHost.TALKTO_ACCESS_TEAM_DOMAIN = accessTeam;
     selfHost.TALKTO_ACCESS_AUD = accessAud;
   }
+  // Self-host sign-in with Better Auth: the real Better Auth, OAuth server and D1 store
+  // (docs/self-host-better-auth.md). The secret is a throwaway per run.
+  if (options.betterAuth) {
+    selfHost.TEST_BETTER_AUTH = "true";
+    selfHost.TALKTO_AUTH_PROVIDER = "better-auth";
+    selfHost.BETTER_AUTH_SECRET = randomBytes(32).toString("base64url");
+    selfHost.TALKTO_OWNER_EMAILS = options.owners ?? "owner@example.com";
+    // A copy that also has Access's settings, which must be refused.
+    if (options.alsoAccess) {
+      selfHost.TALKTO_ACCESS_TEAM_DOMAIN = accessTeam;
+      selfHost.TALKTO_ACCESS_AUD = accessAud;
+    }
+  }
   // TalkTo's own email: off unless a test opts in. "fake" records in memory; "resend" runs the real
   // adapter against the test's handler for api.resend.com. Nothing ever leaves the test.
   const email = {};
@@ -311,8 +324,8 @@ export async function start(t, options = {}) {
       });
     },
   });
-  // A copy on Access has no WorkOS settings at all.
-  if (options.access) {
+  // A copy on Access or Better Auth has no WorkOS settings at all.
+  if (options.access || options.betterAuth) {
     const env = runtimeOptions.workers[0].config.env;
     for (const name of Object.keys(env)) if (name.startsWith("WORKOS_")) delete env[name];
   }
@@ -348,6 +361,7 @@ export async function start(t, options = {}) {
         "0021.sql",
         "0022.sql",
         "0023.sql",
+        "0024.sql",
       ].map((file) =>
         readFile(new URL(`../src/platform/migrations/${file}`, import.meta.url), "utf8"),
       ),
@@ -475,6 +489,8 @@ export async function start(t, options = {}) {
     get db() {
       return db;
     },
+    /** Better Auth's throwaway secret, for minting account links as `pnpm selfhost:link` does. */
+    betterAuthSecret: selfHost.BETTER_AUTH_SECRET,
     // Local offline recovery drill, not Cloudflare PITR. Call only with no requests in flight.
     persistenceCheckpoint: async () => {
       const backup = await mkdtemp(join(tmpdir(), "talkto-recovery-"));

@@ -339,6 +339,10 @@ const worker = Hosted.makeWorker((env) =>
     // A self-hosted copy that signs people in with Cloudflare Access: production's own builder.
     if ("TEST_ACCESS" in env && env.TEST_ACCESS === "true")
       return yield* Hosted.accessAuthentication(env);
+    // A self-hosted copy that signs people in with Better Auth, or that asks for both: production's
+    // own choice and builders.
+    if ("TEST_BETTER_AUTH" in env && env.TEST_BETTER_AUTH === "true")
+      return yield* Hosted.configuredAuthentication(env);
     const testEnv = yield* Schema.decodeUnknownEffect(
       Schema.Struct({
         TEST_JWKS: Schema.fromJsonString(keyset),

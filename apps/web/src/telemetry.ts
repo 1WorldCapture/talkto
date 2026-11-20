@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/react";
 import type { RootOptions } from "react-dom/client";
 import { Schema } from "effect";
-import { isApiRequest, RequestDiagnostic, RequestTrace } from "./api.js";
+import { isApiRequest, isCancelledRequest, RequestDiagnostic, RequestTrace } from "./api.js";
 import { sample } from "@talkto/telemetry/sampling";
 import {
   dataCollection,
@@ -10,6 +10,12 @@ import {
   sanitizeSpan,
   sanitizeTransaction,
 } from "@talkto/telemetry/privacy";
+
+/** Drop a cancelled request's abort reason, which a fetch wrapper outside TalkTo can leave unhandled. */
+export const reportError: NonNullable<Sentry.BrowserOptions["beforeSend"]> = (event, hint) =>
+  hint.originalException instanceof DOMException && isCancelledRequest(hint.originalException)
+    ? null
+    : sanitizeError(event);
 
 /** Initialize once at browser bootstrap. Local previews remain disconnected unless explicitly configured. */
 export function initialize(transport?: Sentry.BrowserOptions["transport"], localTraceRate?: 0 | 1) {
@@ -45,7 +51,7 @@ export function initialize(transport?: Sentry.BrowserOptions["transport"], local
     tracePropagationTargets: [
       new RegExp(`^${location.origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\/(v1|auth)(/|$)`),
     ],
-    beforeSend: sanitizeError,
+    beforeSend: reportError,
     beforeSendSpan: sanitizeSpan,
     beforeSendTransaction: sanitizeTransaction,
   };

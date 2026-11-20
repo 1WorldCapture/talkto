@@ -20,6 +20,29 @@ export const accessInviteScope =
 export const accessInviteSent = (email: string) =>
   `Invitation saved for ${email}. Send them this page's address; they join when they sign in. Then share each server with them from its Access button.`;
 
+/**
+ * The same, on a self-hosted copy that signs people in with Better Auth: no email is sent, so the
+ * inviter sends the invitation's link. Someone with an account joins by opening it; someone
+ * without one can create an account from it only when an owner sent the invitation.
+ */
+export const betterAuthInviteScope =
+  "No email is sent. Copy the invitation's link and send it to them; it works only for this address. With no account here yet, they can create one from it only if an owner invited them. They see no server until you share it with them.";
+
+export const betterAuthInviteSent = (email: string) =>
+  `Invitation saved for ${email}. Copy its link below and send it to them. Then share each server with them from its Access button.`;
+
+/** An organization invitation's link on a copy that signs people in with Better Auth. */
+export const signUpLink = (origin: string, invitationId: string) =>
+  `${origin}/auth/sign-in?${new URLSearchParams({ invitation: invitationId })}`;
+
+/** The scope and confirmation copy for the sign-in this copy uses. */
+export const inviteCopy = (signIn: "cloudflare-access" | "better-auth" | null) =>
+  signIn === "cloudflare-access"
+    ? { scope: accessInviteScope, sent: accessInviteSent }
+    : signIn === "better-auth"
+      ? { scope: betterAuthInviteScope, sent: betterAuthInviteSent }
+      : { scope: inviteScope, sent: inviteSent };
+
 export const allowanceRule =
   "Messages on a server count toward its owner organization’s allowance, whoever sends them.";
 

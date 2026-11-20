@@ -87,12 +87,13 @@ export const Services = createContext<ReturnType<typeof createServices> | null>(
 /** Authenticated identity scopes every protected query key. */
 export const Human = createContext<P.User | null>(null);
 /**
- * True on a self-hosted copy that signs people in with Cloudflare Access, where invitations send
- * no email (docs/self-host-cloudflare-access.md).
+ * A self-hosted copy's own sign-in, where invitations send no email: Cloudflare Access
+ * (docs/self-host-cloudflare-access.md) or Better Auth (docs/self-host-better-auth.md). Null where
+ * WorkOS signs people in and emails invitations.
  */
-const AccessSignIn = createContext(false);
-/** Whether this copy signs people in with Cloudflare Access. */
-export const useAccessSignIn = () => useContext(AccessSignIn);
+const SelfHostedSignIn = createContext<"cloudflare-access" | "better-auth" | null>(null);
+/** The self-hosted sign-in this copy uses, or null. */
+export const useSelfHostedSignIn = () => useContext(SelfHostedSignIn);
 /** Access the application-owned request boundary. */
 export function useServices() {
   const value = useContext(Services);
@@ -166,10 +167,10 @@ export function SessionGate({ children }: { readonly children: ReactNode }) {
     );
   return (
     <Human.Provider value={user}>
-      <AccessSignIn.Provider value={session.data?.data.connection.signIn === "cloudflare-access"}>
+      <SelfHostedSignIn.Provider value={session.data?.data.connection.signIn ?? null}>
         <Notice error={session.error} stale />
         {children}
-      </AccessSignIn.Provider>
+      </SelfHostedSignIn.Provider>
     </Human.Provider>
   );
 }

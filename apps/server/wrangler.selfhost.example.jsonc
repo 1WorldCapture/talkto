@@ -53,6 +53,9 @@
     "TALKTO_SELF_HOSTED": "true",
     "TALKTO_SERVICE_ORIGIN": "__TALKTO_SERVICE_ORIGIN__",
     // WorkOS: the environment's client ID, its user-management issuer, and its AuthKit issuer.
+    // `pnpm selfhost:config` replaces these with TALKTO_ACCESS_TEAM_DOMAIN and TALKTO_ACCESS_AUD for
+    // Cloudflare Access, or with TALKTO_AUTH_PROVIDER ("better-auth") and TALKTO_OWNER_EMAILS for
+    // Better Auth. Better Auth's BETTER_AUTH_SECRET is a Worker secret, never a value here.
     "WORKOS_CLIENT_ID": "__WORKOS_CLIENT_ID__",
     "WORKOS_ISSUER": "https://api.workos.com/user_management/__WORKOS_CLIENT_ID__",
     "WORKOS_MCP_ISSUER": "__WORKOS_MCP_ISSUER__",
@@ -109,7 +112,7 @@
       "migrations_dir": "src/platform/migrations",
     },
   ],
-  // Every minute: WorkOS membership changes and background upkeep.
+  // Every minute: WorkOS membership changes (or Better Auth's expired records) and background upkeep.
   "triggers": { "crons": ["* * * * *"] },
   "rules": [{ "type": "Text", "globs": ["**/*.sql", "**/*.md"], "fallthrough": true }],
   "observability": { "enabled": true },

@@ -6,17 +6,16 @@ import * as M from "@talkto/api/models";
 import type * as Guests from "@talkto/api/guests";
 import { request, denied, ApiError, input } from "./api.js";
 import { AppLink, Dialog, Notice, OrganizationIcon, Pagination, Search } from "./components.js";
-import { clearAgentData, useAccessSignIn, useHuman, useServices } from "./session.js";
+import { clearAgentData, useHuman, useSelfHostedSignIn, useServices } from "./session.js";
+import { CopyLink } from "./server-invites.js";
 import { formatCount } from "./format.js";
 import { StarterOffer, useStarter } from "./starter.js";
 import {
-  accessInviteScope,
-  accessInviteSent,
   allowanceRule,
   guestInvited,
   guestLinkRule,
-  inviteScope,
-  inviteSent,
+  inviteCopy,
+  signUpLink,
 } from "./invite-copy.js";
 import "./removed-tag.css";
 import { defaultOrganizationName } from "./organization-name.js";
@@ -266,7 +265,8 @@ export function Empty({
 export function Members({ account }: { readonly account: P.AccountContext }) {
   const { api } = useServices();
   const user = useHuman();
-  const accessSignIn = useAccessSignIn();
+  const signIn = useSelfHostedSignIn();
+  const copy = inviteCopy(signIn);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState<string>();
   const [invitationCursor, setInvitationCursor] = useState<string>();
@@ -380,12 +380,10 @@ export function Members({ account }: { readonly account: P.AccountContext }) {
           </form>
           {invite.isSuccess ? (
             <p className="muted management-note" role="status">
-              {(accessSignIn ? accessInviteSent : inviteSent)(invite.variables)}
+              {copy.sent(invite.variables)}
             </p>
           ) : (
-            <p className="muted management-note">
-              {accessSignIn ? accessInviteScope : inviteScope}
-            </p>
+            <p className="muted management-note">{copy.scope}</p>
           )}
           <p className="muted management-note">{allowanceRule}</p>
           <Notice error={invite.error ?? cancel.error ?? resend.error ?? invitations.error} />
@@ -416,6 +414,12 @@ export function Members({ account }: { readonly account: P.AccountContext }) {
                 </div>
                 {invitation.state === "pending" && (
                   <div className="actions">
+                    {signIn === "better-auth" && (
+                      <CopyLink
+                        link={signUpLink(location.origin, invitation.id)}
+                        label="Copy invitation link"
+                      />
+                    )}
                     <button
                       disabled={resend.isPending}
                       onClick={() => resend.mutate(invitation.id)}
