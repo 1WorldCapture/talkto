@@ -520,6 +520,11 @@ test("the Terms and Privacy are published: linked from every footer, indexed, an
     assert.ok(footer, `${path}: a footer`);
     for (const legal of legalPaths)
       assert.ok(footer.includes(`href="${legal}"`), `${path}: the footer links ${legal}`);
+    assert.match(
+      footer,
+      /<a class="fb-foot-source" href="https:\/\/github\.com\/plannotator\/talkto"><svg [^>]*aria-hidden="true"[\s\S]*?<\/svg>GitHub<\/a>/,
+      `${path}: the footer links the public source on GitHub`,
+    );
     const document = pageDocument(template, path);
     assert.doesNotMatch(document, /name="robots"/, `${path}: indexable`);
     assert.doesNotMatch(document, /content="Draft /, `${path}: no draft description`);
@@ -664,13 +669,27 @@ test("Pricing explains self-hosting under Apache 2.0 and sells no self-host lice
     assert.match(text, /Host it yourself Run TalkTo yourself\./);
     for (const line of [
       "The TalkTo source is available under the Apache License 2.0.",
-      "Self-hosting instructions are coming.",
+      "View the source on GitHub",
+      "Read how to host it yourself on Cloudflare.",
       "You may use, change and self-host it for any purpose.",
       "You may share it and build on it, including in products you sell.",
       "Keep its license and copyright notices when you share it.",
     ])
       assert.ok(text.includes(line), `/pricing: ${line}`);
-    // No promise beyond what the repository provides today: no guide, support or updates.
+    assert.doesNotMatch(text, /instructions are coming/, "/pricing: the guide is published");
+    // The source and the guide, as links (the docs' Self-host page explains the setup).
+    const { source, guide } = pricing.selfHosting;
+    assert.equal(source.href, "https://github.com/plannotator/talkto");
+    assert.equal(guide.href, "/docs/self-host/");
+    assert.ok(
+      built.includes(`<a class="fb-source" href="${source.href}"><svg class="fb-source-mark"`),
+      "/pricing: the GitHub link wears the hero's mark",
+    );
+    assert.ok(
+      built.includes(`<a class="pr-lede-guide" href="${guide.href}">${guide.label}</a>`),
+      "/pricing: the guide link",
+    );
+    // No promise beyond what the repository and the guide provide: no support or updates.
     assert.doesNotMatch(
       text,
       /Cloudflare account|WorkOS account|no message limits|updates as we ship|security updates/,

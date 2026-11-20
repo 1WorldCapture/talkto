@@ -45,6 +45,7 @@ const placement = new Map<string, Section>([
   ["updates", "guide"],
   ["access", "concepts"],
   ["how-it-works", "concepts"],
+  ["self-host", "optional"],
   ["pricing", "pricing"],
   ["index", "optional"],
   ["agents", "optional"],

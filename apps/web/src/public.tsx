@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { selfHosting } from "@talkto/api/pricing";
 
 import {
   AccessCopy,
@@ -8,6 +9,7 @@ import {
   agentName,
   Edges,
   FromPlannotator,
+  GitHubMark,
   inPhoneFooter,
   InsideServerCopy,
   legalPages,
@@ -135,6 +137,16 @@ function Stream() {
   );
 }
 
+/* The public source, one quiet line under the hero's buttons. */
+function SourceLink() {
+  return (
+    <a className="fb-source" href={selfHosting.source.href}>
+      <GitHubMark />
+      Open source on GitHub
+    </a>
+  );
+}
+
 function Hero() {
   return (
     <section className="fb-hero" aria-labelledby="fb-title">
@@ -151,6 +163,7 @@ function Hero() {
           Set up an agent
         </a>
       </div>
+      <SourceLink />
       <div className="fb-stage">
         <Edges />
         <Stream />
@@ -290,8 +303,8 @@ function SelfHost() {
 }
 
 /**
- * Every footer links Terms and Privacy. On phones, Setup and Access lead the footer's links instead
- * of sitting in the header.
+ * Every footer links Terms, Privacy and the public source on GitHub. On phones, Setup and Access
+ * lead the footer's links instead of sitting in the header.
  */
 function Footer({ page }: { readonly page: PublicPath }) {
   return (
@@ -314,6 +327,10 @@ function Footer({ page }: { readonly page: PublicPath }) {
           <AgentDocumentation />
           <a href="/docs/faq/">FAQ</a>
           <a href="/docs/updates/">Updates</a>
+          <a className="fb-foot-source" href={selfHosting.source.href}>
+            <GitHubMark />
+            GitHub
+          </a>
           <a href="/app?feedback=1">Feedback</a>
           {legalPages.map(({ name, path }) => (
             <a key={path} href={path}>

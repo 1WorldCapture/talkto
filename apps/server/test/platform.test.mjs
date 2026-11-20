@@ -1258,6 +1258,35 @@ test("MCP identity-provider outages remain retryable without a sign-in challenge
   }
 });
 
+test("MCP tokens verify with the issuer's configured fallback keys when its key set is unreachable", async (t) => {
+  for (const [mcpFallbackKeys, status] of [
+    [
+      (keys, aliasKeys) => ({
+        "https://auth.talkto.test": keys,
+        "https://old-auth.talkto.test": aliasKeys,
+      }),
+      200,
+    ],
+    // A fallback holding another key rejects the token instead of signing anyone in.
+    [
+      (_keys, aliasKeys) => ({
+        "https://auth.talkto.test": { keys: [{ ...aliasKeys.keys[0], kid: "test" }] },
+      }),
+      401,
+    ],
+  ]) {
+    const x = await start(t, {
+      mcpFallbackKeys,
+      mcpJwksResponse: () => {
+        throw new Error("unreachable from this colo");
+      },
+    });
+    const response = await x.raw("/mcp", rpc("server/discover", {}, await x.mcpToken()));
+    assert.equal(response.status, status, await response.text());
+    assert.ok(x.jwksFetches.includes("auth.talkto.test"), "the live key set is tried first");
+  }
+});
+
 test("MCP tokens from an AuthKit issuer alias verify with that issuer's own keys during a domain switch", async (t) => {
   const x = await start(t, { mcpJwksResponse: (keys) => Response.json(keys) });
   const resource = await (await x.raw("/.well-known/oauth-protected-resource/mcp")).json();

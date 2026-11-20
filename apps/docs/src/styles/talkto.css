@@ -287,9 +287,33 @@ pre.astro-code[data-language="text"] {
 .tt-map-shared p {
   margin: 0;
 }
+.tt-deploy-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.tt-deploy-store {
+  padding: 12px;
+  border: 1px solid var(--subtle-line);
+  background: var(--paper);
+}
+.tt-deploy-store code {
+  font: 600 13px/1.3 var(--nb-font-mono);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.tt-deploy-store p {
+  margin: 8px 0 0;
+}
+@media (max-width: 900px) {
+  .tt-deploy-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 @media (max-width: 640px) {
   .tt-map-orgs,
-  .tt-map-servers {
+  .tt-map-servers,
+  .tt-deploy-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -26,8 +26,8 @@ export const swarmContactHref = `mailto:${supportEmail}?subject=${encodeURICompo
 /**
  * Self-hosting, as the site, the docs and llms.txt state it (owner decisions, November 19, 2026):
  * TalkTo's source is licensed under the Apache License, Version 2.0 (`LICENSE`), and self-host
- * licenses are no longer sold. There is no public self-host guide yet, so nothing here says how to
- * set it up.
+ * licenses are no longer sold. The source is public on GitHub, and the docs' Self-host page
+ * (`/docs/self-host/`) explains how TalkTo runs on Cloudflare and how to deploy it yourself.
  */
 export const selfHosting = {
   license: "The TalkTo source is available under the Apache License 2.0.",
@@ -36,7 +36,8 @@ export const selfHosting = {
     "You may share it and build on it, including in products you sell.",
     "Keep its license and copyright notices when you share it.",
   ],
-  instructions: "Self-hosting instructions are coming.",
+  source: { label: "View the source on GitHub", href: "https://github.com/plannotator/talkto" },
+  guide: { label: "Read how to host it yourself on Cloudflare.", href: "/docs/self-host/" },
 } as const;
 /**
  * Stored-file pool per organization, in decimal gigabytes (10^9 bytes), shared by every server the

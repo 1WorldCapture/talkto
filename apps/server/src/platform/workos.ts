@@ -12,6 +12,7 @@ import { createRemoteJWKSet, errors, jwtVerify } from "jose";
 import type { JWTVerifyGetKey } from "jose";
 import * as P from "@talkto/api/platform";
 import * as M from "@talkto/api/models";
+import { describeFailure } from "../failure-log.js";
 import * as Model from "./model.js";
 import * as Platform from "./service.js";
 
@@ -94,10 +95,13 @@ export const verifier = (
           algorithms: ["RS256"],
           requiredClaims: ["sub", "sid", "iat", "exp"],
         }),
-      catch: (error) =>
-        error instanceof errors.JWKSTimeout || !(error instanceof errors.JOSEError)
-          ? unavailable()
-          : unauthenticated(),
+      catch: (error) => {
+        if (!(error instanceof errors.JWKSTimeout) && error instanceof errors.JOSEError)
+          return unauthenticated();
+        // The cause's name and code only: never the token, its claims or an error message.
+        console.warn("workos: session key set unavailable", describeFailure(error));
+        return unavailable();
+      },
     });
     // AuthKit session JWTs may omit aud. When present it must identify this application.
     // Connect resource tokens use a separate, audience-required verifier when MCP is added.

@@ -95,6 +95,27 @@
   font-size: 16px;
 }
 
+/* The public source: one quiet line under the buttons, muted until hovered. */
+.fb-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin-top: 16px;
+  color: var(--muted);
+  font: 14px/1 var(--sans);
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+.fb-source:hover {
+  color: var(--ink);
+}
+.fb-source-mark {
+  width: 1.1em;
+  height: 1.1em;
+  flex: none;
+}
+
 /* The stage: an opaque column for the stream, with the bundles running into its sides. The
    fragment layer reaches up behind the headline so the right bundle's long line has room. */
 .fb-stage {
@@ -351,6 +372,11 @@
   gap: 28px;
   margin-left: auto;
   font-size: 15px;
+}
+/* GitHub: the hero's mark, set on the text's line like the footer's other links. */
+.fb-foot-source .fb-source-mark {
+  margin-right: 6px;
+  vertical-align: -0.15em;
 }
 /* Setup and Access: in the header on wider screens, here on phones. */
 .fb-foot-links > a.fb-foot-phone {

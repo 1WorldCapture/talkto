@@ -497,10 +497,27 @@
   letter-spacing: -0.01em;
   text-wrap: pretty;
 }
+/* Under the license: the source on GitHub (the hero's quiet link, at this size) and the guide. */
 .pr-lede-note {
-  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 28px;
+  margin-top: 12px;
   color: var(--muted);
   font-size: 17px;
+}
+.pr-lede-note .fb-source {
+  margin-top: 0;
+  font-size: inherit;
+}
+.pr-lede-guide {
+  color: inherit;
+  text-underline-offset: 4px;
+  transition: color 120ms ease;
+}
+.pr-lede-guide:hover {
+  color: var(--ink);
 }
 .pr-details {
   display: grid;

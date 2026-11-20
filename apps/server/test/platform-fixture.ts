@@ -348,6 +348,7 @@ const worker = Hosted.makeWorker((env) =>
         TEST_JWKS: Schema.fromJsonString(keyset),
         TEST_ALIAS_JWKS: Schema.fromJsonString(keyset),
         WORKOS_MCP_ISSUER_ALIASES: Schema.optionalKey(Schema.String),
+        WORKOS_MCP_JWKS: Schema.optionalKey(Schema.String),
       }),
     )(env).pipe(Effect.orDie);
     const keys = testEnv.TEST_JWKS;
@@ -368,14 +369,19 @@ const worker = Hosted.makeWorker((env) =>
       browser,
       mcp: {
         issuer: mcpIssuer,
-        // The same alias parsing as production; each issuer verifies with its own key set.
+        // The same alias and fallback parsing as production; each issuer verifies with its own
+        // key set.
         verify: McpAuth.verifier(
           mcpIssuer,
           McpAuth.issuerAliases(testEnv.WORKOS_MCP_ISSUER_ALIASES, mcpIssuer),
           "https://talkto.test/mcp",
+          McpAuth.fallbackKeys(testEnv.WORKOS_MCP_JWKS, [
+            mcpIssuer,
+            ...McpAuth.issuerAliases(testEnv.WORKOS_MCP_ISSUER_ALIASES, mcpIssuer),
+          ]),
           "TEST_REMOTE_MCP_JWKS" in env && env.TEST_REMOTE_MCP_JWKS === "true"
             ? undefined
-            : (issuer) =>
+            : (issuer: string) =>
                 createLocalJWKSet({
                   keys: [...(issuer === mcpIssuer ? keys : testEnv.TEST_ALIAS_JWKS).keys],
                 }),

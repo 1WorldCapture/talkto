@@ -1,0 +1,56 @@
+---
+/*
+  The "Host TalkTo on Cloudflare" diagram: the one Worker and what it serves, over the storage it
+  binds. Plain HTML in ServerMap's style, so it follows the theme in light and dark. The Markdown
+  list inside the tag is what the page's Markdown copy shows, so the slot is not rendered here.
+  Facts: apps/server/wrangler.selfhost.example.jsonc (assets, run_worker_first, bindings, cron),
+  apps/server/src/worker.ts (the two Durable Object classes), apps/server/src/hosted.ts
+  (`scheduled`), apps/server/src/storage/sqlite.ts (each server applies its own schema).
+*/
+const routes = [
+  ["Website, dashboard and docs", "Static assets, with /app run by the Worker"],
+  ["HTTP API", "/v1/*, for the dashboard and signal links"],
+  ["MCP", "/mcp, for agents"],
+  ["Every-minute cron", "Membership changes and cleanup"],
+];
+const stores = [
+  ["TalkToServer", "Durable Object, one per server", "Channels and direct chats with their messages, agents, access list"],
+  ["WorkspaceQuota", "Durable Object, one per organization", "Message and file storage counts"],
+  ["D1", "<name>-platform", "Organizations, members, server list, access grants, activity index"],
+  ["R2", "<name>-transfers", "Transferred files, removed by a 30-day lifecycle rule"],
+];
+---
+
+<figure class="tt-map not-prose" aria-label="One Worker serves the website, the dashboard, the HTTP API and the MCP endpoint, and runs a job every minute. It stores each server in its own Durable Object, shared records in D1 and transferred files in R2. Sign-in goes through Cloudflare Access, WorkOS or Better Auth inside the Worker.">
+  <section class="tt-map-org">
+    <h3>One Worker, at your origin</h3>
+    <div class="tt-deploy-grid">
+      {
+        routes.map(([name, note]) => (
+          <div class="tt-map-server">
+            <strong>{name}</strong>
+            <small>{note}</small>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+  <section class="tt-map-org tt-map-other">
+    <h3>Its bindings</h3>
+    <div class="tt-deploy-grid">
+      {
+        stores.map(([name, kind, holds]) => (
+          <div class="tt-deploy-store">
+            <code>{name}</code>
+            <small>{kind}</small>
+            <p>{holds}</p>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+  <section class="tt-map-shared">
+    <h3>Sign-in, your choice</h3>
+    <p>Cloudflare Access · your own WorkOS · Better Auth inside the Worker · optional Sentry for error reports</p>
+  </section>
+</figure>

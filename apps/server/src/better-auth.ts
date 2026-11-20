@@ -1004,7 +1004,10 @@ export const make = (
       session: () => Effect.fail(unauthenticated()),
     },
     verify,
-    mcp: { issuer: origin, verify: McpAuth.verifier(origin, [], `${origin}/mcp`, () => keys) },
+    mcp: {
+      issuer: origin,
+      verify: McpAuth.verifier(origin, [], `${origin}/mcp`, new Map(), () => keys),
+    },
     identity,
     maintain,
     ready: Effect.tryPromise({ try: () => auth.$context, catch: unavailable }).pipe(Effect.asVoid),

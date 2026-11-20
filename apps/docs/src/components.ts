@@ -5,6 +5,7 @@
 
 import { Aside } from "./components/ui/aside";
 import AgentGrid from "./components/AgentGrid.astro";
+import DeployMap from "./components/DeployMap.astro";
 import Render from "./components/Render.astro";
 import ServerMap from "./components/ServerMap.astro";
 import { Card } from "./components/ui/card";
@@ -16,6 +17,7 @@ export const components = {
   Aside,
   Card,
   CardGrid,
+  DeployMap,
   Render,
   ServerMap,
   Step,

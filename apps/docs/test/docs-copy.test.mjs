@@ -71,12 +71,22 @@ const mdProse = (markdown) => without(markdown, mdCode);
 const mdCodeText = (markdown) =>
   [...markdown.matchAll(mdCode)].map((m) => m[0].replace(/^```\w*\n?|```$|^`|`$/g, ""));
 
+/*
+  TalkTo's public source repository, which the docs header (astro.config.ts `github`) and the
+  self-hosting page link and clone. Its address is a location, not the product named in a sentence;
+  every other mention of Plannotator still fails.
+*/
+const sourceRepository =
+  /https:\/\/github\.com\/plannotator\/talkto(?:\.git|\/[^\s)<>"'`]*)?(?![\w-])/g;
+
 test("every page has one footer line and names Plannotator nowhere else", () => {
   for (const { path, html, markdown } of pages) {
     assert.equal(html.match(footerLine)?.length, 1, `${path}: one "from Plannotator" footer line`);
-    for (const prose of [htmlProse(html), mdProse(markdown)])
+    for (const prose of [htmlProse(html), mdProse(markdown)].map((text) =>
+      without(text, sourceRepository),
+    ))
       assert.doesNotMatch(prose, /plannotator/i, `${path}: Plannotator only in the footer line`);
-    for (const code of mdCodeText(markdown))
+    for (const code of mdCodeText(markdown).map((text) => without(text, sourceRepository)))
       assert.doesNotMatch(code, /plannotator/i, `${path}: the plugin repository is talkto-sh`);
   }
 });

@@ -231,6 +231,8 @@ export async function start(t, options = {}) {
       WORKOS_REDIRECT_URI: "https://talkto.test/auth/callback",
       TEST_REAL_IDENTITY: String(options.realIdentity ?? false),
       TEST_REMOTE_MCP_JWKS: String(options.mcpJwksResponse !== undefined),
+      // No fallback unless a test configures one: an empty object configures none.
+      WORKOS_MCP_JWKS: JSON.stringify(options.mcpFallbackKeys?.(keys, aliasKeys) ?? {}),
       STRIPE_BILLING_ENABLED: String(options.stripeHandler !== undefined),
       TALKTO_TRIALS_ENABLED: String(options.trials ?? false),
       WORKOS_CLIENT_ID: "client_test",

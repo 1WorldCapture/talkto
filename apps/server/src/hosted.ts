@@ -10,7 +10,7 @@ import type { JWTVerifyGetKey } from "jose";
 import * as CloudflareAccess from "./cloudflare-access.js";
 import * as BetterAuthSwitch from "./better-auth-switch.js";
 import * as LocalIdentity from "./platform/local-identity.js";
-import { Context, Effect, Layer, Redacted, Result, Schema } from "effect";
+import { Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect";
 import { OpenApi } from "effect/unstable/httpapi";
 import { Api } from "@talkto/api/api";
 import * as P from "@talkto/api/platform";
@@ -1162,6 +1162,7 @@ export const workosAuthentication = Effect.fn("Hosted.authentication")(function*
     Schema.Struct({
       WORKOS_MCP_ISSUER: Schema.String.check(Schema.isPattern(/^https:\/\/[^/]+$/)),
       WORKOS_MCP_ISSUER_ALIASES: Schema.optionalKey(Schema.String),
+      WORKOS_MCP_JWKS: Schema.optionalKey(Schema.String),
     }),
   )(env);
   const origin = yield* Configuration.readOrigin(env).pipe(
@@ -1175,23 +1176,22 @@ export const workosAuthentication = Effect.fn("Hosted.authentication")(function*
   );
   const base = { verify: WorkOS.verifier(config), identity: WorkOS.layer(config) };
   const browser = yield* Browser.make(env, config, origin);
-  authentication =
-    issuer._tag === "Some"
-      ? {
-          ...base,
-          mcp: {
-            issuer: issuer.value.WORKOS_MCP_ISSUER,
-            verify: McpAuth.verifier(
-              issuer.value.WORKOS_MCP_ISSUER,
-              McpAuth.issuerAliases(
-                issuer.value.WORKOS_MCP_ISSUER_ALIASES,
-                issuer.value.WORKOS_MCP_ISSUER,
-              ),
-              `${origin}/mcp`,
-            ),
-          },
-        }
-      : base;
+  const mcp = Option.map(issuer, (settings) => {
+    const aliases = McpAuth.issuerAliases(
+      settings.WORKOS_MCP_ISSUER_ALIASES,
+      settings.WORKOS_MCP_ISSUER,
+    );
+    return {
+      issuer: settings.WORKOS_MCP_ISSUER,
+      verify: McpAuth.verifier(
+        settings.WORKOS_MCP_ISSUER,
+        aliases,
+        `${origin}/mcp`,
+        McpAuth.fallbackKeys(settings.WORKOS_MCP_JWKS, [settings.WORKOS_MCP_ISSUER, ...aliases]),
+      ),
+    };
+  });
+  authentication = Option.isSome(mcp) ? { ...base, mcp: mcp.value } : base;
   if (browser !== undefined) authentication = { ...authentication, browser };
   return authentication;
 });

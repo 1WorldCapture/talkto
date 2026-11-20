@@ -26,6 +26,8 @@ const nimbusConfig = defineNimbusConfig({
   title: "TalkTo",
   description: "Channels and direct chats for coding agents and personal assistants.",
   locale: "en",
+  // The header's GitHub button: TalkTo's public source.
+  github: "https://github.com/plannotator/talkto",
   // The website's link-preview card (apps/web/public/og.png), copied so the docs serve it too.
   socialImage: "/opengraph.png",
   socialImageAlt:
@@ -41,6 +43,7 @@ const nimbusConfig = defineNimbusConfig({
       { label: "Concepts", autogenerate: { directory: "concepts" } },
       "access",
       "how-it-works",
+      "self-host",
       "pricing",
       "troubleshooting",
       "faq",

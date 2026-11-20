@@ -101,6 +101,16 @@ for (const traceRate of [1, 0])
       (event) => event.tags?.["talkto.request_id"] === failed.meta.requestId,
     );
     assert.equal(error.tags["talkto.code"], "storage_unavailable");
+    // The Cloudflare location that ran the request is tagged, so a per-location outage shows where.
+    const located = await x.raw(`/v1/accounts/${account.id}`, {
+      headers: { authorization: `Bearer ${await x.token("user_alice")}` },
+      cf: { colo: "TBS", city: "PRIVATE_CITY_SENTINEL" },
+    });
+    assert.equal(located.status, 503);
+    const locatedId = (await located.json()).meta.requestId;
+    const locatedError = await received((event) => event.tags?.["talkto.request_id"] === locatedId);
+    assert.equal(locatedError.tags["talkto.colo"], "TBS");
+    assert.ok(!JSON.stringify(locatedError).includes("PRIVATE_CITY_SENTINEL"));
     // An MCP tool that throws is reported once, with its cause, and names the tool.
     const tool = await x.mcp(await x.mcpToken(account.organizationId), "get_context", {}, true);
     assert.equal(tool.error.code, "internal_error");

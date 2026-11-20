@@ -165,15 +165,28 @@ export function monitorCron<A>(schedule: string, run: () => Promise<A>): Promise
   });
 }
 
-/** The Worker with its cron checked in to `cronMonitor`; fetch is unchanged. */
+/** Cloudflare's location code for the data center that ran a request, like `TBS` or `EWR`. */
+const Colo = Schema.Struct({ colo: Schema.String.check(Schema.isPattern(/^[A-Z]{3}$/)) });
+
+/**
+ * The Worker with its cron checked in to `cronMonitor`, and every event a request reports tagged
+ * `talkto.colo` with the Cloudflare location that ran it, so a failure confined to some locations
+ * shows where. A location code is public infrastructure, not personal data.
+ */
 export function monitored<E>(handler: ExportedHandler<E>): ExportedHandler<E> {
-  const scheduled = handler.scheduled;
-  if (scheduled === undefined) return handler;
-  return {
-    ...handler,
-    scheduled: (controller, env, context) =>
-      monitorCron(controller.cron, async () => scheduled.call(handler, controller, env, context)),
-  };
+  const { fetch, scheduled } = handler;
+  const wrapped: ExportedHandler<E> = { ...handler };
+  if (fetch !== undefined)
+    wrapped.fetch = (request, env, context) => {
+      const location = Schema.decodeUnknownOption(Colo)(request.cf);
+      if (location._tag === "Some")
+        Sentry.getIsolationScope().setTag("talkto.colo", location.value.colo);
+      return fetch.call(handler, request, env, context);
+    };
+  if (scheduled !== undefined)
+    wrapped.scheduled = (controller, env, context) =>
+      monitorCron(controller.cron, async () => scheduled.call(handler, controller, env, context));
+  return wrapped;
 }
 
 interface FailureTags {
