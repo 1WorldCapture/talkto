@@ -1,0 +1,95 @@
+/* The free start reuses Billing's panel, figure and ink meter. Magenta stays reserved for live and
+   current states, so the offer and the allowance use ink, muted text and hairlines only. */
+.starter-offer {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--subtle-line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+}
+/* Doubled class: dialog and wizard paragraph rules must not space the offer's two lines apart. */
+:root[data-surface] .starter-offer.starter-offer > p {
+  margin: 0;
+}
+:root[data-surface] .starter-offer.starter-offer > p + p {
+  margin-top: 4px;
+  color: var(--muted);
+}
+.starter-offer strong {
+  font-weight: 600;
+}
+.starter-note {
+  color: var(--muted);
+  font-size: 14px;
+}
+.starter-panel .billing-panel-body > .btn {
+  margin-top: 16px;
+}
+.starter-panel .billing-panel-body > .starter-note + .starter-note {
+  margin-top: 8px;
+}
+.starter-exhausted {
+  font-weight: 600;
+}
+.starter-standalone {
+  margin-bottom: 16px;
+}
+.starter-home {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--subtle-line);
+  background: var(--surface);
+}
+.starter-home .btn {
+  flex-shrink: 0;
+}
+.starter-panel-compact {
+  margin-bottom: 16px;
+}
+.starter-panel-compact .billing-panel-body {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 1fr) auto;
+  grid-template-areas:
+    "figure meter action"
+    "note note note";
+  align-items: center;
+  gap: 8px 24px;
+}
+.starter-panel-compact .billing-usage-number {
+  grid-area: figure;
+  margin: 0;
+}
+.starter-panel-compact .billing-meter {
+  grid-area: meter;
+  margin: 0;
+}
+.starter-panel-compact .billing-panel-body > :is(.btn, p:last-child) {
+  grid-area: action;
+  margin: 0;
+}
+.starter-panel-compact .billing-panel-body > .starter-note:not(:last-child),
+.starter-panel-compact .starter-exhausted {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+@media (max-width: 720px) {
+  .starter-home {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .starter-panel-compact .billing-panel-body {
+    grid-template-columns: 1fr;
+    grid-template-areas: none;
+  }
+  .starter-panel-compact .billing-panel-body > * {
+    grid-area: auto;
+    grid-column: 1 / -1;
+  }
+}

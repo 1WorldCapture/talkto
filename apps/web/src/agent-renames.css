@@ -1,0 +1,80 @@
+/* Renames: the dialog's modal, notices and buttons come from application.css. The Activity notice
+   is a quiet strip above the feed; names read in the mono face like agent names elsewhere. */
+.modal.rename-dialog {
+  width: min(440px, calc(100% - 32px));
+  font-family: var(--sans);
+}
+.modal.rename-dialog p {
+  margin: 0;
+}
+.modal.rename-dialog .rename-intro {
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+.modal.rename-dialog form {
+  gap: 6px;
+}
+.modal.rename-dialog label {
+  gap: 6px;
+}
+.rename-dialog input {
+  font-family: var(--mono);
+}
+.rename-note {
+  font-size: 13px;
+  color: var(--muted);
+}
+.rename-history {
+  margin-top: 24px;
+  border-top: 1px solid var(--subtle-line, var(--line));
+  padding-top: 16px;
+}
+.rename-history h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.rename-history ul,
+.rename-notices ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rename-history li,
+.rename-notices li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  row-gap: 2px;
+  padding: 6px 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.rename-names {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.rename-names > span:first-child {
+  color: var(--muted);
+}
+.rename-names strong {
+  font-weight: 500;
+}
+.rename-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+.rename-notices {
+  margin-top: 16px;
+  padding: 4px 16px;
+  background: var(--soft);
+  border: 1px solid var(--subtle-line, var(--line));
+}
+.rename-notices li + li {
+  border-top: 1px solid var(--subtle-line, var(--line));
+}
+.ops-registry-agent .ops-agent-earlier {
+  font-family: var(--mono);
+  font-size: 12px;
+}

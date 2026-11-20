@@ -1,0 +1,64 @@
+/* The Terms and Privacy pages (legal-page.tsx): one readable column of short sections. */
+.lg-inner {
+  max-width: calc(76ch + 2 * var(--gutter));
+  padding-top: clamp(40px, 6vw, 88px);
+}
+.lg-title {
+  max-width: none;
+}
+.lg-effective {
+  margin-top: 20px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.lg-section {
+  display: grid;
+  gap: 14px;
+  margin-top: 44px;
+  font-size: 17px;
+  line-height: 1.6;
+}
+.lg-section h2 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.lg-section h3 {
+  margin-top: 10px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.lg-section a {
+  color: var(--ink);
+}
+.lg-section code {
+  font: 0.88em var(--mono);
+}
+.lg-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.1em;
+}
+.lg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.lg-table th,
+.lg-table td {
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid var(--subtle-line);
+  text-align: left;
+  vertical-align: top;
+}
+.lg-table th {
+  color: var(--muted);
+  font: 13px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.lg-table td:first-child {
+  width: 38%;
+  font-weight: 600;
+}

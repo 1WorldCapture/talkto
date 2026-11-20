@@ -1,0 +1,10 @@
+---
+/* The lowercase "talkto" wordmark with its magenta square, as on the public site. Text elsewhere
+   says TalkTo. */
+interface Props {
+  readonly href: string;
+}
+const { href } = Astro.props;
+---
+
+<a class="tt-wordmark" href={href} aria-label="TalkTo home">talkto<i aria-hidden="true"></i></a>

@@ -1,0 +1,230 @@
+/* Connect agents (dashboard): which agent, that tool's own first step, then the server prompt.
+   One dialog with a back link. The square tiles and Copy blocks are the Setup page's
+   (setup-page.css), at dialog scale; magenta marks only the chosen agent. */
+/* The dashboard's dialog rules (brand-app.css) are scoped to the surface; match their weight. */
+:root[data-surface="dashboard"] .modal .connect-body p {
+  max-width: none;
+  margin: 0;
+}
+.connect-body code {
+  font: 13px/1.5 var(--mono);
+}
+.connect-body :is(li, .connect-note, .connect-extra) code:not(.su-code code) {
+  padding: 1px 4px;
+  background: var(--soft);
+  overflow-wrap: anywhere;
+}
+.connect-body strong {
+  font-weight: 600;
+}
+.connect-body .su-tile {
+  --tile: 36px;
+}
+
+/* Step 1: the agent grid (agent-flow.css), with the question above it. */
+:root[data-surface="dashboard"] .modal .connect-question {
+  margin-bottom: 16px;
+  padding: 0;
+  font: 600 16px/1.4 var(--sans);
+}
+.connect-next {
+  width: 100%;
+  min-height: 44px;
+}
+.connect-quiet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+:root[data-surface="dashboard"] .modal .connect-pick .connect-quiet {
+  margin-top: 16px;
+}
+.connect-quiet a,
+.connect-foot a {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration-color: var(--control-line);
+  text-underline-offset: 4px;
+}
+.connect-quiet a:hover,
+.connect-foot a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Step 2: one agent's setup. */
+:root[data-surface="dashboard"] .modal .connect-back {
+  margin: -8px 0 12px;
+  color: var(--muted);
+  font-weight: 400;
+  text-decoration: none;
+}
+:root[data-surface="dashboard"] .modal .connect-back:hover {
+  color: var(--ink);
+}
+.connect-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.connect-head .su-tile {
+  --tile: 44px;
+}
+:root[data-surface="dashboard"] .modal .connect-head h3 {
+  margin: 0;
+  font: 600 18px/1.3 var(--sans);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.connect-head h3:focus {
+  outline: none;
+}
+:root[data-surface="dashboard"] .modal .connect-body[data-stage="setup"] .connect-quiet {
+  margin: 12px 0 20px;
+}
+.modal .connect-open {
+  justify-self: start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 16px 0 8px;
+}
+.connect-open .su-tile {
+  --tile: 28px;
+}
+.connect-body .su-code {
+  padding: 8px 8px 8px 12px;
+}
+.connect-body .su-code code {
+  padding-top: 5px;
+}
+.connect-body .su-code-bar {
+  padding: 6px 8px 10px 12px;
+}
+.connect-body .su-code-bar code {
+  padding: 0;
+}
+/* Copy is an outlined control here: the dashboard's 3:1 control edge, not the Setup page's line. */
+.connect-body .su-copy {
+  min-width: 76px;
+  border-color: var(--control-line);
+}
+.connect-body .su-copy:hover {
+  border-color: var(--ink);
+}
+:root[data-surface="dashboard"] .modal .connect-note {
+  margin-top: 16px;
+  padding-left: 36px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.connect-note strong {
+  color: var(--ink);
+}
+.connect-extras {
+  margin-top: 20px;
+  border-top: 1px solid var(--subtle-line);
+}
+.connect-extra > div {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.connect-extra {
+  border-bottom: 1px solid var(--subtle-line);
+}
+.connect-extra > summary {
+  width: fit-content;
+  padding: 12px 0;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.connect-extra > summary:hover,
+.connect-extra[open] > summary {
+  color: var(--ink);
+}
+.connect-extra > div {
+  padding: 0 0 16px;
+  font-size: 14px;
+}
+.connect-extra .text-button {
+  justify-self: start;
+}
+.connect-loading {
+  color: var(--muted);
+}
+.connect-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-top: 24px;
+  font-size: 14px;
+}
+.connect-foot .btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+
+/* The join stage: the shared JoinStep (agent-flow.tsx). */
+
+@media (max-width: 560px) {
+  .connect-foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    text-align: center;
+  }
+  .connect-foot a {
+    align-self: center;
+  }
+  :root[data-surface="dashboard"] .modal .connect-note {
+    padding-left: 0;
+  }
+}
+
+/* The shared flow (agent-flow.css) inside the dialog: the dialog zeroes paragraph margins and
+   styles links as text buttons, so restate the flow's spacing at the dialog's weight. */
+:root[data-surface="dashboard"] .modal .connect-body .inline-link {
+  min-height: 32px;
+  padding: 0;
+  background: none;
+  color: var(--ink);
+  font: 500 14px/1.4 var(--sans);
+  text-decoration: underline;
+  text-decoration-color: var(--control-line);
+  text-underline-offset: 4px;
+}
+:root[data-surface="dashboard"] .modal .connect-body .inline-link:hover {
+  text-decoration-color: currentColor;
+}
+:root[data-surface="dashboard"] .modal .connect-body :is(.setup-lead, .flow-step-title) {
+  margin-bottom: 12px;
+}
+:root[data-surface="dashboard"] .modal .connect-body .flow-reminder > p {
+  margin-bottom: 10px;
+}
+:root[data-surface="dashboard"] .modal .connect-body .flow-step-title {
+  font: 600 15px/1.3 var(--sans);
+}
+:root[data-surface="dashboard"] .modal .connect-body :is(.setup-note, .agent-setup > .inline-note) {
+  margin-top: 12px;
+}
+:root[data-surface="dashboard"] .modal .connect-body .agent-more {
+  margin: 8px 0;
+}
+:root[data-surface="dashboard"] .modal .connect-body .agent-setup > .inline-note {
+  text-align: center;
+}
+
+/* The same-machine question sits under the head like the install does. */
+:root[data-surface="dashboard"] .modal .connect-body[data-stage="same"] .same-machine {
+  margin-top: 20px;
+}
+:root[data-surface="dashboard"] .modal .connect-body .same-machine-choices > .btn {
+  margin-top: 0;
+}

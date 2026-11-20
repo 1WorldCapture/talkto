@@ -1,0 +1,448 @@
+// Runs the real hook script as each host would: a child process, hook JSON on stdin, against a
+// local HTTP server standing in for TalkTo's signal link.
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { calls, cutResult, result, signalResult, transcript, user } from "./agy-transcript.mjs";
+import { fileStore, fresh, stateKey } from "../src/core.mjs";
+
+const script = fileURLToPath(new URL("../src/talkto-hook.mjs", import.meta.url));
+const server = "7c1e9a52-3b0f-4c55-9d7e-0d2f3c4b5a61";
+const signal = "0b7a3c1d-2e4f-4a6b-8c9d-1e2f3a4b5c6d";
+const secret = "Zz9_-".repeat(8) + "abc";
+const message = "00000000-0000-4000-8000-000000000042";
+
+/** A stand-in signal endpoint whose next answers a test scripts; records every request. */
+const stub = async (t) => {
+  const answers = [];
+  const seen = [];
+  const authorizations = [];
+  const http = createServer((request, response) => {
+    seen.push(request.url);
+    authorizations.push(request.headers.authorization);
+    const next = answers.shift() ?? { pending: 0, urgent: 0 };
+    if (next === "hang") return; // never answers
+    if (Number.isInteger(next)) {
+      response.writeHead(next, { "content-type": "application/json" });
+      return response.end(JSON.stringify({ error: { code: "not_found" } }));
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({ more: false, cursor: null, expiresAt: "2030-01-01T00:00:00.000Z", ...next }),
+    );
+  });
+  await new Promise((resolve) => http.listen(0, "127.0.0.1", resolve));
+  t.after(() => http.closeAllConnections() || http.close());
+  const port = http.address().port;
+  return {
+    answers,
+    seen,
+    authorizations,
+    url: `http://127.0.0.1:${port}/v1/signals/${server}/${signal}.${secret}`,
+  };
+};
+
+/** Run the hook once, like a host: returns stdout, the exit code and how long it took. */
+const hook = (env, args, input) =>
+  new Promise((resolve) => {
+    const started = Date.now();
+    const child = spawn(process.execPath, [script, ...args], {
+      env: { PATH: process.env.PATH, ...env },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (chunk) => (out += chunk));
+    child.stderr.on("data", (chunk) => (err += chunk));
+    child.on("close", (code) => resolve({ out: out.trim(), err, code, ms: Date.now() - started }));
+    child.stdin.end(input === undefined ? "" : JSON.stringify(input));
+  });
+
+const created = (url) => ({
+  data: { signalId: signal, url, expiresAt: "2030-01-01T00:00:00.000Z" },
+});
+
+test("Claude-format hosts: the link is saved from create_signal, the turn end continues, the loop stops", async (t) => {
+  const s = await stub(t);
+  const state = await mkdtemp(join(tmpdir(), "talkto-hook-state-"));
+  t.after(() => rm(state, { recursive: true, force: true }));
+  const env = { TALKTO_HOOKS_STATE_DIR: state };
+  const base = { session_id: "sess-1", cwd: "/work", transcript_path: null };
+
+  const start = await hook(env, ["claude", "session-start"], {
+    ...base,
+    hook_event_name: "SessionStart",
+    source: "startup",
+  });
+  assert.equal(start.code, 0);
+  const setup = JSON.parse(start.out);
+  assert.equal(setup.hookSpecificOutput.hookEventName, "SessionStart");
+  assert.match(setup.hookSpecificOutput.additionalContext, /create_signal/);
+  assert.match(setup.hookSpecificOutput.additionalContext, /--session sess-1/);
+
+  const saved = await hook(env, ["claude", "after-tool"], {
+    ...base,
+    hook_event_name: "PostToolUse",
+    tool_name: "mcp__talkto__create_signal",
+    tool_input: { serverId: server },
+    tool_response: [{ type: "text", text: JSON.stringify(created(s.url)) }],
+  });
+  assert.deepEqual(JSON.parse(saved.out), {
+    hookSpecificOutput: {
+      hookEventName: "PostToolUse",
+      additionalContext:
+        "TalkTo: signal link saved for this session. You will be told here when messages arrive; then call get_updates as usual.",
+    },
+  });
+  assert.equal((await readdir(state)).length, 1);
+
+  s.answers.push({ pending: 2, urgent: 0, cursor: message });
+  const stop = await hook(env, ["claude", "stop"], {
+    ...base,
+    hook_event_name: "Stop",
+    stop_hook_active: false,
+  });
+  assert.deepEqual(JSON.parse(stop.out), {
+    decision: "block",
+    reason: "TalkTo: 2 new messages. Call get_updates to read them, then carry on.",
+  });
+  const again = await hook(env, ["claude", "stop"], {
+    ...base,
+    hook_event_name: "Stop",
+    stop_hook_active: true,
+  });
+  assert.equal(again.out, "");
+  // The secret travels in the Authorization header, never in the URL that request logs record.
+  assert.equal(s.seen.at(-1), `/v1/signals/${server}/${signal}?since=${message}`);
+  assert.equal(s.authorizations.at(-1), `Bearer ${secret}`);
+  for (const url of s.seen) assert.ok(!url.includes(secret), url);
+
+  // Grok fires Stop when a session closes: that must never continue anything.
+  s.answers.push({ pending: 4, urgent: 0 });
+  const closing = await hook(env, ["claude", "stop"], {
+    sessionId: "sess-1",
+    hookEventName: "Stop",
+    reason: "shutdown",
+  });
+  assert.equal(closing.out, "");
+
+  // Another session of the same host has no link and stays quiet.
+  const other = await hook(env, ["claude", "stop"], {
+    session_id: "sess-2",
+    hook_event_name: "Stop",
+  });
+  assert.equal(other.out, "");
+});
+
+test("Cursor: followup_message at a completed turn end, additional_context for urgent mid-turn", async (t) => {
+  const s = await stub(t);
+  const state = await mkdtemp(join(tmpdir(), "talkto-hook-state-"));
+  t.after(() => rm(state, { recursive: true, force: true }));
+  const env = { TALKTO_HOOKS_STATE_DIR: state };
+  const base = {
+    conversation_id: "conv-9",
+    workspace_roots: ["/work"],
+    hook_event_name: "postToolUse",
+  };
+  const saved = await hook(env, ["cursor", "after-tool"], {
+    ...base,
+    tool_name: "MCP:create_signal",
+    tool_output: JSON.stringify(created(s.url)),
+  });
+  assert.match(JSON.parse(saved.out).additional_context, /signal link saved/);
+  s.answers.push({ pending: 1, urgent: 1, cursor: message });
+  const urgent = await hook(env, ["cursor", "after-tool"], {
+    ...base,
+    tool_name: "Shell",
+    tool_output: "{}",
+  });
+  assert.match(
+    JSON.parse(urgent.out).additional_context,
+    /^TalkTo: 1 urgent direct message just arrived/,
+  );
+  s.answers.push({ pending: 3, urgent: 0, cursor: message });
+  const aborted = await hook(env, ["cursor", "stop"], {
+    conversation_id: "conv-9",
+    status: "aborted",
+    loop_count: 0,
+  });
+  assert.equal(aborted.out, "");
+  const done = await hook(env, ["cursor", "stop"], {
+    conversation_id: "conv-9",
+    status: "completed",
+    loop_count: 0,
+  });
+  assert.deepEqual(JSON.parse(done.out), {
+    followup_message: "TalkTo: 3 new messages. Call get_updates to read them, then carry on.",
+  });
+});
+
+test("a hanging or absent server never holds the agent: quiet output, exit 0, bounded time", async (t) => {
+  const s = await stub(t);
+  const state = await mkdtemp(join(tmpdir(), "talkto-hook-state-"));
+  t.after(() => rm(state, { recursive: true, force: true }));
+  const env = { TALKTO_HOOKS_STATE_DIR: state };
+  await hook(env, ["codex", "after-tool"], {
+    session_id: "s",
+    tool_name: "mcp__talkto__create_signal",
+    tool_response: created(s.url),
+  });
+  s.answers.push("hang");
+  const slow = await hook(env, ["codex", "stop"], { session_id: "s", stop_hook_active: false });
+  assert.deepEqual([slow.out, slow.code], ["", 0]);
+  assert.ok(slow.ms < 6_000, `took ${slow.ms} ms`);
+  // A 404 ends the link; the next tool hook says so once.
+  const dead = await mkdtemp(join(tmpdir(), "talkto-hook-state-"));
+  t.after(() => rm(dead, { recursive: true, force: true }));
+  const env2 = { TALKTO_HOOKS_STATE_DIR: dead };
+  await hook(env2, ["codex", "after-tool"], {
+    session_id: "s",
+    tool_name: "mcp__talkto__create_signal",
+    tool_response: created(s.url),
+  });
+  s.answers.push(404);
+  assert.equal((await hook(env2, ["codex", "stop"], { session_id: "s" })).out, "");
+  const told = await hook(env2, ["codex", "after-tool"], { session_id: "s", tool_name: "Bash" });
+  assert.match(JSON.parse(told.out).hookSpecificOutput.additionalContext, /stopped working/);
+  // Garbage input, unknown hosts and unknown events print nothing and exit 0.
+  for (const args of [["codex", "stop"], ["nope", "stop"], ["codex", "nope"], []]) {
+    const result = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [script, ...args], {
+        env: { TALKTO_HOOKS_STATE_DIR: dead },
+      });
+      let out = "";
+      child.stdout.on("data", (chunk) => (out += chunk));
+      child.on("close", (code) => resolve({ out, code }));
+      child.stdin.end("{not json");
+    });
+    assert.deepEqual(result, { out: "", code: 0 }, args.join(" "));
+  }
+});
+
+test("Antigravity: the link is saved from the transcript, where the save command saves it", async (t) => {
+  const s = await stub(t);
+  const state = await mkdtemp(join(tmpdir(), "talkto-hook-state-"));
+  const brain = await mkdtemp(join(tmpdir(), "talkto-hook-brain-"));
+  t.after(() => rm(state, { recursive: true, force: true }));
+  t.after(() => rm(brain, { recursive: true, force: true }));
+  const env = { TALKTO_HOOKS_STATE_DIR: state };
+  const conversation = "94935fe4-0000-4000-8000-000000000001";
+  const logs = join(brain, conversation, ".system_generated", "logs");
+  await mkdir(logs, { recursive: true });
+  const transcriptPath = join(logs, "transcript.jsonl");
+  const base = { conversationId: conversation, workspacePaths: ["/work"], transcriptPath };
+  const local = (id) => s.url.replace(signal, id);
+  const steps = [user(), calls(["get_context"]), result({ data: {} })];
+  await writeFile(transcriptPath, transcript(...steps));
+
+  // No create_signal yet: PreInvocation stays quiet and nothing is saved.
+  assert.equal((await hook(env, ["antigravity", "after-tool"], base)).out, "");
+  assert.deepEqual(await readdir(state).catch(() => []), []);
+
+  steps.push(calls(["create_signal"]), signalResult(signal, local(signal)));
+  await writeFile(transcriptPath, transcript(...steps));
+  const saved = await hook(env, ["antigravity", "after-tool"], { ...base, invocationNum: 2 });
+  assert.deepEqual(JSON.parse(saved.out), {
+    injectSteps: [
+      {
+        ephemeralMessage: `TalkTo: signal link saved for this session. You will be told here when messages arrive; then call get_updates as usual. Now start the TalkTo watcher, unless the person asked you to stop watching: run \`node "${script}" watch antigravity\` with run_command as a background task (WaitMsBeforeAsync 3000).`,
+      },
+    ],
+  });
+  // The same file, mode, and session key as the save command.
+  const [file] = await readdir(state);
+  assert.equal((await stat(join(state, file))).mode & 0o777, 0o600);
+  const status = await hook(env, ["status", "antigravity", "--session", conversation]);
+  assert.match(status.out, /signal link active/);
+  assert.ok(!status.out.includes(secret));
+  assert.equal(s.seen.length, 0);
+
+  // The next model call sees the same result and says nothing more.
+  assert.equal((await hook(env, ["antigravity", "after-tool"], base)).out, "");
+  s.answers.push({ pending: 1, urgent: 0, cursor: message });
+  const stop = await hook(env, ["antigravity", "stop"], { ...base, continuationActive: false });
+  assert.equal(JSON.parse(stop.out).decision, "continue");
+
+  // A rotated link that transcript.jsonl cut short is read from transcript_full.jsonl.
+  const rotated = "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b";
+  await writeFile(
+    transcriptPath,
+    transcript(...steps, calls(["create_signal"]), cutResult(rotated)),
+  );
+  const full = [...steps, calls(["create_signal"], false), signalResult(rotated, local(rotated))];
+  await writeFile(join(logs, "transcript_full.jsonl"), transcript(...full));
+  const again = await hook(env, ["antigravity", "after-tool"], base);
+  assert.match(JSON.parse(again.out).injectSteps[0].ephemeralMessage, /signal link saved/);
+  assert.equal(JSON.parse(await readFile(join(state, file), "utf8")).signalId, rotated);
+  // No transcript, or a relative path: quiet.
+  for (const path of [join(logs, "missing.jsonl"), "transcript.jsonl"])
+    assert.equal(
+      (await hook(env, ["antigravity", "after-tool"], { ...base, transcriptPath: path })).out,
+      "",
+    );
+});
+
+test("save, status and forget work by hand for hosts that never show the hook a tool result", async (t) => {
+  const s = await stub(t);
+  const state = await mkdtemp(join(tmpdir(), "talkto-hook-state-"));
+  t.after(() => rm(state, { recursive: true, force: true }));
+  const env = { TALKTO_HOOKS_STATE_DIR: state };
+  const bad = await hook(env, ["save", "gemini", "--session", "g1", "https://example.com/nope"]);
+  assert.match(bad.out, /not a signal link/);
+  const good = await hook(env, ["save", "claude", "--session", "g1", s.url]);
+  assert.match(good.out, /saved/);
+  assert.doesNotMatch(good.out, /watcher/);
+  // On Antigravity the confirmation says to start the watcher, with the exact command.
+  const agy = await hook(env, ["save", "antigravity", "--session", "a1", s.url]);
+  assert.match(agy.out, /saved for this session\. .* Now start the TalkTo watcher/);
+  assert.match(agy.out, /node ".*talkto-hook\.mjs" watch antigravity/);
+  assert.match((await hook(env, ["status", "claude", "--session", "g1"])).out, /active/);
+  s.answers.push({ pending: 1, urgent: 0, cursor: message });
+  const stop = await hook(env, ["claude", "stop"], { session_id: "g1" });
+  assert.equal(JSON.parse(stop.out).decision, "block");
+  await hook(env, ["forget", "claude", "--session", "g1"]);
+  assert.match((await hook(env, ["status", "claude", "--session", "g1"])).out, /no signal link/);
+});
+
+/** A stand-in for agy's agent API: records each call, then answers as agy 1.5.9 did, or fails. */
+const fakeAgentApi = async (t) => {
+  const folder = await mkdtemp(join(tmpdir(), "talkto-hook-agentapi-"));
+  t.after(() => rm(folder, { recursive: true, force: true }));
+  const exe = join(folder, "agy");
+  const log = join(folder, "calls.jsonl");
+  await writeFile(
+    exe,
+    [
+      `#!${process.execPath}`,
+      'const { appendFileSync } = require("node:fs");',
+      "appendFileSync(process.env.FAKE_AGENTAPI_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');",
+      "if (process.env.FAKE_AGENTAPI_FAIL === '1') console.log(JSON.stringify({ error: 'ANTIGRAVITY_LS_ADDRESS is not set' }));",
+      "else console.log(JSON.stringify({ response: { sendMessage: { recipientId: process.argv[4], content: process.argv[5] } } }));",
+      "",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  return {
+    exe,
+    log,
+    calls: async () =>
+      (await readFile(log, "utf8").catch(() => ""))
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)),
+  };
+};
+
+/** Start the watcher like an agent's background command; collect its output until it exits. */
+const startWatcher = (env) => {
+  const child = spawn(process.execPath, [script, "watch", "antigravity"], {
+    env: { PATH: process.env.PATH, ...env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let out = "";
+  child.stdout.on("data", (chunk) => (out += chunk));
+  const exited = new Promise((resolve) => child.on("close", (code) => resolve(code)));
+  return { child, exited, output: () => out.trim() };
+};
+/** @param {() => Promise<boolean>} check */
+const eventually = async (check, ms = 5_000) => {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (await check()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+};
+
+test("Antigravity watcher: starts a turn through agy's agent API while idle, once per batch, one per conversation", async (t) => {
+  const s = await stub(t);
+  const api = await fakeAgentApi(t);
+  const state = await mkdtemp(join(tmpdir(), "talkto-hook-state-"));
+  t.after(() => rm(state, { recursive: true, force: true }));
+  const conversation = "94935fe4-0000-4000-8000-000000000002";
+  const agy = {
+    TALKTO_HOOKS_STATE_DIR: state,
+    ANTIGRAVITY_CONVERSATION_ID: conversation,
+    ANTIGRAVITY_LS_ADDRESS: "localhost:1",
+    ANTIGRAVITY_AGENTAPI_EXE: api.exe,
+    FAKE_AGENTAPI_LOG: api.log,
+  };
+  // Outside an agy command, or before the link is saved, it stops at once and says why.
+  const outside = startWatcher({ TALKTO_HOOKS_STATE_DIR: state });
+  assert.equal(await outside.exited, 0);
+  assert.match(outside.output(), /runs only inside an Antigravity agent's command/);
+  const early = startWatcher(agy);
+  assert.equal(await early.exited, 0);
+  assert.match(early.output(), /no signal link is saved/);
+
+  // The link is saved and the turn that saved it has ended.
+  const key = stateKey("antigravity", conversation, null);
+  await fileStore(state, key).save({
+    ...fresh(s.url, signal, "2030-01-01T00:00:00.000Z"),
+    turnSeenAt: 1,
+  });
+  s.answers.push({ pending: 2, urgent: 0, cursor: message });
+  const first = startWatcher(agy);
+  t.after(() => first.child.kill("SIGKILL"));
+  assert.ok(await eventually(async () => (await api.calls()).length === 1));
+  assert.deepEqual(await api.calls(), [
+    [
+      "agentapi",
+      "send-message",
+      conversation,
+      "TalkTo: 2 new messages. Call get_updates to read them, then carry on.",
+    ],
+  ]);
+  assert.match(first.output(), /^TalkTo watcher running for this conversation\./);
+  // The batch is claimed: the hooks will not announce it again.
+  const saved = JSON.parse(await readFile(join(state, `${key}.json`), "utf8"));
+  assert.equal(saved.cursor, message);
+  assert.equal(saved.turnActive, true);
+  assert.equal(s.authorizations.at(-1), `Bearer ${secret}`);
+
+  // A second watcher for the same conversation stops at once.
+  const second = startWatcher(agy);
+  assert.equal(await second.exited, 0);
+  assert.match(second.output(), /already running/);
+  // Killing the task (as /tasks or a stopped background task does) ends it and frees the conversation.
+  first.child.kill("SIGTERM");
+  assert.equal(await first.exited, 0);
+  assert.deepEqual(
+    (await readdir(state)).filter((name) => name.endsWith(".watch")),
+    [],
+  );
+});
+
+test("Antigravity watcher: when agy refuses the message, the watcher exits with the notice instead", async (t) => {
+  const s = await stub(t);
+  const api = await fakeAgentApi(t);
+  const state = await mkdtemp(join(tmpdir(), "talkto-hook-state-"));
+  t.after(() => rm(state, { recursive: true, force: true }));
+  const conversation = "94935fe4-0000-4000-8000-000000000003";
+  const key = stateKey("antigravity", conversation, null);
+  await fileStore(state, key).save({
+    ...fresh(s.url, signal, "2030-01-01T00:00:00.000Z"),
+    turnSeenAt: 1,
+  });
+  s.answers.push({ pending: 1, urgent: 1, cursor: message });
+  const watcher = startWatcher({
+    TALKTO_HOOKS_STATE_DIR: state,
+    ANTIGRAVITY_CONVERSATION_ID: conversation,
+    ANTIGRAVITY_LS_ADDRESS: "localhost:1",
+    ANTIGRAVITY_AGENTAPI_EXE: api.exe,
+    FAKE_AGENTAPI_LOG: api.log,
+    FAKE_AGENTAPI_FAIL: "1",
+  });
+  assert.equal(await watcher.exited, 0);
+  // A finished background task reaches the agent too, so the notice still arrives.
+  assert.match(
+    watcher.output(),
+    /TalkTo: 1 new message, 1 urgent\. Call get_updates to read it, then carry on\. \(The TalkTo watcher could not start a turn/,
+  );
+  assert.deepEqual(await readdir(state), [`${key}.json`]);
+});

@@ -1,0 +1,802 @@
+/*
+  The Setup page (/setup): a centred headline like the home page, then the three plugin cards fed
+  by an LED wire drawn like the home page's line bundles (4px dot pitch, the kit's magenta, green
+  and yellow), then the steps and a lighter MCP band. Shares the full-bleed layout's bar, footer,
+  kicker and type (landing-layout.css).
+
+  Motion: one packet runs along each bundle, one drops down each card's line, and the card's port
+  lamp lights as it lands. Transform and opacity only. Reduced motion shows the
+  still; a hidden tab (edges.ts) or an off-screen stage ([data-paused]) pauses it.
+*/
+:root[data-surface="public"] {
+  --wire-magenta: #731676;
+  --wire-green: #4b7e1e;
+  --wire-yellow: #847713;
+}
+:root[data-surface="public"][data-theme="dark"] {
+  --wire-magenta: #a61ca6;
+  --wire-green: #6eb629;
+  --wire-yellow: #beb31b;
+}
+
+/* Hero */
+.su-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(40px, 6vh, 104px) var(--gutter) 0;
+  text-align: center;
+}
+.su-hero .fb-kicker {
+  margin-bottom: clamp(14px, 1.6vw, 24px);
+}
+.su-title {
+  font: 900 clamp(46px, 6.6vw, 168px) / 0.95 var(--sans);
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+.su-hero .fb-lede {
+  max-width: none;
+  text-wrap: balance;
+}
+
+/* Plugins */
+.su-plugins {
+  padding-top: clamp(40px, 5vw, 80px);
+}
+.su-label {
+  width: min(var(--measure), 100%);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+.su-heading {
+  font: 800 clamp(34px, 3.6vw, 60px) / 1 var(--sans);
+  letter-spacing: -0.04em;
+}
+.su-note {
+  width: min(var(--measure), 100%);
+  max-width: none;
+  margin: 28px auto 0;
+  padding: 0 var(--gutter);
+  color: var(--muted);
+  font-size: 17px;
+}
+
+/* Other supported agents: the MCP section's tool row, each tool a link down to that section. */
+.su-others {
+  display: grid;
+  gap: 14px;
+  width: min(var(--measure), 100%);
+  margin: 36px auto 0;
+  padding: 0 var(--gutter);
+}
+.su-others h3 {
+  color: var(--muted);
+  font: 13px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.su-tools-links {
+  gap: 8px;
+}
+.su-tools.su-tools-links li {
+  --tile: 28px;
+  padding: 0;
+  border: 0;
+  font-size: 14px;
+}
+.su-tools-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 5px 12px 5px 5px;
+  border: 1px solid var(--subtle-line);
+  background: var(--paper);
+  color: var(--ink);
+  text-decoration: none;
+}
+.su-tools-links li:last-child a {
+  color: var(--muted);
+}
+.su-tools-links a:hover {
+  border-color: var(--ink);
+}
+.su-tools-links a:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: 2px;
+}
+#mcp {
+  scroll-margin-top: 24px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html:has(#mcp) {
+    scroll-behavior: smooth;
+  }
+}
+
+/* The stage pulls the cards up under the strip, so each card's line runs straight into it. */
+.su-stage {
+  --pad: 28px;
+  --tile: 52px;
+  position: relative;
+  margin-top: clamp(24px, 3vw, 40px);
+  padding-bottom: clamp(80px, 9vw, 136px);
+}
+/* One dotted line per plugin, 18px apart, at the home page bundles' 4px dot pitch. */
+.su-wire {
+  position: relative;
+  height: 40px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, var(--wire-magenta) 0 3px, transparent 0) 0 1px / 4px 3px repeat-x,
+    linear-gradient(90deg, var(--wire-green) 0 3px, transparent 0) 0 19px / 4px 3px repeat-x,
+    linear-gradient(90deg, var(--wire-yellow) 0 3px, transparent 0) 0 37px / 4px 3px repeat-x;
+  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+}
+/* A packet: one bright dot that steps along its line, dot by dot. */
+.su-run {
+  display: none;
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 5px;
+}
+.su-run::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  background: var(--edges-packet);
+}
+.su-run-magenta {
+  top: 0;
+}
+.su-run-green {
+  top: 18px;
+}
+.su-run-yellow {
+  top: 36px;
+}
+.su-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  width: min(var(--measure), 100%);
+  margin: 32px auto 0;
+  padding: 0 var(--gutter);
+  list-style: none;
+}
+.su-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+  padding: var(--pad);
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+.su-card .su-install {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+}
+.su-card-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+.su-card-head h3 {
+  font: 650 clamp(22px, 1.8vw, 28px) / 1.1 var(--sans);
+  letter-spacing: -0.02em;
+}
+.su-tag {
+  align-self: start;
+  padding: 2px 8px;
+  border: 1px solid var(--subtle-line);
+  color: var(--muted);
+  font: 12px/1.6 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Each card's line leaves its own row of the strip (magenta, green, yellow) and drops into the
+   card above its mark, ending in a port lamp on the card's edge. */
+.su-wire-magenta {
+  --wire: var(--wire-magenta);
+  --drop: 71px;
+}
+.su-wire-green {
+  --wire: var(--wire-green);
+  --drop: 53px;
+}
+.su-wire-yellow {
+  --wire: var(--wire-yellow);
+  --drop: 35px;
+}
+.su-drop {
+  position: absolute;
+  bottom: calc(100% + 1px);
+  left: calc(var(--pad) + var(--tile) / 2 - 2px);
+  width: 3px;
+  height: var(--drop);
+  background: linear-gradient(var(--wire) 0 3px, transparent 3px) 0 0 / 3px 4px repeat-y;
+}
+/* The tap where the line leaves its bundle, and the port lamp where it meets the card. */
+.su-drop::before,
+.su-drop::after {
+  content: "";
+  position: absolute;
+}
+.su-drop::before {
+  top: -2px;
+  left: -2px;
+  width: 7px;
+  height: 7px;
+  background: var(--wire);
+}
+.su-drop::after {
+  bottom: -5px;
+  left: -2px;
+  width: 7px;
+  height: 7px;
+  background: var(--wire);
+}
+.su-drop-packet {
+  display: none;
+  position: absolute;
+  inset: 0;
+}
+
+/* Delivery: what the plugin does, in two short rows. */
+.su-delivery {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font: 14px/1.5 var(--mono);
+}
+.su-delivery > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--subtle-line);
+}
+.su-delivery dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+.su-delivery dt i {
+  width: 7px;
+  height: 7px;
+  background: var(--line);
+}
+.su-delivery dd {
+  margin: 0;
+  color: var(--ink);
+}
+.su-delivery .su-urgent dt i {
+  background: var(--lamp);
+}
+.su-delivery .su-urgent dd {
+  color: var(--lamp-ink);
+}
+
+/* Steps */
+.su-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px clamp(24px, 3vw, 48px);
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.su-steps li {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 18px;
+  line-height: 1.5;
+}
+.su-steps .lp-step-number {
+  padding-top: 3px;
+  font-size: 14px;
+}
+.su-actions {
+  justify-content: flex-start;
+  margin-top: 40px;
+}
+
+/* Install lines and their Copy buttons. */
+.su-code {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 12px 12px 16px;
+  border: 1px solid var(--subtle-line);
+  background: var(--soft);
+}
+.su-code code {
+  flex: 1;
+  min-width: 0;
+  padding-top: 4px;
+  font: 13px/1.6 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* With a caption: caption and Copy on a bar, the line under them at the block's full width. */
+.su-code-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  padding: 8px 8px 14px 16px;
+}
+.su-code-bar code {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  padding: 0 8px 0 0;
+}
+.su-caption {
+  grid-row: 1;
+  align-self: center;
+  color: var(--muted);
+  font: 12px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.su-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: none;
+  min-width: 84px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font: 13px var(--mono);
+  cursor: pointer;
+}
+.su-copy:hover {
+  border-color: var(--ink);
+}
+.su-copy i {
+  width: 6px;
+  height: 6px;
+  background: var(--line);
+}
+.su-code[data-state="copied"] .su-copy {
+  border-color: var(--lamp-ink);
+}
+.su-code[data-state="copied"] .su-copy i {
+  background: var(--lamp);
+}
+
+/* Marks: a square tile, like the Inbox's large marks. Cursor, Droid and Amp are their black app
+   icons; a hairline keeps the black tile's edge visible on the dark page. */
+.su-tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--tile, 52px);
+  height: var(--tile, 52px);
+  border: 1px solid var(--subtle-line);
+  background: var(--soft);
+  color: var(--ink);
+}
+.su-tile svg {
+  display: block;
+  width: 58%;
+  height: 58%;
+}
+.su-tile-claude svg {
+  width: 62%;
+  height: 62%;
+}
+.su-tile-pi svg {
+  width: 56%;
+  height: 56%;
+}
+.su-tile-opencode svg {
+  width: 46%;
+  height: 46%;
+}
+.su-tile-cursor,
+.su-tile-droid,
+.su-tile-amp {
+  border-color: #000;
+  background: #000;
+}
+:root[data-theme="dark"] .su-tile-cursor,
+:root[data-theme="dark"] .su-tile-droid,
+:root[data-theme="dark"] .su-tile-amp {
+  border-color: #34352f;
+}
+.su-tile-cursor svg {
+  width: 50%;
+  height: 50%;
+}
+/* Grok Bot, as in the Inbox: a near-black circle with white eyes, white with dark eyes when dark. */
+.su-tile-grok svg {
+  width: 60%;
+  height: 60%;
+}
+:root[data-theme="dark"] .su-grok-body {
+  fill: #fff;
+}
+:root[data-theme="dark"] .su-grok-eyes {
+  fill: #0b0b0c;
+}
+.su-tile-droid i {
+  width: 62%;
+  height: 62%;
+  background: #fff;
+  mask: url("../assets/agents/droid.png") center / contain no-repeat;
+}
+.su-tile-amp {
+  color: #fff;
+}
+.su-tile-amp svg {
+  width: 72%;
+  height: 72%;
+}
+.su-tile-copilot svg {
+  width: 54%;
+  height: 54%;
+}
+/* Gemini CLI: its own app icon, which brings its rounded tile, so the square tile steps back. */
+.su-tile-gemini {
+  border-color: transparent;
+  background: none;
+}
+.su-tile-gemini i {
+  width: 100%;
+  height: 100%;
+  background: url("../assets/agents/gemini-cli.png") center / contain no-repeat;
+}
+/* Hermes: the Nous girl in the text colour, with the Inbox's separate drawing for the dark theme. */
+.su-tile-hermes i {
+  width: 62%;
+  height: 62%;
+  background: currentColor;
+  mask: url("../assets/agents/hermes-light.png") center / contain no-repeat;
+}
+:root[data-theme="dark"] .su-tile-hermes i {
+  mask-image: url("../assets/agents/hermes-dark.png");
+}
+.su-tile-antigravity svg {
+  width: 64%;
+  height: 64%;
+}
+.su-tile-devin svg,
+.su-tile-chatgpt svg {
+  width: 60%;
+  height: 60%;
+}
+.su-tile-poke svg,
+.su-tile-town svg {
+  width: 50%;
+  height: 50%;
+}
+.su-tile-muse svg {
+  width: 66%;
+  height: 66%;
+}
+.su-tile-generic {
+  color: var(--muted);
+}
+.su-tile-generic svg {
+  width: 50%;
+  height: 50%;
+}
+.su-tile-mcp {
+  border-style: dashed;
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+/* MCP */
+.su-mcp-body {
+  display: grid;
+  gap: 28px;
+  padding-top: 34px;
+  font-size: 18px;
+  line-height: 1.6;
+}
+.su-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.su-tools li {
+  --tile: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 14px 5px 5px;
+  border: 1px solid var(--subtle-line);
+  font: 500 15px/1 var(--sans);
+}
+.su-tools li:last-child {
+  color: var(--muted);
+}
+/* One-click installs: Cursor's deeplink and VS Code's install link. */
+.su-oneclick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.su-install {
+  --tile: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 7px 18px 7px 7px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 16px/1 var(--sans);
+  text-decoration: none;
+}
+.su-install:hover {
+  border-color: var(--ink);
+}
+.su-install:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: 2px;
+}
+.su-lines {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.su-lines > div {
+  display: grid;
+  grid-template-columns: 10em minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 16px;
+}
+.su-lines dt {
+  color: var(--muted);
+  font: 13px var(--mono);
+}
+.su-lines dd {
+  min-width: 0;
+  margin: 0;
+}
+.su-docs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 20px;
+}
+.su-docs .lp-docs > a {
+  color: var(--ink);
+  font-weight: 500;
+  text-underline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .su-run {
+    display: block;
+    animation: su-run 5.2s steps(360, end) infinite both;
+  }
+  .su-run-green {
+    animation-duration: 4.4s;
+    animation-delay: 1.3s;
+  }
+  .su-run-yellow {
+    animation-duration: 6s;
+    animation-delay: 2.6s;
+  }
+  .su-drop-packet {
+    display: block;
+    animation: su-drop 3.6s steps(var(--steps), end) infinite both;
+  }
+  .su-drop-packet::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    left: -1px;
+    width: 5px;
+    height: 5px;
+    background: var(--edges-packet);
+  }
+  .su-drop::after {
+    animation: su-port 3.6s infinite both;
+  }
+  .su-wire-magenta {
+    --steps: 18;
+  }
+  .su-wire-green {
+    --steps: 13;
+  }
+  .su-wire-yellow {
+    --steps: 9;
+  }
+  /* Staggered, so the three packets land one after another. */
+  .su-wire-magenta .su-drop-packet,
+  .su-wire-magenta .su-drop::after {
+    animation-delay: 0.2s;
+  }
+  .su-wire-green .su-drop-packet,
+  .su-wire-green .su-drop::after {
+    animation-delay: 1.4s;
+  }
+  .su-wire-yellow .su-drop-packet,
+  .su-wire-yellow .su-drop::after {
+    animation-delay: 2.6s;
+  }
+}
+@keyframes su-run {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes su-drop {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(100%);
+  }
+  41%,
+  100% {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+/* The port is half lit, and lights fully for a moment as the packet lands. */
+@keyframes su-port {
+  0%,
+  39% {
+    opacity: 0.45;
+  }
+  40%,
+  52% {
+    opacity: 1;
+  }
+  53%,
+  100% {
+    opacity: 0.45;
+  }
+}
+:root[data-edges-paused] .su-stage *,
+:root[data-edges-paused] .su-stage *::before,
+:root[data-edges-paused] .su-stage *::after,
+.su-stage[data-paused] *,
+.su-stage[data-paused] *::before,
+.su-stage[data-paused] *::after {
+  animation-play-state: paused;
+}
+
+@media (min-width: 2000px) {
+  .su-title {
+    font-size: clamp(46px, 6.2vw, 168px);
+  }
+}
+
+/* Below three comfortable columns the cards stack and the lines into them go. */
+@media (max-width: 1080px) {
+  .su-cards {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .su-drop {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .su-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .su-mcp-body {
+    padding-top: 0;
+  }
+}
+/* Phones: the cards stack under the wire; install lines wrap inside their blocks. */
+@media (max-width: 720px) {
+  .su-title {
+    font-size: clamp(42px, 12.4vw, 72px);
+  }
+  .su-actions .lp-button {
+    flex: 1 1 auto;
+  }
+  .su-steps li {
+    font-size: 16px;
+  }
+  .su-stage {
+    --pad: 20px;
+    --tile: 44px;
+  }
+  .su-run {
+    animation-timing-function: steps(100, end);
+  }
+  .su-cards {
+    margin-top: 20px;
+  }
+  .su-card {
+    gap: 20px;
+  }
+  /* The Plugin tag sits under the name, so the name has the card's width ("OpenCode" no longer
+     runs into the tag). */
+  .su-card-head {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 16px;
+  }
+  .su-card-head .su-tile {
+    grid-row: span 2;
+  }
+  .su-card-head h3 {
+    align-self: end;
+  }
+  .su-card-head .su-tag {
+    justify-self: start;
+  }
+  /* The install lines sit straight in the card, not in a second frame inside it. */
+  .su-card .su-install {
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+  .su-code:not(.su-code-bar) {
+    flex-direction: column-reverse;
+    gap: 6px;
+    padding: 10px 10px 12px 12px;
+  }
+  .su-code:not(.su-code-bar) .su-copy {
+    align-self: flex-end;
+  }
+  .su-code-bar {
+    padding-left: 12px;
+  }
+  .su-lines > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .su-tools li {
+    --tile: 30px;
+    font-size: 14px;
+  }
+  .su-others {
+    margin-top: 28px;
+  }
+  .su-tools-links {
+    gap: 6px;
+  }
+  .su-tools.su-tools-links li {
+    --tile: 26px;
+    font-size: 13px;
+  }
+  .su-tools-links a {
+    gap: 7px;
+    min-height: 36px;
+    padding-right: 10px;
+  }
+  .su-install {
+    flex: 1 1 100%;
+  }
+}

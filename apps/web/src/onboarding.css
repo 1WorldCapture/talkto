@@ -1,0 +1,572 @@
+/*
+  First-run setup (onboarding.tsx), from the owner-approved prototype (November 18, 2026). Setup is
+  on the dashboard surface (public/theme.js), so the colours, fonts and focus ring are the
+  dashboard's (brand-app.css): the dashboard's top bar without its navigation, then one white
+  panel with a hairline edge in the middle of the page.
+*/
+:root[data-surface="dashboard"] body[data-surface="dashboard"] #stage:has(> .first-setup) {
+  padding: 0;
+}
+/* Each screen moves focus to its title for screen readers; the title is not a control. */
+:root[data-surface="dashboard"] .first-setup h1[tabindex]:focus-visible {
+  outline: none;
+}
+.first-setup {
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.55 var(--sans);
+  font-variant-numeric: tabular-nums;
+
+  * {
+    box-sizing: border-box;
+  }
+  :is(h1, p, dl, dd, ul) {
+    margin: 0;
+  }
+  :is(button, input, select) {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* The top bar: the dashboard's (layout.css .ops-titlebar) without the navigation. */
+  .fs-bar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    padding: 0 40px 0 24px;
+    border-bottom: 1px solid var(--subtle-line);
+    background: var(--paper);
+  }
+  .fs-brand {
+    display: inline-flex;
+    align-items: baseline;
+    color: var(--ink);
+    font: 900 22px/56px var(--sans);
+    letter-spacing: -0.02em;
+    text-decoration: none;
+  }
+  .fs-brand::after {
+    content: "";
+    width: 0.32em;
+    height: 0.32em;
+    margin-left: 0.06em;
+    background: var(--lamp);
+  }
+  .theme-toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .theme-toggle:hover {
+    color: var(--ink);
+  }
+
+  .fs-main {
+    display: flex;
+    justify-content: center;
+    padding: 64px 24px 120px;
+  }
+  .fs-panel {
+    width: 100%;
+    max-width: 600px;
+    padding: 32px;
+    border: 1px solid var(--subtle-line);
+    background: var(--surface);
+    animation: fs-enter 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  .fs-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .fs-segments {
+    display: flex;
+    gap: 4px;
+  }
+  .fs-segments i {
+    width: 24px;
+    height: 3px;
+    background: var(--subtle-line);
+  }
+  .fs-segments i.filled {
+    background: var(--ink);
+  }
+  h1 {
+    font: 600 26px/1.22 var(--sans);
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+  }
+  .fs-handle {
+    font-family: var(--mono);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+  }
+  .fs-now {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 15px;
+  }
+  .fs-body {
+    display: grid;
+    gap: 16px;
+    margin-top: 24px;
+  }
+
+  .fs-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .fs-tick {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    background: var(--ink);
+    color: var(--surface);
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .fs-field {
+    display: grid;
+    gap: 6px;
+  }
+  .fs-field label {
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .fs-field :is(input, select) {
+    width: 100%;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--control-line);
+    border-radius: 0;
+    background: var(--surface);
+    font-size: 15px;
+  }
+  .fs-hint {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* The buttons over a hairline; the way out is always outlined and says where it goes. */
+  .fs-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--subtle-line);
+  }
+  .fs-body > .fs-actions {
+    margin-top: 12px;
+  }
+  .fs-actions .lone {
+    margin-left: auto;
+  }
+  .fs-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 18px;
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    background: var(--ink);
+    color: var(--paper);
+    font: 500 14px/1 var(--sans);
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      background-color 120ms ease-out,
+      color 120ms ease-out,
+      border-color 120ms ease-out;
+  }
+  .fs-btn:hover:not(:disabled, [aria-disabled="true"]) {
+    background: transparent;
+    color: var(--ink);
+  }
+  .fs-btn.secondary {
+    border-color: var(--control-line);
+    background: transparent;
+    color: var(--ink);
+  }
+  .fs-btn.secondary:hover:not(:disabled, [aria-disabled="true"]) {
+    border-color: var(--ink);
+  }
+  .fs-btn:is(:disabled, [aria-disabled="true"]) {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .fs-btn.wide {
+    width: 100%;
+  }
+  .fs-btn[data-copied] {
+    background: transparent;
+    color: var(--ink);
+  }
+  .fs-exit-note {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: right;
+  }
+  .fs-exit-note.center {
+    text-align: center;
+  }
+  .fs-text-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ink);
+    font: 500 14px/1.4 var(--sans);
+    text-decoration: underline;
+    text-decoration-color: var(--control-line);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+    cursor: pointer;
+  }
+  .fs-text-button:hover {
+    text-decoration-color: currentColor;
+  }
+
+  /* Agent choice: compact chips, the popular ones first. */
+  .fs-chips {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .fs-chips[hidden] {
+    display: none;
+  }
+  .fs-chip {
+    --tile: 26px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 8px 10px;
+    border: 1px solid var(--subtle-line);
+    border-radius: 0;
+    background: var(--surface);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.25;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color 120ms ease-out,
+      background-color 120ms ease-out;
+  }
+  .fs-chip:hover {
+    border-color: var(--control-line);
+  }
+  .fs-chip[aria-pressed="true"] {
+    border-color: var(--ink);
+    background: var(--soft);
+  }
+  .fs-chip[aria-pressed="true"]::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 6px;
+    height: 6px;
+    background: var(--lamp);
+  }
+  .fs-chip > span:last-child {
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+  .fs-more {
+    justify-self: start;
+    color: var(--muted);
+  }
+  .fs-chevron {
+    display: inline-block;
+    transition: transform 160ms ease-out;
+  }
+  .fs-more[aria-expanded="true"] .fs-chevron {
+    transform: rotate(180deg);
+  }
+
+  /* The picked agent, as one row above its message. */
+  .fs-picked {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--subtle-line);
+    background: var(--soft);
+  }
+  .fs-picked .su-tile {
+    --tile: 32px;
+    background: var(--surface);
+  }
+  .fs-picked strong {
+    font-weight: 500;
+  }
+  .fs-picked .fs-text-button {
+    margin-left: auto;
+    font-size: 13px;
+  }
+
+  .fs-prompt-box {
+    display: grid;
+    gap: 10px;
+  }
+  .fs-prompt {
+    max-height: 196px;
+    margin: 0;
+    overflow: auto;
+    padding: 14px 16px;
+    border: 1px solid var(--subtle-line);
+    background: var(--soft);
+    font: 12.5px/1.62 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .fs-wait {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px dashed var(--line);
+  }
+  .fs-lamp {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    margin-top: 7px;
+    background: var(--lamp);
+    animation: fs-breathe 1.8s ease-in-out infinite;
+  }
+  .fs-wait strong {
+    display: block;
+    font-weight: 500;
+  }
+  .fs-wait span {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .fs-wait.heard {
+    border-style: solid;
+  }
+  .fs-heard-mark {
+    flex: none;
+    color: var(--say-ink);
+    font-style: normal;
+    font-weight: 600;
+    line-height: 22px;
+  }
+
+  .fs-arrival {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .fs-arrival .su-tile {
+    --tile: 48px;
+  }
+  .fs-check {
+    display: inline-grid;
+    place-items: center;
+    box-sizing: content-box;
+    width: 22px;
+    height: 22px;
+    margin: 30px 0 0 -10px;
+    border: 2px solid var(--surface);
+    background: var(--ink);
+    color: var(--surface);
+    font-size: 13px;
+  }
+
+  .fs-agents {
+    display: grid;
+    gap: 8px;
+  }
+  .fs-agents-label {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .fs-agents ul {
+    padding: 0;
+    border: 1px solid var(--subtle-line);
+    list-style: none;
+  }
+  .fs-agents li {
+    --tile: 28px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 10px 12px;
+  }
+  .fs-agents li + li {
+    border-top: 1px solid var(--subtle-line);
+  }
+  /* The name, then its tool; on a phone the tool moves under the name. */
+  .fs-who {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 12px;
+    min-width: 0;
+  }
+  .fs-tool {
+    color: var(--muted);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  /* Only "Listening" is good news; "Joined" says no more than that. */
+  .fs-joined {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .fs-joined.heard {
+    color: var(--say-ink);
+  }
+  .su-tile-generic .agent-icon {
+    width: 62%;
+    height: 62%;
+  }
+
+  .fs-progress {
+    position: relative;
+    height: 3px;
+    overflow: hidden;
+    background: var(--subtle-line);
+  }
+  .fs-progress::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 34%;
+    background: var(--ink);
+    animation: fs-slide 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  .fs-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    font-size: 14px;
+  }
+  .fs-facts dt {
+    color: var(--muted);
+  }
+  .fs-facts dd {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  .notice {
+    margin-top: 16px;
+  }
+}
+@keyframes fs-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fs-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+@keyframes fs-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .first-setup {
+    :is(.fs-panel, .fs-lamp) {
+      animation: none;
+    }
+    .fs-progress::before {
+      width: 100%;
+      opacity: 0.35;
+      animation: none;
+    }
+  }
+}
+@media (max-width: 650px) {
+  .first-setup {
+    .fs-bar {
+      padding: 0 12px 0 16px;
+    }
+    .fs-main {
+      padding: 20px 12px 110px;
+    }
+    .fs-panel {
+      padding: 24px 20px;
+    }
+    h1 {
+      font-size: 23px;
+    }
+    .fs-chips {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .fs-actions {
+      flex-direction: column-reverse;
+      align-items: stretch;
+    }
+    .fs-actions .fs-btn {
+      width: 100%;
+      min-height: 44px;
+    }
+    .fs-exit-note {
+      text-align: center;
+    }
+    .fs-field :is(input, select) {
+      height: 44px;
+      font-size: 16px;
+    }
+  }
+}

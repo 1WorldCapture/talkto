@@ -1,0 +1,381 @@
+/* The connect walkthrough (agent-walkthrough.tsx). In the dashboard it fills the screen: the step
+   list on the left, one step in the middle, Back and Next pinned at the bottom. Only the middle
+   scrolls, and only when a phone is too short for a step. */
+
+:root[data-surface="dashboard"] .modal.connect-dialog {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  overflow: hidden;
+}
+:root[data-surface="dashboard"] .modal.connect-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+:root[data-surface="dashboard"] .modal.connect-dialog > header {
+  align-items: center;
+  margin: 0;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--subtle-line);
+}
+:root[data-surface="dashboard"] .modal.connect-dialog > header h2 {
+  font-size: 16px;
+}
+:root[data-surface="dashboard"] .modal.connect-dialog > header button {
+  margin: 0 -8px 0 0;
+}
+.connect-dialog .connect-body {
+  min-height: 0;
+  overflow: auto;
+}
+/* The grid, the same-machine question and the plain prompt: one centered column. */
+.connect-dialog .connect-body:not([data-stage="walk"]) {
+  padding: 40px 24px 48px;
+}
+.connect-dialog .connect-pick {
+  width: min(680px, 100%);
+  margin: 0 auto;
+}
+.connect-dialog .connect-body[data-stage="walk"] {
+  overflow: hidden;
+}
+
+.walk {
+  --walk-rail: 280px;
+  text-align: left;
+  display: grid;
+  grid-template-columns: var(--walk-rail) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+}
+
+/* The step list: where you are, what is done, what is left. */
+.walk-rail {
+  grid-row: 1 / 3;
+  padding: 24px 16px;
+  border-right: 1px solid var(--subtle-line);
+  background: var(--soft);
+  overflow: auto;
+}
+:root[data-surface="dashboard"] .modal .walk-agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 20px 8px;
+  font: 600 15px/1.3 var(--sans);
+}
+.walk-agent .su-tile {
+  --tile: 28px;
+}
+.walk-rail ol {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.walk-rail button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font: 400 14px/1.35 var(--sans);
+  text-align: left;
+}
+.walk-rail button:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.walk-rail li[data-done="true"] button {
+  color: var(--ink);
+}
+.walk-rail li[aria-current="step"] button {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--subtle-line);
+}
+
+.walk-dot {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--control-line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted);
+  font: 500 12px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+.walk-rail li[data-done="true"] .walk-dot {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+.walk-rail li[aria-current="step"] .walk-dot {
+  border-color: var(--accent-ink);
+  background: var(--accent-ink);
+  color: var(--surface);
+}
+
+/* One step at a time, in a readable column. */
+.walk-main {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+}
+.walk-progress {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 3px;
+  background: var(--subtle-line);
+}
+.walk-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent-ink);
+  transition: width 240ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+.walk-page {
+  display: grid;
+  gap: 16px;
+  width: min(640px, 100%);
+  margin: 0 auto;
+  padding: 48px 32px 40px;
+}
+:root[data-surface="dashboard"] .modal .walk-page p {
+  margin: 0;
+}
+:root[data-surface="dashboard"] .modal .walk-kicker {
+  color: var(--accent-ink);
+  font: 600 13px/1.3 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+:root[data-surface="dashboard"] .modal .walk-page h3 {
+  margin: -8px 0 4px;
+  font: 600 26px/1.2 var(--sans);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.walk-page h3:focus {
+  outline: none;
+}
+.walk-page .setup-lead {
+  font-size: 16px;
+}
+.walk-page .connect-steps {
+  font-size: 15px;
+}
+:root[data-surface="dashboard"] .modal .walk-note {
+  color: var(--muted);
+  font-size: 14px;
+}
+.walk-note a {
+  color: var(--ink);
+}
+
+/* The plan: every step, numbered, before the first one starts. */
+.walk-plan {
+  display: grid;
+  gap: 0;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--subtle-line);
+  border-radius: 12px;
+}
+.walk-plan li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+}
+.walk-plan li + li {
+  border-top: 1px solid var(--subtle-line);
+}
+.walk-plan li > span:last-child {
+  display: grid;
+  gap: 2px;
+  padding-top: 2px;
+}
+.walk-plan strong {
+  font-weight: 600;
+}
+.walk-plan li > span:last-child > span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+/* On a wide screen the plan sits beside the choice, so both fit without scrolling. */
+@media (min-width: 1100px) {
+  .walk-page[data-plan] {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    align-items: start;
+    column-gap: 48px;
+    width: min(1000px, 100%);
+  }
+  .walk-page[data-plan] > * {
+    grid-column: 1;
+  }
+  .walk-page[data-plan] > .walk-plan {
+    grid-column: 2;
+    grid-row: 1 / span 5;
+    margin: 0;
+  }
+}
+.walk-page .connect-ways {
+  margin: 0;
+}
+
+/* Waiting for the agent, then the moment it joins. */
+.walk-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 15px;
+}
+.walk-status[data-done] {
+  background: var(--accent);
+  color: var(--ink);
+}
+.walk-status[data-done] > span:first-child {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+.walk-status .text-button {
+  font-size: 15px;
+}
+.walk .waiting-dots {
+  display: flex;
+  gap: 3px;
+}
+.walk .waiting-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .walk .waiting-dots i {
+    animation: walk-dot 900ms ease-in-out infinite;
+  }
+  .walk .waiting-dots i:nth-child(2) {
+    animation-delay: 120ms;
+  }
+  .walk .waiting-dots i:nth-child(3) {
+    animation-delay: 240ms;
+  }
+  .walk-page {
+    animation: walk-in 200ms cubic-bezier(0.25, 1, 0.5, 1);
+  }
+}
+@keyframes walk-dot {
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes walk-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Back and Next stay put, so the way forward is always in the same place. */
+.walk-foot {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 32px;
+  border-top: 1px solid var(--subtle-line);
+  background: var(--surface);
+}
+.walk-count {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: right;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.walk-foot .btn {
+  min-height: 44px;
+  max-width: 100%;
+  white-space: normal;
+}
+.walk-foot .btn:disabled {
+  cursor: progress;
+}
+
+/* The Auto-start form inside the last step. */
+.walk-page .wake-panel {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--subtle-line);
+  border-radius: 12px;
+}
+
+@media (max-width: 760px) {
+  .walk {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .walk-rail {
+    display: none;
+  }
+  .walk-page {
+    padding: 28px 20px 32px;
+  }
+  :root[data-surface="dashboard"] .modal .walk-page h3 {
+    font-size: 22px;
+  }
+  .walk-foot {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+  .walk-count {
+    visibility: hidden;
+  }
+}
+
+/* Onboarding's page rules size every input and label; the way choice keeps its own row. */
+.connect-dialog .walk .connect-way {
+  display: flex;
+  margin: 0;
+  text-align: left;
+}
+.connect-dialog .walk .connect-way input {
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+}
+
+/* A page with one action shows it without a lone "1". */
+.walk-one {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  font-size: 15px;
+}

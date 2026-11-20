@@ -1,0 +1,116 @@
+// Self-hosted TalkTo: a template. Do not deploy this file.
+// `pnpm selfhost:config` fills every __PLACEHOLDER__ from environment variables and writes
+// wrangler.selfhost.jsonc (see docs/self-host.md). It derives workers_dev and routes from
+// TALKTO_SERVICE_ORIGIN: a workers.dev origin uses workers.dev; any other host becomes a Custom Domain.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "__NAME__",
+  "account_id": "__CLOUDFLARE_ACCOUNT_ID__",
+  "main": "src/worker.ts",
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    // Unknown paths get the nearest 404.html with a 404 status. The dashboard's routes run the
+    // Worker first. A self-hosted copy has no public website: its pages ("/" to "/privacy") also
+    // run the Worker first, which sends them to the dashboard.
+    "not_found_handling": "404-page",
+    "run_worker_first": [
+      "/",
+      "/teams",
+      "/setup",
+      "/access",
+      "/pricing",
+      "/terms",
+      "/privacy",
+      "/app",
+      "/app/*",
+      "/onboarding",
+      "/auth",
+      "/auth/*",
+      "/v1/*",
+      "/mcp",
+      "/mcp/*",
+      "/.well-known/*",
+      "/health",
+      "/instructions",
+      "/skill.md",
+      "/agents/*",
+      "/llms.txt",
+      "/llms-full.txt",
+      "/robots.txt",
+      "/openapi.json",
+      "/webhooks/*",
+      "/email/*",
+    ],
+  },
+  "compatibility_date": "2026-09-08",
+  "compatibility_flags": ["nodejs_als"],
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    // The one switch: every organization unlimited, no billing, no trials. Keep it "true".
+    "TALKTO_SELF_HOSTED": "true",
+    "TALKTO_SERVICE_ORIGIN": "__TALKTO_SERVICE_ORIGIN__",
+    // WorkOS: the environment's client ID, its user-management issuer, and its AuthKit issuer.
+    "WORKOS_CLIENT_ID": "__WORKOS_CLIENT_ID__",
+    "WORKOS_ISSUER": "https://api.workos.com/user_management/__WORKOS_CLIENT_ID__",
+    "WORKOS_MCP_ISSUER": "__WORKOS_MCP_ISSUER__",
+    "WORKOS_REDIRECT_URI": "__TALKTO_SERVICE_ORIGIN__/auth/callback",
+    // Used only when the SENTRY_DSN secret is set.
+    "SENTRY_ENVIRONMENT": "self-hosted",
+    // Safety limits on creating things, per owner. Raise them if your people need more.
+    "TALKTO_UNPAID_SERVER_LIMIT": "1",
+    "TALKTO_SERVER_CREATIONS_PER_HOUR": "20",
+    "TALKTO_ORGANIZATION_CREATIONS_PER_HOUR": "5",
+    "TALKTO_UNPAID_SERVER_DAILY_LIMIT": "1000",
+    // Invitation emails per organization and per address, in UTC days.
+    "TALKTO_INVITATION_PAID_DAILY_LIMIT": "200",
+    "TALKTO_INVITATION_RECIPIENT_COOLDOWN_MINUTES": "10",
+    "TALKTO_INVITATION_RECIPIENT_DAILY_LIMIT": "3",
+    // Read rate limits protect your account from a runaway agent.
+    "TALKTO_READ_LIMITS": "on",
+    "TALKTO_PARTICIPANT_READS_PER_MINUTE": "300",
+    // File transfers: on once the TALKTO_R2_ACCESS_KEY_ID and TALKTO_R2_SECRET_ACCESS_KEY secrets exist.
+    "TALKTO_R2_ACCOUNT_ID": "__CLOUDFLARE_ACCOUNT_ID__",
+    "TALKTO_R2_BUCKET": "__NAME__-transfers",
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "SERVERS", "class_name": "TalkToServer" },
+      { "name": "QUOTAS", "class_name": "WorkspaceQuota" },
+    ],
+  },
+  // Durable Object migrations run on deploy. Never edit or remove a tag that has been deployed.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TalkToServer"] },
+    { "tag": "v2", "new_sqlite_classes": ["WorkspaceQuota"] },
+  ],
+  "r2_buckets": [{ "binding": "TRANSFERS", "bucket_name": "__NAME__-transfers" }],
+  // namespace_id is unique per Cloudflare account: pick one no other Worker in your account uses.
+  "ratelimits": [
+    {
+      "name": "ORGANIZATION_READS",
+      "namespace_id": "__RATELIMIT_NAMESPACE__",
+      "simple": { "limit": 6000, "period": 60 },
+    },
+    {
+      // Failed signal-link checks per network (IPv4 address or IPv6 /64); src/signal-guard.ts.
+      "name": "SIGNAL_FAILURES",
+      "namespace_id": "__SIGNAL_RATELIMIT_NAMESPACE__",
+      "simple": { "limit": 30, "period": 60 },
+    },
+  ],
+  "d1_databases": [
+    {
+      "binding": "PLATFORM",
+      "database_name": "__NAME__-platform",
+      "database_id": "__D1_DATABASE_ID__",
+      "migrations_dir": "src/platform/migrations",
+    },
+  ],
+  // Every minute: WorkOS membership changes and background upkeep.
+  "triggers": { "crons": ["* * * * *"] },
+  "rules": [{ "type": "Text", "globs": ["**/*.sql", "**/*.md"], "fallthrough": true }],
+  "observability": { "enabled": true },
+}

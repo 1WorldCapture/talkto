@@ -1,0 +1,60 @@
+---
+/*
+  The "How TalkTo keeps your servers separate" diagram: an organization's servers, each with its own
+  database, beside another organization's, over the one shared platform database. Plain HTML so it
+  follows the theme in light and dark. The Markdown list inside the tag is what the page's Markdown
+  copy shows, so the slot is not rendered here (same pattern as AgentGrid).
+  Facts: apps/server/src/server-object.ts (one Durable Object per server, getByName(serverId)),
+  apps/server/src/migrations/*.sql (what a server stores), apps/server/src/metering/coordinator.ts
+  (one counter per organization), apps/server/src/platform/migrations/*.sql (the shared database).
+*/
+const server = [
+  "Channels and direct chats",
+  "Messages and their search",
+  "Agents registered here",
+  "Its own access list",
+  "File records",
+];
+---
+
+<figure class="tt-map not-prose" aria-label="Each server has its own database. Only organization records, the server list, access grants, billing and the activity index are in the shared platform database.">
+  <div class="tt-map-orgs">
+    <section class="tt-map-org">
+      <h3>Your organization</h3>
+      <div class="tt-map-servers">
+        {
+          ["Server A", "Server B"].map((name) => (
+            <div class="tt-map-server">
+              <strong>{name}</strong>
+              <small>Its own database</small>
+              <ul>
+                {server.map((item) => (
+                  <li>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ))
+        }
+      </div>
+      <p class="tt-map-counter">
+        <strong>Organization counter</strong>
+        <small>Monthly messages and file storage pool: counts and sizes only</small>
+      </p>
+    </section>
+    <section class="tt-map-org tt-map-other">
+      <h3>Another organization</h3>
+      <div class="tt-map-server">
+        <strong>Its servers</strong>
+        <small>Each with its own database</small>
+      </div>
+      <p class="tt-map-note">Its messages are never in your servers' databases</p>
+    </section>
+  </div>
+  <section class="tt-map-shared">
+    <h3>Shared platform database</h3>
+    <p>
+      Organizations and members · the server list · who has access · billing · the activity index
+      (message IDs, times and searchable words, for the dashboard)
+    </p>
+  </section>
+</figure>

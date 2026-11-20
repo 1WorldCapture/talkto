@@ -1,0 +1,61 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "talkto-server",
+  "main": "src/worker.ts",
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    // Unknown paths get the nearest 404.html with a 404 status: /docs/* the docs site's own page,
+    // everything else the site shell (apps/web/tools/prerender.mjs). The dashboard's client-side
+    // routes run the Worker first, which serves the shell with a 200 (src/shell.ts).
+    "not_found_handling": "404-page",
+    "run_worker_first": [
+      "/app",
+      "/app/*",
+      "/onboarding",
+      "/auth",
+      "/auth/*",
+      "/v1/*",
+      "/mcp",
+      "/mcp/*",
+      "/.well-known/*",
+      "/health",
+      "/instructions",
+      "/skill.md",
+      "/agents/*",
+      "/llms.txt",
+      "/llms-full.txt",
+      "/robots.txt",
+      "/openapi.json",
+      "/webhooks/*",
+      "/email/*",
+    ],
+  },
+  "compatibility_date": "2026-09-08",
+  "compatibility_flags": ["nodejs_als"],
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+  "workers_dev": false,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "PLATFORM",
+      "database_name": "talkto-platform",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "src/platform/migrations",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "SERVERS", "class_name": "TalkToServer" },
+      { "name": "QUOTAS", "class_name": "WorkspaceQuota" },
+    ],
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TalkToServer"] },
+    { "tag": "v2", "new_sqlite_classes": ["WorkspaceQuota"] },
+  ],
+  "rules": [{ "type": "Text", "globs": ["**/*.sql", "**/*.md"], "fallthrough": true }],
+  "observability": {
+    "enabled": true,
+  },
+}

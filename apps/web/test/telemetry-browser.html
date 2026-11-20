@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>TalkTo telemetry verification</title>
+  <h1>TalkTo telemetry verification</h1>
+  <p>This development-only fixture deliberately crashes a React component.</p>
+  <div id="root"></div>
+  <pre id="result">No events captured. Local transport only; trace rate zero.</pre>
+  <script type="module">
+    import { createElement, useState } from "react";
+    import { createRoot } from "react-dom/client";
+    import { initialize, reactErrors } from "/src/telemetry.ts";
+    function Failure() {
+      throw new Error("TalkTo telemetry verification");
+    }
+    function Test() {
+      const [failed, setFailed] = useState(false);
+      return failed
+        ? createElement(Failure)
+        : createElement("button", { onClick: () => setFailed(true) }, "Test React error reporting");
+    }
+    if (import.meta.env.MODE === "test") {
+      const events = [];
+      initialize(
+        () => ({
+          send: async (envelope) => {
+            events.push(
+              ...envelope[1].filter(([header]) => header.type === "event").map(([, body]) => body),
+            );
+            document.getElementById("result").textContent = JSON.stringify(
+              { errorEvents: events.length, events },
+              null,
+              2,
+            );
+            return { statusCode: 200 };
+          },
+          flush: async () => true,
+        }),
+        0,
+      );
+      createRoot(document.getElementById("root"), reactErrors).render(createElement(Test));
+    } else {
+      document.getElementById("root").textContent =
+        "Start Vite with --mode test to enable the deliberate crash.";
+    }
+  </script>
+</html>

@@ -1,0 +1,493 @@
+/*
+  TalkTo brand foundation for the signed-in dashboard.
+
+  Every rule is scoped to html[data-surface="dashboard"], which public/theme.js sets only on /app
+  routes and setup (/onboarding). Public pages, the home window and the sign-in entry points keep
+  their current styles. The layout itself lives in layout.css; this file holds the kit fonts, the kit
+  colours, agent marks in their own colours and a readable type floor. The UI break fixes (select
+  style, tab row, phone targets) live in the component stylesheets.
+*/
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-variable.woff2") format("woff2");
+}
+/* Geist has no arrows. Draw every arrow from Paper Mono so they match wherever they appear. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/paper-mono-variable.woff2") format("woff2");
+  unicode-range: U+2190-21FF;
+}
+@font-face {
+  font-family: "Paper Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/fonts/paper-mono-variable.woff2") format("woff2");
+}
+
+/* Kit colour roles: magenta is the connection (live, current, the lamp), green is what agents
+   say, yellow is files. The bright kit colours are used for lamps and marks; text uses the
+   darker "-ink" values in light mode so it stays readable. Values match landing.css, so moving from
+   the public pages into the dashboard keeps the same paper, ink and hairlines.
+
+   Contrast (WCAG AA, measured): ink and muted text pass 4.5:1 on paper, surface and soft in both
+   themes; --control-line passes 3:1 as the edge of fields and outlined buttons; --focus passes 3:1
+   on every surface it can sit on. */
+:root[data-surface="dashboard"] body[data-surface="dashboard"] {
+  --sans: "Geist", system-ui, sans-serif;
+  --mono: "Paper Mono", ui-monospace, monospace;
+  --paper: #f4f4f1;
+  --surface: #ffffff;
+  --soft: #ecece7;
+  --ink: #151515;
+  --muted: #585853;
+  --line: #a9a9a1;
+  --subtle-line: #deded8;
+  --control-line: #7d7d76;
+  --shadow: #c9c9c1;
+  --stripe: #b9b9b1;
+  --accent: #f6e8f6;
+  --accent-ink: #a300a3;
+  --lamp: #f01ef0;
+  --lamp-ink: #a300a3;
+  --focus: #a300a3;
+  --say: #86f51f;
+  --say-ink: #2f6b00;
+  --file: #f6e600;
+  --file-ink: #6b5f00;
+  --deletion-ink: #9c3028;
+  --mark-claude: #d97757;
+  --mark-codex: #2874db;
+  --scrim: rgb(21 21 21 / 0.4);
+  --raise: 0 12px 40px rgb(21 21 21 / 0.12), 0 2px 6px rgb(21 21 21 / 0.06);
+  color-scheme: light;
+}
+:root[data-surface="dashboard"][data-theme="dark"] body[data-surface="dashboard"] {
+  --paper: #0a0a0a;
+  --surface: #121212;
+  --soft: #1a1c18;
+  --ink: #f2f2ee;
+  --muted: #a8a8a1;
+  --line: #4e4f49;
+  --subtle-line: #262722;
+  --control-line: #74756f;
+  --shadow: #2a2b27;
+  --stripe: #3a3b36;
+  --accent: #2a0f2a;
+  --accent-ink: #ff7aff;
+  --lamp-ink: #ff6bff;
+  --focus: #f01ef0;
+  --say-ink: #86f51f;
+  --file-ink: #f6e600;
+  --deletion-ink: #efaca4;
+  --mark-codex: #5b9dff;
+  --scrim: rgb(0 0 0 / 0.66);
+  --raise: none;
+  color-scheme: dark;
+}
+:root[data-surface="dashboard"] body[data-surface="dashboard"],
+:root[data-surface="dashboard"] body[data-surface="dashboard"] #stage {
+  background: var(--paper);
+  color: var(--ink);
+}
+:root[data-surface="dashboard"] body[data-surface="dashboard"] {
+  font: 15px/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+:root[data-surface="dashboard"] ::selection {
+  background: color-mix(in srgb, var(--lamp) 24%, transparent);
+  color: var(--ink);
+}
+
+/* Signed-out and loading states render without the dashboard frame: keep their page margin.
+   The "Sign in" link and its destination are unchanged; only fonts and colours follow the kit. */
+:root[data-surface="dashboard"] body[data-surface="dashboard"] #stage:not(:has(.ops-console)) {
+  padding: 32px 16px 48px;
+}
+:root[data-surface="dashboard"] .session-panel {
+  border-color: var(--subtle-line);
+  font-size: 15px;
+}
+:root[data-surface="dashboard"] .session-panel h1 {
+  font: 700 28px/1.2 var(--sans);
+  letter-spacing: -0.02em;
+}
+@media (max-width: 650px) {
+  :root[data-surface="dashboard"] .session-panel .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+  }
+}
+
+/* Agent marks: Claude and Codex in their own colours, every other mark in the text colour (the
+   kit's monochrome tint). Codex keeps its knocked-out >_. Inverted "sending" tiles stay inverted. */
+:root[data-surface="dashboard"] .agent-icon:has(use[href="#agent-claude"]) {
+  color: var(--mark-claude);
+}
+:root[data-surface="dashboard"] .agent-icon:has(use[href="#agent-codex"]) {
+  color: var(--mark-codex);
+}
+:root[data-surface="dashboard"] .is-sending > .agent-icon:has(use) {
+  color: var(--surface);
+}
+
+/* Mono is for what the landing page sets in mono: handles, channels, times, counts and text to
+   copy. Everything else, including dates inside sentences, reads in Geist. */
+:root[data-surface="dashboard"] .ops-console :where(time, .meta) {
+  font-family: inherit;
+}
+:root[data-surface="dashboard"] .meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+:root[data-surface="dashboard"] .label {
+  font-size: 13px;
+}
+:root[data-surface="dashboard"] .ops-console small {
+  font-size: max(13px, 0.85em);
+}
+:root[data-surface="dashboard"] .ops-console :is(h1, h2, h3) {
+  letter-spacing: -0.01em;
+}
+
+/* Focus: the landing page's magenta ring, deepened in light mode so it clears 3:1 everywhere. */
+:root[data-surface="dashboard"]
+  :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Buttons. Primary is solid ink (off-white in dark mode), secondary is outlined, both square,
+   exactly as on the landing page. One height per size; hover swaps fill, never moves. */
+:root[data-surface="dashboard"] :is(.btn, .ops-new, .ops-danger) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--ink);
+  color: var(--paper);
+  font: 500 14px/1 var(--sans);
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out,
+    color 120ms ease-out;
+}
+:root[data-surface="dashboard"] :is(.btn, .ops-new.primary):hover:not(:disabled) {
+  background: transparent;
+  color: var(--ink);
+  text-decoration: none;
+}
+:root[data-surface="dashboard"] :is(.btn.secondary, .ops-new:not(.primary)) {
+  border-color: var(--control-line);
+  background: transparent;
+  color: var(--ink);
+}
+:root[data-surface="dashboard"] :is(.btn.secondary, .ops-new:not(.primary)):hover:not(:disabled) {
+  border-color: var(--ink);
+  background: transparent;
+  color: var(--ink);
+}
+:root[data-surface="dashboard"] .btn.small {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+:root[data-surface="dashboard"] .ops-console .ops-danger {
+  border-color: var(--deletion-ink);
+  background: transparent;
+  color: var(--deletion-ink);
+}
+:root[data-surface="dashboard"] .ops-console .ops-danger:hover:not(:disabled) {
+  background: var(--deletion-ink);
+  color: var(--surface);
+}
+/* Disabled controls keep readable text (muted passes 4.5:1) instead of fading below contrast. */
+:root[data-surface="dashboard"] :is(.btn, .ops-new, .ops-danger, .text-button):disabled,
+:root[data-surface="dashboard"] .ops-console .ops-danger:disabled {
+  opacity: 1;
+  border-color: var(--subtle-line);
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+}
+:root[data-surface="dashboard"] .text-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0;
+  background: none;
+  color: var(--ink);
+  font: 500 14px/1.4 var(--sans);
+  text-decoration: underline;
+  text-decoration-color: var(--control-line);
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+}
+:root[data-surface="dashboard"] .text-button:hover:not(:disabled) {
+  background: none;
+  text-decoration-color: currentColor;
+}
+
+/* Fields: one height, a 3:1 edge, Geist at reading size. Phones use 44px and 16px from
+   dashboard.css so iOS does not zoom. */
+:root[data-surface="dashboard"]
+  .ops-console
+  :is(input:not([type="checkbox"], [type="radio"]), select, textarea) {
+  min-height: 36px;
+  border: 1px solid var(--control-line);
+  border-radius: 0;
+  background-color: var(--surface);
+  color: var(--ink);
+  font: 14px/1.4 var(--sans);
+}
+:root[data-surface="dashboard"] .ops-console input:not([type="checkbox"], [type="radio"]) {
+  padding: 0 12px;
+}
+:root[data-surface="dashboard"] .ops-console select {
+  padding: 0 32px 0 12px;
+}
+:root[data-surface="dashboard"] .ops-console :is(input, textarea)::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+:root[data-surface="dashboard"] .ops-console :is(input, select, textarea):disabled {
+  opacity: 1;
+  border-color: var(--subtle-line);
+  color: var(--muted);
+}
+:root[data-surface="dashboard"] .ops-console :is(input[type="checkbox"], input[type="radio"]) {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+
+/* Dialogs: a calm neutral scrim, a hairline edge and a soft shadow in light mode only. */
+:root[data-surface="dashboard"] .modal {
+  width: min(520px, calc(100% - 32px));
+  max-height: min(84dvh, 760px);
+  padding: 24px;
+  border: 1px solid var(--subtle-line);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--raise);
+  font: 15px/1.55 var(--sans);
+}
+:root[data-surface="dashboard"] .modal::backdrop {
+  background: var(--scrim);
+}
+:root[data-surface="dashboard"] .modal > header {
+  align-items: flex-start;
+  gap: 16px;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+:root[data-surface="dashboard"] .modal > header h2 {
+  font: 600 20px/1.3 var(--sans);
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+:root[data-surface="dashboard"] .modal > header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin: -4px -8px 0 0;
+  padding: 0;
+  background: none;
+  color: var(--muted);
+}
+:root[data-surface="dashboard"] .modal > header button:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+:root[data-surface="dashboard"] .modal > header svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+:root[data-surface="dashboard"] .modal p {
+  margin: 0 0 16px;
+}
+:root[data-surface="dashboard"] .modal :is(form, label) {
+  gap: 8px;
+}
+:root[data-surface="dashboard"] .modal label {
+  font-size: 14px;
+  font-weight: 500;
+}
+:root[data-surface="dashboard"] .modal input:not([type="checkbox"], [type="radio"]) {
+  min-height: 40px;
+}
+:root[data-surface="dashboard"] .form-actions {
+  gap: 16px;
+  margin-top: 24px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-surface="dashboard"] .modal[open] {
+    animation: dashboard-dialog-in 160ms cubic-bezier(0.25, 1, 0.5, 1);
+  }
+  :root[data-surface="dashboard"] .modal[open]::backdrop {
+    animation: dashboard-scrim-in 160ms ease-out;
+  }
+}
+@keyframes dashboard-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes dashboard-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Notices: a quiet band in the soft step, full width of their panel. */
+:root[data-surface="dashboard"] .notice {
+  display: grid;
+  gap: 4px;
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--subtle-line);
+  background: var(--soft);
+  font-size: 14px;
+}
+:root[data-surface="dashboard"] .notice p {
+  max-width: none;
+  margin: 0;
+}
+:root[data-surface="dashboard"] .notice small {
+  font-size: 13px;
+}
+:root[data-surface="dashboard"] .notice .text-button {
+  justify-self: start;
+}
+
+/* Lists of people and grants: hairline rows with one height and the action on the right. */
+:root[data-surface="dashboard"] .management-row {
+  min-height: 56px;
+  gap: 16px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--subtle-line);
+  background: var(--surface);
+}
+:root[data-surface="dashboard"] .modal .management-row {
+  padding-inline: 0;
+  background: none;
+}
+:root[data-surface="dashboard"] .management-row small {
+  font-size: 13px;
+}
+:root[data-surface="dashboard"] .inline-form {
+  align-items: flex-end;
+  gap: 12px;
+  margin: 16px 0;
+}
+:root[data-surface="dashboard"] .inline-form label {
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 500;
+}
+:root[data-surface="dashboard"] .inline-form input {
+  min-height: 36px;
+}
+:root[data-surface="dashboard"] .theme-control {
+  align-items: center;
+  margin: 16px 0;
+  font-size: 14px;
+}
+:root[data-surface="dashboard"] .clamped-text .text-button {
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* Hover cards for agents, timeline bars and the Auto-start explanation: hairline, soft neutral shadow, Geist. */
+:root[data-surface="dashboard"]
+  :is(.agent-detail, .ops-tooltip, .ops-timeline-tooltip, .auto-start-info-bubble) {
+  padding: 12px;
+  border: 1px solid var(--subtle-line);
+  background: var(--surface);
+  box-shadow: var(--raise);
+  font: 13px/1.5 var(--sans);
+}
+:root[data-surface="dashboard"] .agent-detail strong {
+  font: 500 14px/1.4 var(--mono);
+}
+:root[data-surface="dashboard"] .agent-detail p {
+  margin-top: 8px;
+}
+/* Billing marks busy buttons with aria-disabled, so they stay focusable: same muted look. */
+:root[data-surface="dashboard"] :is(.btn, .ops-new)[aria-disabled="true"] {
+  border-color: var(--subtle-line);
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+}
+:root[data-surface="dashboard"] .ops-console .management-row {
+  border-inline: 1px solid var(--subtle-line);
+}
+:root[data-surface="dashboard"] .ops-console :not(.management-row) + .management-row {
+  border-top: 1px solid var(--subtle-line);
+}
+:root[data-surface="dashboard"] .ops-console .modal .management-row {
+  border-inline: 0;
+}
+:root[data-surface="dashboard"] .management-intro {
+  margin: -8px 0 20px;
+}
+/* What an invitation does and who pays, under the invite form. */
+:root[data-surface="dashboard"] .management-note {
+  max-width: 64ch;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+:root[data-surface="dashboard"] .management-note:last-of-type {
+  margin-bottom: 16px;
+}
+/* A second heading inside a page (Invitations, Grant access) opens a new group. */
+:root[data-surface="dashboard"] .management .ops-page-bar:has(> h2) {
+  min-height: 0;
+  padding: 40px 0 0;
+}
+:root[data-surface="dashboard"] .modal h3 {
+  margin: 24px 0 8px;
+  font: 600 15px/1.4 var(--sans);
+}
+:root[data-surface="dashboard"] .modal .ops-page-bar {
+  min-height: 0;
+  padding: 0 0 12px;
+}
+:root[data-surface="dashboard"] .ops-access-members {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin-top: 24px;
+}
+:root[data-surface="dashboard"] .modal .ops-access-members p {
+  margin: 0;
+  font-size: 14px;
+}

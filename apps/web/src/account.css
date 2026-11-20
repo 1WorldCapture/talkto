@@ -1,0 +1,222 @@
+/* Account page: one white panel, like server settings. The only colour is the deletion ink on
+   its button and the left rule of a blocking note. */
+.ops-account-identity {
+  margin: 0 0 24px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.ops-account-identity strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.ops-account-email {
+  border: 1px solid var(--subtle-line);
+  padding: 24px;
+  margin-bottom: 24px;
+  background: var(--surface);
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+.ops-account-email h2 {
+  font: 600 17px/1.4 var(--sans);
+  margin: 0;
+}
+.ops-account-email > p {
+  max-width: 68ch;
+  line-height: 1.6;
+  margin: 0;
+  color: var(--muted);
+}
+.ops-account-email-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+.ops-account-email-choice input {
+  width: 18px;
+  height: 18px;
+  margin: 3px 0 0;
+  accent-color: var(--ink);
+  flex: none;
+}
+.ops-account-email-choice span {
+  display: grid;
+  gap: 2px;
+}
+.ops-account-email-choice strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.ops-account-email-choice small {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.ops-account-deletion {
+  border: 1px solid var(--subtle-line);
+  padding: 24px;
+  background: var(--surface);
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+.ops-account-deletion h2 {
+  font: 600 17px/1.4 var(--sans);
+  margin: 0;
+}
+.ops-account-deletion h3 {
+  font: 600 15px/1.4 var(--sans);
+  margin: 0 0 8px;
+}
+.ops-account-deletion p {
+  max-width: 68ch;
+  line-height: 1.6;
+  margin: 0;
+  color: var(--muted);
+}
+.ops-account-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px;
+  width: 100%;
+}
+.ops-account-columns ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  line-height: 1.6;
+}
+.ops-account-columns .ops-account-organizations {
+  list-style: none;
+  padding: 0;
+  margin-top: 8px;
+  gap: 0;
+  border-top: 1px solid var(--subtle-line);
+}
+.ops-account-organizations li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--subtle-line);
+  min-width: 0;
+}
+.ops-account-organizations strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ops-account-organizations small {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ops-account-created {
+  margin-top: 16px;
+}
+.ops-account-created span {
+  display: grid;
+  min-width: 0;
+}
+.ops-account-created small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ops-account-created a {
+  color: var(--ink);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ops-account-blocked {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  border-left: 3px solid var(--deletion-ink);
+  background: var(--soft);
+}
+.ops-account-deletion .ops-account-blocked p,
+p.ops-account-blocked {
+  color: var(--ink);
+}
+.ops-account-blocked a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ops-account-email > a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* Signed-in computers: one white panel with a ruled list, like the organizations above. */
+.ops-sign-ins {
+  border: 1px solid var(--subtle-line);
+  padding: 24px;
+  background: var(--surface);
+  display: grid;
+  gap: 16px;
+}
+.ops-sign-ins ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--subtle-line);
+}
+.ops-sign-ins li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--subtle-line);
+  min-width: 0;
+}
+.ops-sign-in {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.ops-sign-in strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ops-sign-in small {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.ops-sign-in-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+}
+.ops-sign-ins-empty p {
+  margin: 0;
+  max-width: 68ch;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.ops-sign-ins-empty strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+@media (max-width: 800px) {
+  .ops-account-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .ops-sign-ins li {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .ops-sign-in-actions {
+    justify-content: flex-start;
+  }
+}

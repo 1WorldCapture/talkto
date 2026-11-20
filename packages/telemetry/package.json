@@ -1,0 +1,20 @@
+{
+  "name": "@talkto/telemetry",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./privacy": "./src/privacy.ts",
+    "./effect": "./src/effect.ts",
+    "./sampling": "./src/sampling.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sentry/core": "10.74.0",
+    "@sentry/effect": "10.74.0",
+    "effect": "catalog:"
+  }
+}

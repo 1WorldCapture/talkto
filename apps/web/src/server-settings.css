@@ -1,0 +1,47 @@
+/* Server settings: one white panel with the destructive action set apart in the deletion colour.
+   Buttons and the dialog come from brand-app.css. */
+.ops-server-settings {
+  border: 1px solid var(--subtle-line);
+  padding: 24px;
+  background: var(--surface);
+}
+.ops-server-settings h2 {
+  font: 600 17px/1.4 var(--sans);
+  margin: 0;
+}
+.ops-server-settings p {
+  max-width: 62ch;
+  line-height: 1.6;
+  margin: 8px 0 20px;
+  color: var(--muted);
+}
+.ops-console .ops-danger {
+  min-height: 36px;
+}
+.ops-delete-confirmation {
+  display: grid;
+  gap: 16px;
+}
+.ops-delete-confirmation p {
+  margin: 0;
+  line-height: 1.6;
+}
+.ops-delete-confirmation input {
+  width: 100%;
+  min-height: 44px;
+}
+.ops-delete-actions {
+  /* A long server name must not push the confirmation below the dialog's fold. */
+  position: sticky;
+  bottom: -1px;
+  padding-block: 8px;
+  background: var(--surface);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ops-console .ops-delete-confirmation label {
+  display: block;
+  line-height: 1.6;
+}

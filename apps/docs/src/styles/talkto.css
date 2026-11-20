@@ -1,0 +1,295 @@
+/*
+  TalkTo's brand on the Nimbus theme: the public site's fonts (Geist, Paper Mono), night black and
+  paper white, and the magenta lamp. Values are copied from apps/web/src/landing.css, which owns
+  them; the agent mark tiles come from apps/web/src/setup-page.css itself. Brand-coloured text uses
+  the "-ink" values, which keep 4.5:1 contrast.
+*/
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-variable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/paper-mono-variable.woff2") format("woff2");
+  unicode-range: U+2190-21FF;
+}
+@font-face {
+  font-family: "Paper Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/fonts/paper-mono-variable.woff2") format("woff2");
+}
+
+:root {
+  --paper: #f4f4f1;
+  --surface: #ffffff;
+  --soft: #ecece7;
+  --ink: #151515;
+  --muted: #585853;
+  --line: #a9a9a1;
+  --subtle-line: #deded8;
+  --lamp: #f01ef0;
+  --lamp-ink: #a300a3;
+
+  --nb-font-sans: "Geist", system-ui, sans-serif;
+  --nb-font-mono: "Paper Mono", ui-monospace, monospace;
+  --nb-background: var(--paper);
+  --nb-foreground: var(--ink);
+  --nb-card: var(--surface);
+  --nb-muted: var(--soft);
+  --nb-muted-foreground: var(--muted);
+  --nb-accent: var(--soft);
+  --nb-primary: var(--ink);
+  --nb-primary-foreground: var(--paper);
+  --nb-primary-hover: #3a3a37;
+  --nb-brand: var(--lamp-ink);
+  --nb-brand-wash: color-mix(in oklch, var(--lamp) 9%, transparent);
+  --nb-border: var(--subtle-line);
+  --nb-border-strong: var(--line);
+  --nb-selected: var(--subtle-line);
+  --nb-ring: color-mix(in oklch, var(--lamp) 70%, transparent);
+  --nb-radius: 0;
+  --nb-radius-sm: 0;
+  --nb-h1-weight: 700;
+  --nb-h1-tracking: -0.03em;
+  --nb-h2-weight: 650;
+}
+[data-mode="dark"] {
+  --paper: #0a0a0a;
+  --surface: #121212;
+  --soft: #1a1c18;
+  --ink: #f2f2ee;
+  --muted: #a8a8a1;
+  --line: #4e4f49;
+  --subtle-line: #262722;
+  --lamp-ink: #ff6bff;
+
+  --nb-background: var(--paper);
+  --nb-foreground: var(--ink);
+  --nb-card: var(--surface);
+  --nb-muted: #070707;
+  --nb-muted-foreground: var(--muted);
+  --nb-accent: var(--soft);
+  --nb-primary: var(--ink);
+  --nb-primary-foreground: var(--paper);
+  --nb-primary-hover: #cfcfca;
+  --nb-brand: var(--lamp-ink);
+  --nb-border: var(--subtle-line);
+  --nb-border-strong: var(--line);
+  --nb-selected: #34352f;
+}
+html {
+  font-feature-settings: normal;
+}
+
+/* Wordmark: Geist 900 with the lamp, a magenta square on the baseline. */
+.tt-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  color: var(--ink);
+  font: 900 22px/1 var(--nb-font-sans);
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+.tt-wordmark i {
+  width: 0.32em;
+  height: 0.32em;
+  margin-left: 0.06em;
+  background: var(--lamp);
+}
+.tt-docs-label {
+  padding-left: 12px;
+  margin-left: 4px;
+  border-left: 1px solid var(--nb-border);
+  color: var(--muted);
+  font: 500 14px/1 var(--nb-font-mono);
+  text-decoration: none;
+}
+.tt-docs-label:hover {
+  color: var(--ink);
+}
+
+/* Agent marks: the Setup page's tiles, smaller. */
+[data-slot="page-header"] .su-tile {
+  --tile: 44px;
+}
+.tt-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0;
+  margin: 1rem 0 2rem;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--nb-border);
+  border-left: 1px solid var(--nb-border);
+}
+.tt-agent-grid li {
+  margin: 0;
+  border-right: 1px solid var(--nb-border);
+  border-bottom: 1px solid var(--nb-border);
+}
+.tt-agent-grid a {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  height: 100%;
+  padding: 16px;
+  color: var(--ink);
+  text-decoration: none;
+  --tile: 40px;
+}
+.tt-agent-grid a:hover {
+  background: var(--soft);
+}
+.tt-agent-grid strong {
+  display: block;
+  font-weight: 600;
+}
+.tt-agent-grid small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* The public site's footer line. */
+.tt-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: baseline;
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--nb-border);
+  color: var(--muted);
+  font-size: 14px;
+}
+.tt-footer .tt-wordmark {
+  font-size: 18px;
+}
+.tt-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.tt-footer a:not(.tt-wordmark) {
+  color: var(--muted);
+  text-decoration: none;
+}
+.tt-footer a:not(.tt-wordmark):hover {
+  color: var(--ink);
+}
+.tt-from {
+  margin-left: auto;
+}
+
+/* Sentences to copy (```text) wrap instead of scrolling; commands keep their lines. */
+pre[data-language="text"],
+pre[data-language="text"] code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Nimbus sizes code to its longest line (pre.astro-code code { width: max-content }). */
+pre.astro-code[data-language="text"] code {
+  width: auto;
+}
+/* Nimbus shows its Copy button on hover. The sentence to send an agent always shows it, and so does
+   every block on touch screens, which have no hover. */
+.nb-code-figure[data-nb-lang="text"] .nb-code-copy {
+  opacity: 1;
+}
+pre.astro-code[data-language="text"] {
+  padding-right: 3rem;
+}
+@media (hover: none) {
+  .nb-code-figure .nb-code-copy {
+    opacity: 1;
+  }
+}
+
+/* How TalkTo keeps your servers separate: the server map (src/components/ServerMap.astro). */
+.tt-map {
+  display: grid;
+  gap: 12px;
+  margin: 1.5rem 0 2rem;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.tt-map h3 {
+  margin: 0 0 10px;
+  font: 600 13px/1.2 var(--nb-font-mono);
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.tt-map strong {
+  display: block;
+  font-weight: 600;
+  color: var(--ink);
+}
+.tt-map small {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+.tt-map-orgs {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.tt-map-org,
+.tt-map-shared {
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.tt-map-other {
+  border-style: dashed;
+  background: transparent;
+}
+.tt-map-servers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.tt-map-server {
+  padding: 12px;
+  border: 1px solid var(--subtle-line);
+  border-top: 3px solid var(--lamp);
+  background: var(--paper);
+}
+.tt-map-server ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.tt-map-server li {
+  margin: 0;
+  padding: 2px 0;
+}
+.tt-map-counter,
+.tt-map-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--subtle-line);
+}
+.tt-map-note {
+  border-style: dashed;
+  color: var(--muted);
+}
+.tt-map-shared p {
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .tt-map-orgs,
+  .tt-map-servers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

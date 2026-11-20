@@ -1,0 +1,1037 @@
+/*
+  Layout "Rail": a chat-app frame for the signed-in dashboard, in the landing page's world.
+
+  A full-width top bar on paper, a left rail with the organization, its sections and (inside a
+  server) the server's sections, and a main column that uses the rest of the screen. Paper behind
+  everything, white panels with hairline edges, and the magenta lamp only on the current place.
+  The rail is built from the existing markup: the organization bar and the server tabs float into
+  the left column, and every other page block sits beside them. On narrow screens the rail folds
+  behind a Menu button.
+
+  Scoped to html[data-surface="dashboard"], so public pages and sign-in are unchanged. Setup
+  (/onboarding) shares the surface but not this frame: it has no .ops-console.
+*/
+:root[data-surface="dashboard"] {
+  --rail: 256px;
+  --gutter: 40px;
+  --bar: 56px;
+  --chevrons: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m5 6 3-3 3 3M5 10l3 3 3-3' fill='none' stroke='%23585853' stroke-width='1.5'/%3E%3C/svg%3E");
+}
+:root[data-surface="dashboard"][data-theme="dark"] {
+  --chevrons: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m5 6 3-3 3 3M5 10l3 3 3-3' fill='none' stroke='%23a8a8a1' stroke-width='1.5'/%3E%3C/svg%3E");
+}
+:root[data-surface="dashboard"] body[data-surface="dashboard"] #stage {
+  padding: 0;
+}
+:root[data-surface="dashboard"] .ops-console {
+  width: 100%;
+  margin: 0;
+  min-height: 100vh;
+  padding-bottom: 48px;
+  background: var(--paper);
+  font: 15px/1.55 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Top bar: the landing page's header, at app height. */
+:root[data-surface="dashboard"] .ops-titlebar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  min-height: var(--bar);
+  gap: 16px;
+  padding: 0 var(--gutter) 0 24px;
+  border: 0;
+  border-bottom: 1px solid var(--subtle-line);
+  background: var(--paper);
+}
+/* The kit's product wordmark: Geist 900 with the lamp, a magenta square on the baseline. */
+:root[data-surface="dashboard"] .ops-titlebar .brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  min-height: 0;
+  font: 900 22px/var(--bar) var(--sans);
+  letter-spacing: -0.02em;
+}
+:root[data-surface="dashboard"] .ops-titlebar .brand::after {
+  content: "";
+  width: 0.32em;
+  height: 0.32em;
+  margin-left: 0.06em;
+  background: var(--lamp);
+}
+:root[data-surface="dashboard"] .ops-titlebar .brand:hover {
+  text-decoration: none;
+}
+:root[data-surface="dashboard"] .ops-titlebar nav {
+  gap: 4px;
+}
+:root[data-surface="dashboard"] .ops-titlebar nav > :is(a, button) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--muted);
+  font: 400 14px/1 var(--sans);
+  transition: color 120ms ease-out;
+}
+:root[data-surface="dashboard"] .ops-titlebar nav > :is(a, button):hover {
+  background: none;
+  color: var(--ink);
+  text-decoration: none;
+}
+/* The signed-in person: an outlined square, like the landing page's secondary button. */
+:root[data-surface="dashboard"] .ops-titlebar nav > button:last-child {
+  margin-left: 8px;
+  border: 1px solid var(--control-line);
+  color: var(--ink);
+  font-weight: 500;
+}
+:root[data-surface="dashboard"] .ops-titlebar nav > button:last-child:hover {
+  border-color: var(--ink);
+}
+:root[data-surface="dashboard"] .ops-titlebar .theme-toggle {
+  flex-basis: 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+:root[data-surface="dashboard"] .ops-titlebar .theme-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Rail links: quiet rows; the current one gets the soft step, ink and the magenta lamp. */
+:root[data-surface="dashboard"] :is(.ops-account-bar nav a, .ops-tabs a) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px 0 28px;
+  border: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+:root[data-surface="dashboard"] :is(.ops-account-bar nav a, .ops-tabs a):hover {
+  background: var(--soft);
+  color: var(--ink);
+  text-decoration: none;
+}
+:root[data-surface="dashboard"] :is(.ops-account-bar nav, .ops-tabs) [aria-current] {
+  background: var(--soft);
+  color: var(--ink);
+  font-weight: 500;
+}
+:root[data-surface="dashboard"] :is(.ops-account-bar nav, .ops-tabs) [aria-current]::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: calc(50% - 3px);
+  width: 6px;
+  height: 6px;
+  background: var(--lamp);
+}
+
+/* Inside a server, the server tab is the current place; its parent section stays ink without a lamp. */
+:root[data-surface="dashboard"]:has(.ops-tabs [aria-current]) .ops-account-bar nav [aria-current] {
+  background: transparent;
+}
+:root[data-surface="dashboard"]:has(.ops-tabs [aria-current])
+  .ops-account-bar
+  nav
+  [aria-current]::before {
+  content: none;
+}
+
+/* Organization switcher: a field-like row that names the organization and opens the list. */
+:root[data-surface="dashboard"] .ops-account-picker {
+  display: block;
+  width: 100%;
+  max-width: none;
+  min-height: 40px;
+  padding: 0 36px 0 12px;
+  border: 1px solid var(--subtle-line);
+  background: var(--surface) var(--chevrons) no-repeat right 10px center / 16px 16px;
+  text-align: left;
+  font: 600 15px/38px var(--sans);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: border-color 120ms ease-out;
+}
+:root[data-surface="dashboard"] .ops-console .ops-account-picker:hover {
+  border-color: var(--control-line);
+  background-color: var(--surface);
+}
+
+/* Feedback, pinned to the bottom of the rail. Narrow screens have it in the header's Menu. */
+:root[data-surface="dashboard"] .ops-rail-feedback {
+  display: none;
+}
+
+/* Wide screens: the rail */
+@media (min-width: 960px) {
+  :root[data-surface="dashboard"] .ops-console {
+    display: flow-root;
+    background: linear-gradient(
+      90deg,
+      var(--paper) 0 var(--rail),
+      var(--subtle-line) var(--rail) calc(var(--rail) + 1px),
+      var(--paper) calc(var(--rail) + 1px)
+    );
+  }
+  :root[data-surface="dashboard"] .ops-titlebar .brand {
+    width: calc(var(--rail) - 24px);
+  }
+  :root[data-surface="dashboard"] :is(.ops-account-bar, .ops-tabs) {
+    float: left;
+    clear: left;
+    width: var(--rail);
+  }
+  :root[data-surface="dashboard"] .ops-account-bar {
+    display: block;
+    margin: 0;
+    padding: 16px 16px 0;
+    border: 0;
+  }
+  :root[data-surface="dashboard"] .ops-account-bar nav {
+    display: grid;
+    gap: 2px;
+    margin-top: 16px;
+  }
+  :root[data-surface="dashboard"] .ops-tabs {
+    display: grid;
+    gap: 2px;
+    overflow: visible;
+    margin: 0;
+    padding: 0 16px 24px;
+    border: 0;
+    box-shadow: none;
+  }
+  :root[data-surface="dashboard"] .ops-tabs::before {
+    content: "This server" / "";
+    margin-top: 16px;
+    padding: 16px 12px 8px;
+    border-top: 1px solid var(--subtle-line);
+    color: var(--muted);
+    font: 500 13px/1.4 var(--sans);
+  }
+  :root[data-surface="dashboard"]
+    .ops-console
+    > :not(.ops-titlebar, .ops-account-bar, .ops-tabs, .ops-rail-feedback, dialog) {
+    margin-left: calc(var(--rail) + var(--gutter));
+    margin-right: var(--gutter);
+  }
+  /* Room below the rail's last link, so the pinned Feedback never covers it at the page end. */
+  :root[data-surface="dashboard"] .ops-console {
+    padding-bottom: 64px;
+  }
+  :root[data-surface="dashboard"] .ops-console > .ops-rail-feedback {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    z-index: 1;
+    display: block;
+    width: var(--rail);
+    min-height: 0;
+    padding: 8px 16px 16px;
+    border: 0;
+    background: var(--paper);
+    color: var(--muted);
+    font: 400 14px/1 var(--sans);
+    text-align: left;
+    cursor: pointer;
+  }
+  :root[data-surface="dashboard"] .ops-rail-feedback > span {
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 12px 0 28px;
+    transition:
+      background-color 120ms ease-out,
+      color 120ms ease-out;
+  }
+  :root[data-surface="dashboard"] .ops-rail-feedback:hover > span {
+    background: var(--soft);
+    color: var(--ink);
+  }
+  :root[data-surface="dashboard"] .ops-rail-feedback:focus-visible {
+    outline: none;
+  }
+  :root[data-surface="dashboard"] .ops-rail-feedback:focus-visible > span {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+}
+
+/* Page heading in the main column: Geist display weight at app scale. */
+:root[data-surface="dashboard"] .ops-page-bar {
+  min-height: 88px;
+  padding: 24px 0 20px;
+  gap: 16px;
+}
+:root[data-surface="dashboard"] .ops-page-title {
+  font: 700 28px/1.2 var(--sans);
+  letter-spacing: -0.025em;
+}
+:root[data-surface="dashboard"] .ops-page-bar h2.ops-page-title,
+:root[data-surface="dashboard"] .ops-page-bar > h2 {
+  font: 600 20px/1.3 var(--sans);
+  letter-spacing: -0.015em;
+}
+:root[data-surface="dashboard"] .ops-server-heading .ops-page-title {
+  align-items: baseline;
+  gap: 8px;
+  font-size: 28px;
+}
+:root[data-surface="dashboard"] .ops-server-heading .ops-page-title > :is(a, span) {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+:root[data-surface="dashboard"] .ops-server-heading .ops-page-title > a:hover {
+  color: var(--ink);
+}
+/* A section inside a server (Agents, Channels) sits under the server's heading. */
+:root[data-surface="dashboard"] .ops-server-heading ~ .ops-page-bar {
+  min-height: 64px;
+  padding: 8px 0 16px;
+}
+:root[data-surface="dashboard"] .ops-page-bar > a:not(.ops-new, .btn) {
+  color: var(--muted);
+  font-size: 14px;
+}
+:root[data-surface="dashboard"] .ops-page-bar > a:not(.ops-new, .btn):hover {
+  color: var(--ink);
+}
+:root[data-surface="dashboard"] .ops-page-bar input[type="search"] {
+  width: min(280px, 100%);
+}
+
+/* Panels: white on paper, hairline edges, no corners. */
+:root[data-surface="dashboard"]
+  :is(
+    .ops-log,
+    .ops-server,
+    .ops-server-channels,
+    .ops-server-roster,
+    .ops-channel-directory,
+    .ops-registry,
+    .ops-timeline,
+    .billing-panel,
+    .billing-checkout,
+    .billing-plans article,
+    .ops-server-settings,
+    .organization-card
+  ) {
+  background: var(--surface);
+  border-color: var(--subtle-line);
+}
+:root[data-surface="dashboard"] .ops-log-toolbar {
+  min-height: 56px;
+  gap: 16px;
+  padding: 8px 16px;
+  border-color: var(--subtle-line);
+}
+:root[data-surface="dashboard"] .ops-log-toolbar h2 {
+  font: 600 16px/1.3 var(--sans);
+}
+:root[data-surface="dashboard"] .ops-log-toolbar input {
+  width: min(280px, 100%);
+}
+:root[data-surface="dashboard"] .ops-pagination {
+  min-height: 52px;
+  padding: 8px 16px;
+  color: var(--muted);
+  font: 13px/1.4 var(--sans);
+}
+:root[data-surface="dashboard"] .ops-directory {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+  gap: 16px;
+}
+:root[data-surface="dashboard"] .ops-server-head {
+  min-height: 52px;
+  padding: 12px 16px 4px 20px;
+  background: none;
+}
+:root[data-surface="dashboard"] .ops-server-head h2 {
+  font: 600 17px/1.3 var(--sans);
+  letter-spacing: -0.01em;
+}
+
+/* Feed: one readable row per message. Times, handles and channels in mono, as on the landing feed. */
+:root[data-surface="dashboard"] :is(.ops-columns, .ops-entry > summary) {
+  grid-template-columns: 88px minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 4fr);
+  gap: 16px;
+  padding: 8px 16px;
+}
+:root[data-surface="dashboard"] .ops-log-single :is(.ops-columns, .ops-entry > summary) {
+  grid-template-columns: 88px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 4fr);
+}
+:root[data-surface="dashboard"] .ops-columns {
+  border-color: var(--subtle-line);
+  color: var(--muted);
+  font: 500 13px/1.4 var(--sans);
+}
+:root[data-surface="dashboard"] .ops-entry {
+  border-color: var(--subtle-line);
+}
+:root[data-surface="dashboard"] .ops-entry > summary {
+  align-items: center;
+  min-height: 48px;
+  font-size: 15px;
+}
+:root[data-surface="dashboard"] .ops-entry :is(.ops-from, .ops-to) {
+  align-items: center;
+  gap: 8px;
+  font: 14px/1.4 var(--mono);
+}
+:root[data-surface="dashboard"] .ops-entry .agent-icon {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+}
+:root[data-surface="dashboard"] .ops-entry time {
+  color: var(--muted);
+  font: 13px/1.4 var(--mono);
+}
+:root[data-surface="dashboard"] .ops-entry .ops-entry-server {
+  font-size: 14px;
+}
+:root[data-surface="dashboard"] .ops-full-message {
+  margin: 0 16px 16px 120px;
+  padding: 8px 16px;
+  border-left: 1px solid var(--control-line);
+  font-size: 15px;
+}
+:root[data-surface="dashboard"] .ops-log-body {
+  height: max(320px, calc(100dvh - 420px));
+  scrollbar-color: var(--line) transparent;
+}
+:root[data-surface="dashboard"] .ops-home .ops-log-body {
+  height: max(320px, calc(100dvh - 560px));
+}
+:root[data-surface="dashboard"] :is(.ops-log-empty, .ops-empty) {
+  padding: 32px 16px;
+  color: var(--muted);
+  font: 15px/1.55 var(--sans);
+}
+:root[data-surface="dashboard"] .feed-freshness {
+  padding: 8px 16px;
+  border-color: var(--subtle-line);
+  font-size: 13px;
+}
+
+/* Conversation: the message box fills the window below the heading */
+:root[data-surface="dashboard"] .ops-conversation-details {
+  padding: 8px 0 20px;
+}
+:root[data-surface="dashboard"] .ops-conversation-title {
+  align-items: baseline;
+  font: 600 20px/1.3 var(--sans);
+  letter-spacing: -0.015em;
+}
+:root[data-surface="dashboard"] .ops-conversation-title > :is(a, span[aria-hidden]) {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+:root[data-surface="dashboard"] .ops-conversation-description {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 15px;
+}
+:root[data-surface="dashboard"] .ops-conversation-metadata {
+  gap: 4px 24px;
+  margin-top: 8px;
+  color: var(--muted);
+  font: 13px/1.5 var(--sans);
+}
+:root[data-surface="dashboard"] .ops-conversation-metadata dd {
+  color: var(--ink);
+}
+:root[data-surface="dashboard"] .ops-conversation-log {
+  margin-bottom: 24px;
+}
+:root[data-surface="dashboard"] .ops-dialogue {
+  height: max(360px, calc(100dvh - var(--bar) - 340px));
+}
+:root[data-surface="dashboard"] .ops-dialogue-messages {
+  padding: 16px 24px 24px;
+}
+:root[data-surface="dashboard"] .ops-dialogue-message {
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+:root[data-surface="dashboard"] .ops-dialogue-message > .agent-icon {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+}
+:root[data-surface="dashboard"] .ops-dialogue-message header {
+  gap: 4px 12px;
+  margin-bottom: 4px;
+}
+:root[data-surface="dashboard"] .ops-dialogue-message strong {
+  font: 500 14px/1.5 var(--mono);
+}
+:root[data-surface="dashboard"] .ops-dialogue-message header time {
+  color: var(--muted);
+  font: 12px/1.5 var(--mono);
+}
+:root[data-surface="dashboard"] .ops-dialogue-body {
+  max-width: 72ch;
+  font: 15px/1.6 var(--sans);
+}
+:root[data-surface="dashboard"] .ops-dialogue-day {
+  margin: 8px 0 20px;
+  color: var(--muted);
+  font: 12px/1.5 var(--mono);
+}
+:root[data-surface="dashboard"] .ops-dialogue-day::before,
+:root[data-surface="dashboard"] .ops-dialogue-day::after {
+  background: var(--subtle-line);
+}
+/* File chips (shares and transfers) under a message: the name reads at body size, details in mono. */
+:root[data-surface="dashboard"] .ops-share {
+  gap: 4px 12px;
+  margin-top: 12px;
+  padding: 12px 16px 12px 12px;
+  border-color: var(--subtle-line);
+  background: var(--paper);
+  font: 14px/1.4 var(--sans);
+}
+:root[data-surface="dashboard"] .ops-share-path {
+  font-weight: 500;
+}
+:root[data-surface="dashboard"] .ops-share-reference {
+  font: 12px/1.5 var(--mono);
+}
+
+/* Controls that exist only for narrow screens. */
+:root[data-surface="dashboard"] :is(.ops-menu-button, .ops-details-toggle, .ops-history-toggle) {
+  display: none;
+}
+
+/*
+  Narrow screens: one compact bar and at most one context row before the content.
+  The bar holds the wordmark, the current server and a Menu button. The menu shows the dashboard,
+  organization and server navigation in place of the page (it is not a modal, so there is no focus
+  trap); it closes on navigation, on Escape and from its button. The context row is the page
+  heading, the server's sections, or in a conversation its title with details, search and history
+  settings folded behind small buttons.
+*/
+@media (max-width: 959px) {
+  :root[data-surface="dashboard"] {
+    --gutter: 16px;
+    --bar: 52px;
+    --context: 52px;
+    --brand-end: 112px;
+    --search-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cg fill='none' stroke='%23151515' stroke-width='1.6'%3E%3Ccircle cx='8.5' cy='8.5' r='5.5'/%3E%3Cpath d='m12.5 12.5 4.5 4.5'/%3E%3C/g%3E%3C/svg%3E");
+  }
+  :root[data-surface="dashboard"][data-theme="dark"] {
+    --search-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cg fill='none' stroke='%23f2f2ee' stroke-width='1.6'%3E%3Ccircle cx='8.5' cy='8.5' r='5.5'/%3E%3Cpath d='m12.5 12.5 4.5 4.5'/%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  /* The bar */
+  :root[data-surface="dashboard"] .ops-titlebar {
+    flex-wrap: nowrap;
+    gap: 0 8px;
+    padding: 0 4px 0 var(--gutter);
+  }
+  :root[data-surface="dashboard"] .ops-titlebar .brand {
+    flex: none;
+  }
+  :root[data-surface="dashboard"] .ops-menu-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    margin-left: auto;
+    padding: 0 12px;
+    background: none;
+    color: var(--ink);
+    font: 500 15px var(--sans);
+  }
+  :root[data-surface="dashboard"] .ops-menu-icon {
+    width: 16px;
+    height: 12px;
+    background:
+      linear-gradient(currentColor 0 0) top / 100% 1.5px no-repeat,
+      linear-gradient(currentColor 0 0) center / 100% 1.5px no-repeat,
+      linear-gradient(currentColor 0 0) bottom / 100% 1.5px no-repeat;
+  }
+  :root[data-surface="dashboard"] .ops-menu-button[aria-expanded="true"] .ops-menu-icon {
+    height: 16px;
+    background:
+      linear-gradient(
+        45deg,
+        transparent calc(50% - 0.75px),
+        currentColor calc(50% - 0.75px) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      ),
+      linear-gradient(
+        -45deg,
+        transparent calc(50% - 0.75px),
+        currentColor calc(50% - 0.75px) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      );
+  }
+  /* The current server sits in the bar, between the wordmark and Menu. */
+  :root[data-surface="dashboard"] .ops-console:not([data-menu="open"]) .ops-server-heading {
+    position: fixed;
+    top: 0;
+    left: var(--brand-end);
+    right: 104px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    height: var(--bar);
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    pointer-events: none;
+  }
+  :root[data-surface="dashboard"]
+    .ops-console:not([data-menu="open"])
+    .ops-server-heading
+    .ops-page-title {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 15px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  :root[data-surface="dashboard"]
+    .ops-console:not([data-menu="open"])
+    .ops-server-heading
+    .ops-page-title
+    > :is(a, span) {
+    display: none;
+  }
+
+  /* Hidden behind Menu */
+  :root[data-surface="dashboard"]
+    .ops-console:not([data-menu="open"])
+    :is(.ops-titlebar nav, .ops-account-bar, .ops-server-actions) {
+    display: none;
+  }
+  :root[data-surface="dashboard"]
+    .ops-console:not([data-menu="open"]):has(.ops-conversation-details)
+    .ops-tabs {
+    display: none;
+  }
+
+  /* The menu replaces the page until it closes. A dialog opened from the menu stays visible:
+     hidden, it would still be modal and leave the page inert. */
+  :root[data-surface="dashboard"]
+    .ops-console[data-menu="open"]
+    > :not(.ops-titlebar, .ops-account-bar, .ops-server-heading, .ops-tabs, dialog) {
+    display: none;
+  }
+  :root[data-surface="dashboard"] .ops-console[data-menu="open"] .ops-titlebar {
+    flex-wrap: wrap;
+  }
+  :root[data-surface="dashboard"] .ops-console[data-menu="open"] .ops-titlebar nav {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    margin: 0;
+    padding: 4px 12px 16px 0;
+  }
+  :root[data-surface="dashboard"]
+    .ops-console[data-menu="open"]
+    .ops-titlebar
+    nav
+    > :is(a, button) {
+    min-height: 44px;
+    padding: 0 16px;
+    border: 1px solid var(--control-line);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 15px;
+  }
+  :root[data-surface="dashboard"] .ops-console[data-menu="open"] .ops-titlebar .theme-toggle {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  :root[data-surface="dashboard"] .ops-console[data-menu="open"] .ops-account-bar {
+    display: block;
+    margin: 0;
+    padding: 16px var(--gutter);
+    border-bottom: 1px solid var(--subtle-line);
+    background: var(--surface);
+  }
+  :root[data-surface="dashboard"]
+    .ops-console[data-menu="open"]
+    :is(.ops-account-bar nav, .ops-tabs) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 8px;
+    overflow: visible;
+    mask-image: none;
+  }
+  :root[data-surface="dashboard"] .ops-console[data-menu="open"] .ops-account-bar nav {
+    margin-top: 8px;
+  }
+  :root[data-surface="dashboard"]
+    .ops-console[data-menu="open"]
+    :is(.ops-server-heading, .ops-tabs) {
+    background: var(--surface);
+  }
+  :root[data-surface="dashboard"] .ops-console[data-menu="open"] .ops-server-heading {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin: 0;
+    padding: 16px var(--gutter) 8px;
+  }
+  :root[data-surface="dashboard"]
+    .ops-console[data-menu="open"]
+    .ops-server-heading
+    .ops-page-title {
+    flex-basis: 100%;
+    min-width: 0;
+    font-size: 20px;
+    overflow-wrap: anywhere;
+  }
+  :root[data-surface="dashboard"] .ops-console[data-menu="open"] .ops-server-actions {
+    margin-left: 0;
+  }
+  :root[data-surface="dashboard"] .ops-console[data-menu="open"] .ops-tabs {
+    padding: 0 var(--gutter) 16px;
+    border-bottom: 1px solid var(--subtle-line);
+    box-shadow: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    :root[data-surface="dashboard"]
+      .ops-console[data-menu="open"]
+      > :is(.ops-account-bar, .ops-server-heading, .ops-tabs),
+    :root[data-surface="dashboard"] .ops-console[data-menu="open"] .ops-titlebar nav {
+      animation: ops-menu-in 160ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+  }
+
+  /* Rail links in the menu and in the server's section row */
+  :root[data-surface="dashboard"] :is(.ops-account-bar nav a, .ops-tabs a) {
+    flex: none;
+    min-height: 44px;
+    padding: 0 12px 0 28px;
+    font-size: 15px;
+  }
+  :root[data-surface="dashboard"] .ops-console:not([data-menu="open"]) .ops-tabs {
+    gap: 0;
+    min-height: var(--context);
+    align-items: center;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--subtle-line);
+    box-shadow: none;
+    background: var(--surface);
+  }
+  :root[data-surface="dashboard"] .ops-console:not([data-menu="open"]) .ops-tabs a {
+    padding: 0 12px;
+  }
+  :root[data-surface="dashboard"] .ops-console:not([data-menu="open"]) .ops-tabs [aria-current] {
+    background: none;
+    box-shadow: inset 0 -2px var(--lamp);
+  }
+  :root[data-surface="dashboard"]
+    .ops-console:not([data-menu="open"])
+    .ops-tabs
+    [aria-current]::before {
+    content: none;
+  }
+
+  /* Page blocks */
+  :root[data-surface="dashboard"]
+    .ops-console
+    > :not(.ops-titlebar, .ops-account-bar, .ops-tabs, .ops-conversation-log, dialog) {
+    margin-inline: var(--gutter);
+  }
+  :root[data-surface="dashboard"] .ops-page-bar {
+    min-height: var(--context);
+    padding: 12px 0;
+    gap: 8px 12px;
+  }
+  :root[data-surface="dashboard"] .ops-page-title {
+    font-size: 22px;
+  }
+  :root[data-surface="dashboard"] .ops-page-bar input[type="search"] {
+    flex: 1 1 100%;
+    width: 100%;
+    margin-left: 0;
+  }
+  :root[data-surface="dashboard"] .ops-new {
+    min-height: 44px;
+  }
+  /* Home keeps its heading and New server on one row; All servers is Menu > Servers. */
+  :root[data-surface="dashboard"] .ops-home > .ops-page-bar {
+    flex-wrap: nowrap;
+  }
+  :root[data-surface="dashboard"] .ops-home > .ops-page-bar > .ops-page-title {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  :root[data-surface="dashboard"] .ops-home > .ops-page-bar > a {
+    display: none;
+  }
+
+  /* Conversation: one row with the title, then the messages. */
+  :root[data-surface="dashboard"] .ops-conversation-details {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    min-height: var(--context);
+    padding: 0 76px 0 0;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-title {
+    display: block;
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 17px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-title > :is(a, span[aria-hidden]) {
+    margin-right: 6px;
+    font-size: 14px;
+  }
+  :root[data-surface="dashboard"] .ops-console .ops-conversation-title > a {
+    padding-block: 14px;
+    margin-block: -14px;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-title > :not(a, span[aria-hidden]) {
+    display: inline;
+  }
+  :root[data-surface="dashboard"]
+    :is(.ops-details-toggle, .ops-conversation-log .ops-history-toggle) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+  }
+  :root[data-surface="dashboard"]
+    :is(.ops-details-toggle, .ops-conversation-log .ops-history-toggle):is(
+      :hover,
+      [aria-expanded="true"]
+    ) {
+    color: var(--ink);
+  }
+  :root[data-surface="dashboard"] .ops-details-toggle::before {
+    content: "i" / "";
+    width: 18px;
+    height: 18px;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    font: 700 12px/15px var(--sans);
+    text-align: center;
+  }
+  :root[data-surface="dashboard"] .ops-history-toggle::before {
+    content: "";
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow:
+      -7px 0 currentColor,
+      7px 0 currentColor;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-more:not([data-open]) {
+    display: none;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-more {
+    flex-basis: 100%;
+    padding-bottom: 12px;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-metadata {
+    gap: 4px 16px;
+    margin-top: 4px;
+  }
+
+  /* The conversation log runs edge to edge; its search and history settings join the title row. */
+  :root[data-surface="dashboard"] .ops-conversation-log {
+    position: relative;
+    margin: 0;
+    border-inline: 0;
+  }
+  :root[data-surface="dashboard"]
+    .ops-console:has(.ops-conversation-more[data-open])
+    .ops-conversation-log {
+    padding-top: var(--context);
+    border-top: 1px solid var(--subtle-line);
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log .ops-log-toolbar {
+    display: contents;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log .ops-log-toolbar h2,
+  :root[data-surface="dashboard"] .ops-conversation-log .ops-pagination > [role="status"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  :root[data-surface="dashboard"]
+    .ops-conversation-log
+    :is(.ops-log-toolbar input, .ops-history-toggle) {
+    position: absolute;
+    top: calc(4px - var(--context));
+    z-index: 2;
+  }
+  :root[data-surface="dashboard"]
+    .ops-console:has(.ops-conversation-more[data-open])
+    .ops-conversation-log
+    :is(.ops-log-toolbar input, .ops-history-toggle) {
+    top: 4px;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log .ops-history-toggle {
+    right: 4px;
+  }
+  /* Search starts as an icon and opens into a field while in use or holding a query. */
+  :root[data-surface="dashboard"] .ops-conversation-log .ops-log-toolbar input {
+    right: 48px;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 12px 0 40px;
+    border: 1px solid var(--control-line);
+    background: var(--surface) var(--search-icon) no-repeat 12px center / 18px 18px;
+  }
+  :root[data-surface="dashboard"]
+    .ops-conversation-log
+    .ops-log-toolbar
+    input:placeholder-shown:not(:focus) {
+    padding: 0;
+    border-color: transparent;
+    background-color: transparent;
+    background-position: center;
+    color: transparent;
+    cursor: pointer;
+  }
+  :root[data-surface="dashboard"]
+    .ops-conversation-log
+    .ops-log-toolbar
+    input:placeholder-shown:not(:focus)::placeholder {
+    color: transparent;
+  }
+  :root[data-surface="dashboard"]
+    .ops-conversation-log
+    .ops-log-toolbar
+    input:is(:focus, :not(:placeholder-shown)) {
+    left: var(--gutter);
+    width: auto;
+  }
+  /* New messages: a button at the foot of the messages, where they arrive. */
+  :root[data-surface="dashboard"] .ops-conversation-log [data-ops-refresh] {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    z-index: 2;
+    min-height: 44px;
+    padding: 0 16px;
+    transform: translateX(-50%);
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    font: 500 14px var(--sans);
+    white-space: nowrap;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log .ops-pagination {
+    display: block;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log .ops-history-controls:not([data-open]) {
+    display: none;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log .ops-history-controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    width: auto;
+    padding: 8px var(--gutter);
+    border-bottom: 1px solid var(--subtle-line);
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log .ops-history-controls > * {
+    order: 0;
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log .ops-history-controls > button {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--control-line);
+  }
+  :root[data-surface="dashboard"] .ops-dialogue {
+    height: calc(100dvh - var(--bar) - var(--context) - 1px);
+    min-height: 280px;
+    border-top: 1px solid var(--subtle-line);
+  }
+  :root[data-surface="dashboard"] .ops-dialogue-messages {
+    padding: 12px 16px 20px;
+  }
+  :root[data-surface="dashboard"] .ops-dialogue-message {
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 12px;
+  }
+  :root[data-surface="dashboard"] .ops-dialogue-message > .agent-icon {
+    width: 20px;
+    height: 20px;
+  }
+  :root[data-surface="dashboard"] .ops-dialogue-body {
+    font-size: 16px;
+  }
+  /* On phones a chip takes the message's width, so long names wrap instead of squeezing. */
+  :root[data-surface="dashboard"] .ops-share {
+    display: grid;
+    padding-block: 12px;
+  }
+
+  /* Feeds: two lines per message */
+  :root[data-surface="dashboard"] :is(.ops-columns, .ops-entry > summary),
+  :root[data-surface="dashboard"] .ops-log-single :is(.ops-columns, .ops-entry > summary) {
+    grid-template-columns: 72px minmax(0, 1fr) minmax(0, 1fr);
+    gap: 4px 12px;
+    padding: 12px 16px;
+  }
+  :root[data-surface="dashboard"] :is(.ops-columns, .ops-entry) .ops-entry-server {
+    display: none;
+  }
+  :root[data-surface="dashboard"] :is(.ops-columns, .ops-entry) .ops-preview {
+    grid-column: 1 / -1;
+  }
+  :root[data-surface="dashboard"] .ops-columns .ops-preview {
+    display: none;
+  }
+}
+@keyframes ops-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}

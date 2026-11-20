@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "customConditions": ["react-native"],
+    "resolveJsonModule": true,
+    "types": ["react-native", "expo/types"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+}

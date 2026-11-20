@@ -1,0 +1,35 @@
+{
+  "name": "@talkto/server",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.local.jsonc --ip 127.0.0.1",
+    "build": "pnpm --filter @talkto/web build && wrangler deploy --dry-run --outdir dist",
+    "cf-typegen": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "build:local": "wrangler deploy --config wrangler.local.jsonc --dry-run --outdir dist/local",
+    "mcp:snapshot": "wrangler deploy --config wrangler.platform-test.jsonc --dry-run --outdir dist/platform-test && node tools/mcp-schema-snapshot.mjs",
+    "test": "pnpm build && wrangler deploy --config wrangler.test.jsonc --dry-run --outdir dist/test && wrangler deploy --config wrangler.platform-test.jsonc --dry-run --outdir dist/platform-test && wrangler deploy --config wrangler.telemetry-test.jsonc --dry-run --outdir dist/telemetry-test && node --test --test-timeout=60000 test/*.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
+    "@sentry/cloudflare": "10.74.0",
+    "@talkto/api": "workspace:*",
+    "@talkto/telemetry": "workspace:*",
+    "@workos-inc/node": "10.13.0",
+    "aws4fetch": "1.0.20",
+    "effect": "catalog:",
+    "jose": "6.2.12",
+    "stripe": "22.6.2"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@types/node": "24.13.3",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "miniflare": "5.20260908.0-alpha",
+    "wrangler": "4.130.0"
+  }
+}

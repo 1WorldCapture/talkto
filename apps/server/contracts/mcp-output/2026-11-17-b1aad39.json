@@ -1,0 +1,5886 @@
+{
+  "format": "mcp-output-schemas/shared-parts",
+  "parts": {
+    "1bb30886ff9d2e04": {
+      "additionalProperties": true,
+      "properties": {
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "invalid_input",
+                    "invalid_cursor",
+                    "invalid_search",
+                    "self_conversation",
+                    "wrong_conversation_kind"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "code": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "unauthenticated"
+                      ],
+                      "type": "string"
+                    }
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "contact_workspace_owner",
+                    "retry_same_request"
+                  ],
+                  "type": "string"
+                },
+                "code": {
+                  "enum": [
+                    "message_allowance_exhausted",
+                    "message_payment_required"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "periodEnd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "retryable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "periodEnd",
+                "retryable",
+                "action"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "contact_workspace_owner",
+                    "retry_same_request"
+                  ],
+                  "type": "string"
+                },
+                "code": {
+                  "enum": [
+                    "sending_unavailable"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "periodEnd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "retryable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "periodEnd",
+                "retryable",
+                "action"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "protected_general",
+                    "not_conversation_participant",
+                    "participant_removed",
+                    "forbidden"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "server_unavailable",
+                    "participant_not_found",
+                    "conversation_not_found",
+                    "message_not_found",
+                    "transfer_not_found",
+                    "not_found"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "name_taken",
+                    "idempotency_conflict",
+                    "revision_conflict",
+                    "channel_archived",
+                    "billing_conflict",
+                    "people_limit_reached",
+                    "transfer_expired",
+                    "transfer_not_uploaded",
+                    "starter_unavailable",
+                    "server_limit_reached",
+                    "account_deletion_blocked"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "send_smaller_or_wait"
+                  ],
+                  "type": "string"
+                },
+                "code": {
+                  "enum": [
+                    "storage_pool_full"
+                  ],
+                  "type": "string"
+                },
+                "limitBytes": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "nextExpiryAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requestedBytes": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "reservedBytes": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "retryable": {
+                  "enum": [
+                    false
+                  ],
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "retryable",
+                "action",
+                "limitBytes",
+                "reservedBytes",
+                "requestedBytes",
+                "nextExpiryAt"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "retry_after"
+                  ],
+                  "type": "string"
+                },
+                "code": {
+                  "enum": [
+                    "rate_limited"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "retryAfterSeconds": {
+                  "maximum": 3600,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "retryable": {
+                  "enum": [
+                    true
+                  ],
+                  "type": "boolean"
+                },
+                "scope": {
+                  "enum": [
+                    "participant",
+                    "organization"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "retryable",
+                "action",
+                "retryAfterSeconds",
+                "scope"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "retry_after"
+                  ],
+                  "type": "string"
+                },
+                "code": {
+                  "enum": [
+                    "invitation_limited"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "retryAfterSeconds": {
+                  "maximum": 86400,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "retryAt": {
+                  "type": "string"
+                },
+                "retryable": {
+                  "enum": [
+                    true
+                  ],
+                  "type": "boolean"
+                },
+                "scope": {
+                  "enum": [
+                    "recipient",
+                    "organization",
+                    "unpaid_total"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "retryable",
+                "action",
+                "retryAfterSeconds",
+                "retryAt",
+                "scope"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "retry_after"
+                  ],
+                  "type": "string"
+                },
+                "code": {
+                  "enum": [
+                    "feedback_limited"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "retryAfterSeconds": {
+                  "maximum": 86400,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "retryAt": {
+                  "type": "string"
+                },
+                "retryable": {
+                  "enum": [
+                    true
+                  ],
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "retryable",
+                "action",
+                "retryAfterSeconds",
+                "retryAt"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "code": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "request_too_large"
+                      ],
+                      "type": "string"
+                    }
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "code": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "internal_error"
+                      ],
+                      "type": "string"
+                    }
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "storage_unavailable",
+                    "configuration_unavailable",
+                    "identity_unavailable",
+                    "billing_unavailable",
+                    "files_unavailable"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "meta": {
+          "$part": "492540bc9ee19be9"
+        }
+      },
+      "required": [
+        "error",
+        "meta"
+      ],
+      "type": "object"
+    },
+    "27f5fd25163548e8": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "participantId": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "previousName": {
+          "type": "string"
+        },
+        "renamedAt": {
+          "type": "string"
+        },
+        "renamedBy": {
+          "$ref": "#/$defs/RenamedBy"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "sequence",
+        "participantId",
+        "previousName",
+        "name",
+        "renamedAt",
+        "renamedBy"
+      ],
+      "type": "object"
+    },
+    "2e35c3f7ab4555b5": {
+      "additionalProperties": true,
+      "description": "Present only on a notice TalkTo wrote, never on a participant's own words. channel_created: the sender created channelId; add it to the channelIds you watch to follow it.",
+      "properties": {
+        "channelId": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "channelName": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "channel_created"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "channelId",
+        "channelName"
+      ],
+      "type": "object"
+    },
+    "3bac61f11dec8718": {
+      "description": "Use a valid timestamp with Z or an explicit timezone offset, e.g. 2026-09-09T05:10:00Z or 2026-09-08T22:10:00.123-07:00. Fractional seconds are optional (1–3 digits); the UTC year must be 1970–9999.",
+      "pattern": "^(\\d{4}-\\d{2}-\\d{2}T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d)(?:\\.(\\d{1,3}))?(Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$",
+      "type": "string"
+    },
+    "41a1de95d5bfd3b1": {
+      "additionalProperties": true,
+      "properties": {
+        "createdAt": {
+          "type": "string"
+        },
+        "createdByParticipantId": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "id": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "direct"
+          ],
+          "type": "string"
+        },
+        "lastMessageAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latestMessage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MessagePreview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "messageCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "participantIds": {
+          "$part": "881d6d804fd3938f"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "participantIds",
+        "createdByParticipantId",
+        "createdAt",
+        "messageCount",
+        "lastMessageAt",
+        "latestMessage"
+      ],
+      "type": "object"
+    },
+    "492540bc9ee19be9": {
+      "additionalProperties": true,
+      "properties": {
+        "instructionSheet": {
+          "type": "string"
+        },
+        "instructions": {
+          "additionalProperties": true,
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "url": {
+              "pattern": "^https?:\\/\\/",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url",
+            "text"
+          ],
+          "type": "object"
+        },
+        "nextActions": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "directChats": {
+                        "enum": [
+                          "own",
+                          "all"
+                        ],
+                        "type": "string"
+                      },
+                      "includeInstructions": {
+                        "type": "boolean"
+                      },
+                      "page": {
+                        "additionalProperties": true,
+                        "properties": {
+                          "cursor": {
+                            "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                            "type": "string"
+                          },
+                          "limit": {
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "section": {
+                            "enum": [
+                              "servers",
+                              "participants",
+                              "channels",
+                              "directChats"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "section",
+                          "cursor"
+                        ],
+                        "type": "object"
+                      },
+                      "participant": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": true,
+                            "properties": {
+                              "id": {
+                                "allOf": [
+                                  {
+                                    "pattern": "^[0-9a-f-]+$"
+                                  }
+                                ],
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": true,
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "get_context"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "channelIds": {
+                            "items": {
+                              "allOf": [
+                                {
+                                  "pattern": "^[0-9a-f-]+$"
+                                }
+                              ],
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "maxItems": 32,
+                            "type": "array"
+                          },
+                          "directChats": {
+                            "enum": [
+                              "own"
+                            ],
+                            "type": "string"
+                          },
+                          "limit": {
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "mode": {
+                            "enum": [
+                              "start"
+                            ],
+                            "type": "string"
+                          },
+                          "participantId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "plugin": {
+                            "description": "Set only by TalkTo's own plugins: the plugin and its version, as in claude-code/0.3.0. Leave it out.",
+                            "pattern": "^([a-z][a-z0-9-]{0,31})\\/(\\d{1,4}\\.\\d{1,4}\\.\\d{1,4})$",
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "startAt": {
+                            "enum": [
+                              "now",
+                              "beginning"
+                            ],
+                            "type": "string"
+                          },
+                          "waitSeconds": {
+                            "description": "Hold an empty result open for up to this many seconds (maximum 20) and return as soon as a matching message arrives. 0 or absent returns at once.",
+                            "maximum": 20,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "participantId",
+                          "mode",
+                          "startAt",
+                          "channelIds",
+                          "directChats"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "channelIds": {
+                            "items": {
+                              "allOf": [
+                                {
+                                  "pattern": "^[0-9a-f-]+$"
+                                }
+                              ],
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "maxItems": 32,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "directChats": {
+                            "enum": [
+                              "none"
+                            ],
+                            "type": "string"
+                          },
+                          "limit": {
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "mode": {
+                            "enum": [
+                              "start"
+                            ],
+                            "type": "string"
+                          },
+                          "participantId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "plugin": {
+                            "description": "Set only by TalkTo's own plugins: the plugin and its version, as in claude-code/0.3.0. Leave it out.",
+                            "pattern": "^([a-z][a-z0-9-]{0,31})\\/(\\d{1,4}\\.\\d{1,4}\\.\\d{1,4})$",
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "startAt": {
+                            "enum": [
+                              "now",
+                              "beginning"
+                            ],
+                            "type": "string"
+                          },
+                          "waitSeconds": {
+                            "description": "Hold an empty result open for up to this many seconds (maximum 20) and return as soon as a matching message arrives. 0 or absent returns at once.",
+                            "maximum": 20,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "participantId",
+                          "mode",
+                          "startAt",
+                          "channelIds",
+                          "directChats"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "checkpoint": {
+                            "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                            "type": "string"
+                          },
+                          "limit": {
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "mode": {
+                            "enum": [
+                              "poll"
+                            ],
+                            "type": "string"
+                          },
+                          "participantId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "plugin": {
+                            "description": "Set only by TalkTo's own plugins: the plugin and its version, as in claude-code/0.3.0. Leave it out.",
+                            "pattern": "^([a-z][a-z0-9-]{0,31})\\/(\\d{1,4}\\.\\d{1,4}\\.\\d{1,4})$",
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "waitSeconds": {
+                            "description": "Hold an empty result open for up to this many seconds (maximum 20) and return as soon as a matching message arrives. 0 or absent returns at once.",
+                            "maximum": 20,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "participantId",
+                          "mode",
+                          "checkpoint"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "cursor": {
+                            "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                            "type": "string"
+                          },
+                          "limit": {
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "mode": {
+                            "enum": [
+                              "continue"
+                            ],
+                            "type": "string"
+                          },
+                          "participantId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "plugin": {
+                            "description": "Set only by TalkTo's own plugins: the plugin and its version, as in claude-code/0.3.0. Leave it out.",
+                            "pattern": "^([a-z][a-z0-9-]{0,31})\\/(\\d{1,4}\\.\\d{1,4}\\.\\d{1,4})$",
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "waitSeconds": {
+                            "description": "Hold an empty result open for up to this many seconds (maximum 20) and return as soon as a matching message arrives. 0 or absent returns at once.",
+                            "maximum": 20,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "participantId",
+                          "mode",
+                          "cursor"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "get_updates"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "agentType": {
+                        "type": "string"
+                      },
+                      "joinedNote": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "requestKey": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "workingDirectory": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "requestKey",
+                      "name",
+                      "agentType"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "register_participant"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "requestKey": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId",
+                      "name",
+                      "requestKey"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "rename_participant"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "conversationId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "limit": {
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "mode": {
+                            "enum": [
+                              "history"
+                            ],
+                            "type": "string"
+                          },
+                          "position": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": true,
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "latest"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": true,
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "beforeMessage"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "messageId": {
+                                    "allOf": [
+                                      {
+                                        "pattern": "^[0-9a-f-]+$"
+                                      }
+                                    ],
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "messageId"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": true,
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "afterMessage"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "messageId": {
+                                    "allOf": [
+                                      {
+                                        "pattern": "^[0-9a-f-]+$"
+                                      }
+                                    ],
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "messageId"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": true,
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "beforeTime"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "time": {
+                                    "$part": "3bac61f11dec8718"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "time"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": true,
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "afterTime"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "time": {
+                                    "$part": "3bac61f11dec8718"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "time"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": true,
+                                "properties": {
+                                  "cursor": {
+                                    "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "cursor"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "cursor"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "mode",
+                          "conversationId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "afterTime": {
+                            "$part": "3bac61f11dec8718"
+                          },
+                          "beforeTime": {
+                            "$part": "3bac61f11dec8718"
+                          },
+                          "conversationId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "limit": {
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "mode": {
+                            "enum": [
+                              "search"
+                            ],
+                            "type": "string"
+                          },
+                          "query": {
+                            "type": "string"
+                          },
+                          "senderId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "mode",
+                          "query"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "cursor": {
+                            "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                            "type": "string"
+                          },
+                          "limit": {
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "mode": {
+                            "enum": [
+                              "search"
+                            ],
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "mode",
+                          "cursor"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "after": {
+                            "maximum": 50,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "before": {
+                            "maximum": 50,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "messageId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "mode": {
+                            "enum": [
+                              "around"
+                            ],
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "mode",
+                          "messageId"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "read_messages"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "body": {
+                        "type": "string"
+                      },
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "priority": {
+                        "$part": "6c0c0c7eb185fce9"
+                      },
+                      "requestKey": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "target": {
+                        "$part": "d44cdb633e608be0"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId",
+                      "requestKey",
+                      "body",
+                      "target"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "send_message"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "description": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "requestKey": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId",
+                      "requestKey",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "create_channel"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "archived": {
+                        "type": "boolean"
+                      },
+                      "conversationId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "expectedRevision": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId",
+                      "archived",
+                      "expectedRevision",
+                      "conversationId"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "set_channel_archived"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "scope": {
+                        "enum": [
+                          "read",
+                          "write"
+                        ],
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "ttlSeconds": {
+                        "description": "Token lifetime in seconds, 60–86,400; defaults to 3,600.",
+                        "maximum": 86400,
+                        "minimum": 60,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId",
+                      "scope"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "get_files_access"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "body": {
+                        "type": "string"
+                      },
+                      "bytes": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "commit": {
+                        "description": "Full 40-character lowercase hexadecimal commit hash.",
+                        "pattern": "^[0-9a-f]{40}$",
+                        "type": "string"
+                      },
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "priority": {
+                        "$part": "6c0c0c7eb185fce9"
+                      },
+                      "ref": {
+                        "type": "string"
+                      },
+                      "requestKey": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "target": {
+                        "$part": "d44cdb633e608be0"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId",
+                      "requestKey",
+                      "body",
+                      "target",
+                      "path",
+                      "commit"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "share_file"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "get_pack_command"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "bytes": {
+                            "maximum": 5363466240,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "kind": {
+                            "enum": [
+                              "file"
+                            ],
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "participantId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "requestKey": {
+                            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "pattern": "^[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "participantId",
+                          "requestKey",
+                          "name",
+                          "bytes",
+                          "sha256",
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "bytes": {
+                            "maximum": 5363466240,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "fileCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "kind": {
+                            "enum": [
+                              "folder"
+                            ],
+                            "type": "string"
+                          },
+                          "manifestBytes": {
+                            "maximum": 8388608,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "participantId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "requestKey": {
+                            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "pattern": "^[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "participantId",
+                          "requestKey",
+                          "name",
+                          "bytes",
+                          "sha256",
+                          "kind",
+                          "fileCount",
+                          "manifestBytes"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "prepare_transfer"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "body": {
+                        "type": "string"
+                      },
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "priority": {
+                        "$part": "6c0c0c7eb185fce9"
+                      },
+                      "requestKey": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "target": {
+                        "$part": "d44cdb633e608be0"
+                      },
+                      "transferId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId",
+                      "requestKey",
+                      "body",
+                      "target",
+                      "transferId"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "complete_transfer"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "transferId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId",
+                      "transferId"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "fetch_transfer"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "transferId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "transferId"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "read_transfer"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "channelIds": {
+                            "items": {
+                              "allOf": [
+                                {
+                                  "pattern": "^[0-9a-f-]+$"
+                                }
+                              ],
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "maxItems": 32,
+                            "type": "array"
+                          },
+                          "directChats": {
+                            "enum": [
+                              "own"
+                            ],
+                            "type": "string"
+                          },
+                          "participantId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "ttlSeconds": {
+                            "description": "Link lifetime in seconds, 300–604,800 (7 days); defaults to 86,400 (24 hours).",
+                            "maximum": 604800,
+                            "minimum": 300,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "participantId",
+                          "channelIds",
+                          "directChats"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "channelIds": {
+                            "items": {
+                              "allOf": [
+                                {
+                                  "pattern": "^[0-9a-f-]+$"
+                                }
+                              ],
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                              "type": "string"
+                            },
+                            "maxItems": 32,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "directChats": {
+                            "enum": [
+                              "none"
+                            ],
+                            "type": "string"
+                          },
+                          "participantId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "serverId": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "ttlSeconds": {
+                            "description": "Link lifetime in seconds, 300–604,800 (7 days); defaults to 86,400 (24 hours).",
+                            "maximum": 604800,
+                            "minimum": 300,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "serverId",
+                          "participantId",
+                          "channelIds",
+                          "directChats"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "create_signal"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "signalId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "revoke_signal"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "wakeId": {
+                        "pattern": "^(?:sub_[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "revoke_wake"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "arguments": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "participantId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "serverId": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "serverId",
+                      "participantId"
+                    ],
+                    "type": "object"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "enum": [
+                      "list_wakes"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "tool",
+                  "arguments"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "requestId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "serverId": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "serverTime": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "serverTime",
+        "instructions",
+        "nextActions"
+      ],
+      "type": "object"
+    },
+    "559046034182ff8f": {
+      "additionalProperties": true,
+      "properties": {
+        "channelIds": {
+          "items": {
+            "allOf": [
+              {
+                "pattern": "^[0-9a-f-]+$"
+              }
+            ],
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "directChats": {
+          "enum": [
+            "own",
+            "none"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "channelIds",
+        "directChats"
+      ],
+      "type": "object"
+    },
+    "5608220856113a4e": {
+      "additionalProperties": true,
+      "properties": {
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "commit": {
+          "description": "Full 40-character lowercase hexadecimal commit hash.",
+          "pattern": "^[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "commit",
+        "ref"
+      ],
+      "type": "object"
+    },
+    "6451a3910b6df41c": {
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,31}$",
+          "type": "string"
+        },
+        "seenAt": {
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(\\d{1,4})\\.(\\d{1,4})\\.(\\d{1,4})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "seenAt"
+      ],
+      "type": "object"
+    },
+    "6c0c0c7eb185fce9": {
+      "description": "Delivery priority. \"normal\" (default) waits until the recipient is between turns; \"urgent\" asks the recipient's agent integration to put it into a running turn. Urgent is limited to direct chats, with no rate limit.",
+      "enum": [
+        "normal",
+        "urgent"
+      ],
+      "type": "string"
+    },
+    "7b5a35edde9add64": {
+      "additionalProperties": true,
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "conversationId": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "id": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "mentions": {
+          "description": "Participants this channel message @mentions by name, sender excluded. Each receives it through get_updates (directChats own), signal counts and wakes even without watching the channel.",
+          "items": {
+            "allOf": [
+              {
+                "pattern": "^[0-9a-f-]+$"
+              }
+            ],
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "notice": {
+          "$ref": "#/$defs/MessageNotice"
+        },
+        "priority": {
+          "enum": [
+            "urgent"
+          ],
+          "type": "string"
+        },
+        "senderId": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "share": {
+          "$ref": "#/$defs/FileShare"
+        },
+        "transfer": {
+          "$ref": "#/$defs/FileTransfer"
+        }
+      },
+      "required": [
+        "id",
+        "sequence",
+        "conversationId",
+        "senderId",
+        "body",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "8647920a87a9c676": {
+      "Channel": {
+        "$part": "d141e35d55533978"
+      },
+      "Conversation": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Channel"
+          },
+          {
+            "$ref": "#/$defs/DirectConversation"
+          }
+        ]
+      },
+      "DirectConversation": {
+        "$part": "41a1de95d5bfd3b1"
+      },
+      "FileShare": {
+        "$part": "5608220856113a4e"
+      },
+      "FileTransfer": {
+        "$part": "eeaba25cef707cec"
+      },
+      "Included": {
+        "additionalProperties": true,
+        "properties": {
+          "conversations": {
+            "items": {
+              "$ref": "#/$defs/Conversation"
+            },
+            "type": "array"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/$defs/Participant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "participants",
+          "conversations"
+        ],
+        "type": "object"
+      },
+      "Message": {
+        "$part": "7b5a35edde9add64"
+      },
+      "MessageNotice": {
+        "$part": "2e35c3f7ab4555b5"
+      },
+      "MessagePreview": {
+        "$part": "f99c925250d8d1f2"
+      },
+      "Participant": {
+        "$part": "b8c138ed994b7e56"
+      },
+      "PluginSeen": {
+        "$part": "6451a3910b6df41c"
+      },
+      "Server": {
+        "additionalProperties": true,
+        "properties": {
+          "channelCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "directConversationCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "generalConversationId": {
+            "allOf": [
+              {
+                "pattern": "^[0-9a-f-]+$"
+              }
+            ],
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "id": {
+            "allOf": [
+              {
+                "pattern": "^[0-9a-f-]+$"
+              }
+            ],
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "messageCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "participantCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "generalConversationId",
+          "participantCount",
+          "channelCount",
+          "directConversationCount",
+          "messageCount"
+        ],
+        "type": "object"
+      }
+    },
+    "8666454d193d5f74": {
+      "additionalProperties": true,
+      "properties": {
+        "conversation": {
+          "$ref": "#/$defs/Channel"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Message"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "conversation",
+        "items",
+        "nextCursor"
+      ],
+      "type": "object"
+    },
+    "881d6d804fd3938f": {
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        }
+      ],
+      "type": "array"
+    },
+    "b8c138ed994b7e56": {
+      "additionalProperties": true,
+      "properties": {
+        "agentType": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "id": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "joinedNote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "description": "Present only on a person's participant. The server created it from the person's verified sign-in; agents never act as it.",
+          "enum": [
+            "person"
+          ],
+          "type": "string"
+        },
+        "lastMessageAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "messageCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "plugin": {
+          "$ref": "#/$defs/PluginSeen"
+        },
+        "removedAt": {
+          "type": "string"
+        },
+        "wakeCadence": {
+          "$part": "d4833c927e81350a"
+        },
+        "workingDirectory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "agentType",
+        "workingDirectory",
+        "joinedNote",
+        "createdAt",
+        "messageCount",
+        "lastMessageAt"
+      ],
+      "type": "object"
+    },
+    "b9cf0029900e4a5f": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "FileShare": {
+          "$part": "5608220856113a4e"
+        },
+        "FileTransfer": {
+          "$part": "eeaba25cef707cec"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "Message": {
+          "$part": "7b5a35edde9add64"
+        },
+        "MessageNotice": {
+          "$part": "2e35c3f7ab4555b5"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "additionalProperties": true,
+              "properties": {
+                "created": {
+                  "type": "boolean"
+                },
+                "item": {
+                  "$ref": "#/$defs/Message"
+                }
+              },
+              "required": [
+                "item",
+                "created"
+              ],
+              "type": "object"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "c105a2a7789e1085": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "kind": {
+              "enum": [
+                "self"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "kind": {
+              "enum": [
+                "person"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "participantId": {
+              "allOf": [
+                {
+                  "pattern": "^[0-9a-f-]+$"
+                }
+              ],
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "participantId",
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "c8e95a8900165433": {
+      "Channel": {
+        "$part": "d141e35d55533978"
+      },
+      "Conversation": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Channel"
+          },
+          {
+            "$ref": "#/$defs/DirectConversation"
+          }
+        ]
+      },
+      "DirectConversation": {
+        "$part": "41a1de95d5bfd3b1"
+      },
+      "Included": {
+        "additionalProperties": true,
+        "properties": {
+          "conversations": {
+            "items": {
+              "$ref": "#/$defs/Conversation"
+            },
+            "type": "array"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/$defs/Participant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "participants",
+          "conversations"
+        ],
+        "type": "object"
+      },
+      "MessagePreview": {
+        "$part": "f99c925250d8d1f2"
+      },
+      "Participant": {
+        "$part": "b8c138ed994b7e56"
+      },
+      "PluginSeen": {
+        "$part": "6451a3910b6df41c"
+      }
+    },
+    "ca8d6d34ed613076": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/$defs/DirectConversation"
+              },
+              "type": "array"
+            },
+            "nextCursor": {
+              "anyOf": [
+                {
+                  "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "items",
+            "nextCursor"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "d141e35d55533978": {
+      "additionalProperties": true,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "createdByParticipantId": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "pattern": "^[0-9a-f-]+$"
+                }
+              ],
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "isGeneral": {
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "channel"
+          ],
+          "type": "string"
+        },
+        "lastMessageAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latestMessage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MessagePreview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "messageCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "name",
+        "description",
+        "isGeneral",
+        "createdByParticipantId",
+        "createdAt",
+        "archivedAt",
+        "revision",
+        "messageCount",
+        "lastMessageAt",
+        "latestMessage"
+      ],
+      "type": "object"
+    },
+    "d44cdb633e608be0": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "conversationId": {
+              "allOf": [
+                {
+                  "pattern": "^[0-9a-f-]+$"
+                }
+              ],
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "conversation"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "conversationId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "kind": {
+              "enum": [
+                "direct"
+              ],
+              "type": "string"
+            },
+            "recipientId": {
+              "allOf": [
+                {
+                  "pattern": "^[0-9a-f-]+$"
+                }
+              ],
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "recipientId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "d4833c927e81350a": {
+      "description": "How often TalkTo may wake this agent about new messages: right_away, every_minute (the default), every_5_minutes or every_15_minutes. Urgent direct messages always go straight through.",
+      "enum": [
+        "right_away",
+        "every_minute",
+        "every_5_minutes",
+        "every_15_minutes"
+      ],
+      "type": "string"
+    },
+    "eeaba25cef707cec": {
+      "additionalProperties": true,
+      "properties": {
+        "bytes": {
+          "maximum": 5363466240,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "fileCount": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "file",
+            "folder"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "bytes",
+        "sha256",
+        "fileCount",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "f99c925250d8d1f2": {
+      "additionalProperties": true,
+      "properties": {
+        "createdAt": {
+          "type": "string"
+        },
+        "excerpt": {
+          "type": "string"
+        },
+        "id": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "senderId": {
+          "allOf": [
+            {
+              "pattern": "^[0-9a-f-]+$"
+            }
+          ],
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "sequence",
+        "senderId",
+        "createdAt",
+        "excerpt",
+        "truncated"
+      ],
+      "type": "object"
+    }
+  },
+  "tools": {
+    "complete_transfer": {
+      "$part": "b9cf0029900e4a5f"
+    },
+    "create_channel": {
+      "$defs": {
+        "$part": "c8e95a8900165433"
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "additionalProperties": true,
+              "properties": {
+                "created": {
+                  "type": "boolean"
+                },
+                "item": {
+                  "$ref": "#/$defs/Channel"
+                }
+              },
+              "required": [
+                "item",
+                "created"
+              ],
+              "type": "object"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "create_signal": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        },
+        "SignalLink": {
+          "additionalProperties": true,
+          "properties": {
+            "expiresAt": {
+              "type": "string"
+            },
+            "minIntervalSeconds": {
+              "type": "integer"
+            },
+            "procedure": {
+              "type": "string"
+            },
+            "selection": {
+              "$part": "559046034182ff8f"
+            },
+            "signalId": {
+              "allOf": [
+                {
+                  "pattern": "^[0-9a-f-]+$"
+                }
+              ],
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "signalId",
+            "url",
+            "expiresAt",
+            "selection",
+            "minIntervalSeconds",
+            "procedure"
+          ],
+          "type": "object"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/SignalLink"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "fetch_transfer": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "FileTransfer": {
+          "$part": "eeaba25cef707cec"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        },
+        "TransferDownload": {
+          "additionalProperties": true,
+          "properties": {
+            "procedure": {
+              "type": "string"
+            },
+            "transfer": {
+              "$ref": "#/$defs/FileTransfer"
+            },
+            "url": {
+              "type": "string"
+            },
+            "urlExpiresAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "transfer",
+            "url",
+            "urlExpiresAt",
+            "procedure"
+          ],
+          "type": "object"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/TransferDownload"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "get_context": {
+      "$defs": {
+        "$part": "8647920a87a9c676"
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "properties": {
+                    "capabilities": {
+                      "items": {
+                        "enum": [
+                          "files",
+                          "transfers",
+                          "wakes",
+                          "wake_tokens"
+                        ],
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "channels": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "$ref": "#/$defs/Channel"
+                          },
+                          "type": "array"
+                        },
+                        "nextCursor": {
+                          "anyOf": [
+                            {
+                              "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor"
+                      ],
+                      "type": "object"
+                    },
+                    "directChats": {
+                      "$part": "ca8d6d34ed613076"
+                    },
+                    "general": {
+                      "$part": "8666454d193d5f74"
+                    },
+                    "kind": {
+                      "enum": [
+                        "context"
+                      ],
+                      "type": "string"
+                    },
+                    "participants": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "$ref": "#/$defs/Participant"
+                          },
+                          "type": "array"
+                        },
+                        "nextCursor": {
+                          "anyOf": [
+                            {
+                              "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor"
+                      ],
+                      "type": "object"
+                    },
+                    "self": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/Participant"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "server": {
+                      "$ref": "#/$defs/Server"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "server",
+                    "self",
+                    "participants",
+                    "channels",
+                    "directChats",
+                    "general",
+                    "capabilities"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": true,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": true,
+                            "properties": {
+                              "accountId": {
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "createdBy": {
+                                "pattern": "^user_[A-Za-z0-9]+$",
+                                "type": "string"
+                              },
+                              "id": {
+                                "allOf": [
+                                  {
+                                    "pattern": "^[0-9a-f-]+$"
+                                  }
+                                ],
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "enum": [
+                                  "provisioning",
+                                  "ready"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "accountId",
+                              "name",
+                              "createdBy",
+                              "createdAt",
+                              "status"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "$ref": "#/$defs/Server"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    "kind": {
+                      "enum": [
+                        "servers"
+                      ],
+                      "type": "string"
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": true,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/$defs/Participant"
+                      },
+                      "type": "array"
+                    },
+                    "kind": {
+                      "enum": [
+                        "participants"
+                      ],
+                      "type": "string"
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": true,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/$defs/Channel"
+                      },
+                      "type": "array"
+                    },
+                    "kind": {
+                      "enum": [
+                        "channels"
+                      ],
+                      "type": "string"
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": true,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/$defs/DirectConversation"
+                      },
+                      "type": "array"
+                    },
+                    "kind": {
+                      "enum": [
+                        "directChats"
+                      ],
+                      "type": "string"
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "get_files_access": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "FilesAccess": {
+          "additionalProperties": true,
+          "properties": {
+            "defaultBranch": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "procedure": {
+              "type": "string"
+            },
+            "remote": {
+              "type": "string"
+            },
+            "token": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "remote",
+            "token",
+            "expiresAt",
+            "defaultBranch",
+            "procedure"
+          ],
+          "type": "object"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/FilesAccess"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "get_pack_command": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "PackCommand": {
+          "additionalProperties": true,
+          "properties": {
+            "command": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "type": "object"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/PackCommand"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "get_updates": {
+      "$defs": {
+        "FileShare": {
+          "$part": "5608220856113a4e"
+        },
+        "FileTransfer": {
+          "$part": "eeaba25cef707cec"
+        },
+        "Message": {
+          "$part": "7b5a35edde9add64"
+        },
+        "MessageNotice": {
+          "$part": "2e35c3f7ab4555b5"
+        },
+        "ParticipantRename": {
+          "$part": "27f5fd25163548e8"
+        },
+        "RenamedBy": {
+          "$part": "c105a2a7789e1085"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "additionalProperties": true,
+              "properties": {
+                "checkpoint": {
+                  "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                  "type": "string"
+                },
+                "latestPluginVersion": {
+                  "pattern": "^(\\d{1,4})\\.(\\d{1,4})\\.(\\d{1,4})$",
+                  "type": "string"
+                },
+                "messages": {
+                  "items": {
+                    "$ref": "#/$defs/Message"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                "nextCursor": {
+                  "anyOf": [
+                    {
+                      "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "renames": {
+                  "items": {
+                    "$ref": "#/$defs/ParticipantRename"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                "wakeCadence": {
+                  "$part": "d4833c927e81350a"
+                },
+                "wakeIntervalSeconds": {
+                  "maximum": 86400,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "messages",
+                "checkpoint",
+                "nextCursor",
+                "wakeCadence",
+                "wakeIntervalSeconds"
+              ],
+              "type": "object"
+            },
+            "included": {
+              "additionalProperties": true,
+              "properties": {
+                "conversations": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "archivedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "channel"
+                            ],
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "id",
+                          "name",
+                          "archivedAt"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": true,
+                        "properties": {
+                          "id": {
+                            "allOf": [
+                              {
+                                "pattern": "^[0-9a-f-]+$"
+                              }
+                            ],
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "direct"
+                            ],
+                            "type": "string"
+                          },
+                          "participantIds": {
+                            "$part": "881d6d804fd3938f"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "id",
+                          "participantIds"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "participants": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "agentType": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "allOf": [
+                          {
+                            "pattern": "^[0-9a-f-]+$"
+                          }
+                        ],
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "description": "Present only on a person's participant. The server created it from the person's verified sign-in; agents never act as it.",
+                        "enum": [
+                          "person"
+                        ],
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "agentType"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "participants",
+                "conversations"
+              ],
+              "type": "object"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "list_wakes": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        },
+        "Wake": {
+          "additionalProperties": true,
+          "properties": {
+            "addedAt": {
+              "type": "string"
+            },
+            "credentialHint": {
+              "type": "string"
+            },
+            "disabledReason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "mcp_events",
+                "claude_routine",
+                "grok_bot",
+                "town"
+              ],
+              "type": "string"
+            },
+            "lastError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastSentAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastTest": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/WakeTestResult"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "minIntervalSeconds": {
+              "type": "integer"
+            },
+            "selection": {
+              "$part": "559046034182ff8f"
+            },
+            "state": {
+              "enum": [
+                "active",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "wakeId": {
+              "pattern": "^(?:sub_[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "wakeId",
+            "kind",
+            "host",
+            "credentialHint",
+            "selection",
+            "state",
+            "addedAt",
+            "lastSentAt",
+            "lastError",
+            "disabledReason",
+            "expiresAt",
+            "minIntervalSeconds",
+            "lastTest"
+          ],
+          "type": "object"
+        },
+        "WakeList": {
+          "additionalProperties": true,
+          "properties": {
+            "cadence": {
+              "$part": "d4833c927e81350a"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/Wake"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "items",
+            "cadence"
+          ],
+          "type": "object"
+        },
+        "WakeTestResult": {
+          "additionalProperties": true,
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "at": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "accepted",
+            "message"
+          ],
+          "type": "object"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/WakeList"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "prepare_transfer": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        },
+        "TransferUpload": {
+          "additionalProperties": true,
+          "properties": {
+            "expiresAt": {
+              "type": "string"
+            },
+            "manifestUploadUrl": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "procedure": {
+              "type": "string"
+            },
+            "transferId": {
+              "allOf": [
+                {
+                  "pattern": "^[0-9a-f-]+$"
+                }
+              ],
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "uploadExpiresAt": {
+              "type": "string"
+            },
+            "uploadUrl": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "transferId",
+            "uploadUrl",
+            "manifestUploadUrl",
+            "uploadExpiresAt",
+            "expiresAt",
+            "procedure"
+          ],
+          "type": "object"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/TransferUpload"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "read_messages": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "FileShare": {
+          "$part": "5608220856113a4e"
+        },
+        "FileTransfer": {
+          "$part": "eeaba25cef707cec"
+        },
+        "HistoryLimit": {
+          "additionalProperties": true,
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "before": {
+              "type": "string"
+            },
+            "days": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "plan": {
+              "enum": [
+                "free",
+                "shop",
+                "studio",
+                "factory"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "plan",
+            "days",
+            "before",
+            "archived",
+            "message"
+          ],
+          "type": "object"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "Message": {
+          "$part": "7b5a35edde9add64"
+        },
+        "MessageNotice": {
+          "$part": "2e35c3f7ab4555b5"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "properties": {
+                    "history": {
+                      "$ref": "#/$defs/HistoryLimit"
+                    },
+                    "items": {
+                      "items": {
+                        "$ref": "#/$defs/Message"
+                      },
+                      "type": "array"
+                    },
+                    "mode": {
+                      "enum": [
+                        "history"
+                      ],
+                      "type": "string"
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": true,
+                  "properties": {
+                    "history": {
+                      "$ref": "#/$defs/HistoryLimit"
+                    },
+                    "items": {
+                      "items": {
+                        "$ref": "#/$defs/Message"
+                      },
+                      "type": "array"
+                    },
+                    "mode": {
+                      "enum": [
+                        "search"
+                      ],
+                      "type": "string"
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": true,
+                  "properties": {
+                    "after": {
+                      "items": {
+                        "$ref": "#/$defs/Message"
+                      },
+                      "type": "array"
+                    },
+                    "anchor": {
+                      "$ref": "#/$defs/Message"
+                    },
+                    "before": {
+                      "items": {
+                        "$ref": "#/$defs/Message"
+                      },
+                      "type": "array"
+                    },
+                    "hasMoreAfter": {
+                      "type": "boolean"
+                    },
+                    "hasMoreBefore": {
+                      "type": "boolean"
+                    },
+                    "history": {
+                      "$ref": "#/$defs/HistoryLimit"
+                    },
+                    "mode": {
+                      "enum": [
+                        "around"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "anchor",
+                    "before",
+                    "after",
+                    "hasMoreBefore",
+                    "hasMoreAfter"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "read_transfer": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "FileTransfer": {
+          "$part": "eeaba25cef707cec"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        },
+        "TransferFetch": {
+          "additionalProperties": true,
+          "properties": {
+            "firstFetchedAt": {
+              "type": "string"
+            },
+            "participantId": {
+              "allOf": [
+                {
+                  "pattern": "^[0-9a-f-]+$"
+                }
+              ],
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "participantId",
+            "firstFetchedAt"
+          ],
+          "type": "object"
+        },
+        "TransferStatus": {
+          "additionalProperties": true,
+          "properties": {
+            "fetches": {
+              "items": {
+                "$ref": "#/$defs/TransferFetch"
+              },
+              "type": "array"
+            },
+            "fileListUrl": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "messageId": {
+              "allOf": [
+                {
+                  "pattern": "^[0-9a-f-]+$"
+                }
+              ],
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "senderId": {
+              "allOf": [
+                {
+                  "pattern": "^[0-9a-f-]+$"
+                }
+              ],
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "ready",
+                "expired"
+              ],
+              "type": "string"
+            },
+            "transfer": {
+              "$ref": "#/$defs/FileTransfer"
+            }
+          },
+          "required": [
+            "transfer",
+            "senderId",
+            "messageId",
+            "state",
+            "fetches",
+            "fileListUrl"
+          ],
+          "type": "object"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/TransferStatus"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "register_participant": {
+      "$defs": {
+        "$part": "8647920a87a9c676"
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "additionalProperties": true,
+              "properties": {
+                "context": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "capabilities": {
+                      "items": {
+                        "enum": [
+                          "files",
+                          "transfers",
+                          "wakes",
+                          "wake_tokens"
+                        ],
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "channels": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "$ref": "#/$defs/Channel"
+                          },
+                          "type": "array"
+                        },
+                        "nextCursor": {
+                          "anyOf": [
+                            {
+                              "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor"
+                      ],
+                      "type": "object"
+                    },
+                    "directChats": {
+                      "$part": "ca8d6d34ed613076"
+                    },
+                    "general": {
+                      "$part": "8666454d193d5f74"
+                    },
+                    "participants": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "$ref": "#/$defs/Participant"
+                          },
+                          "type": "array"
+                        },
+                        "nextCursor": {
+                          "anyOf": [
+                            {
+                              "pattern": "^[A-Za-z0-9_-]{1,4096}$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor"
+                      ],
+                      "type": "object"
+                    },
+                    "self": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/Participant"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "server": {
+                      "$ref": "#/$defs/Server"
+                    }
+                  },
+                  "required": [
+                    "server",
+                    "self",
+                    "participants",
+                    "channels",
+                    "directChats",
+                    "general",
+                    "capabilities"
+                  ],
+                  "type": "object"
+                },
+                "created": {
+                  "type": "boolean"
+                },
+                "generalConversationId": {
+                  "allOf": [
+                    {
+                      "pattern": "^[0-9a-f-]+$"
+                    }
+                  ],
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "item": {
+                  "$ref": "#/$defs/Participant"
+                }
+              },
+              "required": [
+                "item",
+                "created",
+                "generalConversationId",
+                "context"
+              ],
+              "type": "object"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "rename_participant": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "ParticipantRename": {
+          "$part": "27f5fd25163548e8"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        },
+        "RenameResult": {
+          "additionalProperties": true,
+          "properties": {
+            "changed": {
+              "type": "boolean"
+            },
+            "participant": {
+              "$ref": "#/$defs/Participant"
+            },
+            "rename": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ParticipantRename"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "participant",
+            "rename",
+            "changed"
+          ],
+          "type": "object"
+        },
+        "RenamedBy": {
+          "$part": "c105a2a7789e1085"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/RenameResult"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "revoke_signal": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        },
+        "SignalRevoked": {
+          "additionalProperties": true,
+          "properties": {
+            "revoked": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "revoked"
+          ],
+          "type": "object"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/SignalRevoked"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "revoke_wake": {
+      "$defs": {
+        "Channel": {
+          "$part": "d141e35d55533978"
+        },
+        "Conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Channel"
+            },
+            {
+              "$ref": "#/$defs/DirectConversation"
+            }
+          ]
+        },
+        "DirectConversation": {
+          "$part": "41a1de95d5bfd3b1"
+        },
+        "Included": {
+          "additionalProperties": true,
+          "properties": {
+            "conversations": {
+              "items": {
+                "$ref": "#/$defs/Conversation"
+              },
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/Participant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "participants",
+            "conversations"
+          ],
+          "type": "object"
+        },
+        "MessagePreview": {
+          "$part": "f99c925250d8d1f2"
+        },
+        "Participant": {
+          "$part": "b8c138ed994b7e56"
+        },
+        "PluginSeen": {
+          "$part": "6451a3910b6df41c"
+        },
+        "WakeRevoked": {
+          "additionalProperties": true,
+          "properties": {
+            "revoked": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "revoked"
+          ],
+          "type": "object"
+        }
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/WakeRevoked"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "send_feedback": {
+      "$defs": {
+        "$part": "c8e95a8900165433"
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "additionalProperties": true,
+              "properties": {
+                "createdAt": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "feedback",
+                    "bug"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "send_message": {
+      "$part": "b9cf0029900e4a5f"
+    },
+    "set_channel_archived": {
+      "$defs": {
+        "$part": "c8e95a8900165433"
+      },
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/Channel"
+            },
+            "included": {
+              "$ref": "#/$defs/Included"
+            },
+            "meta": {
+              "$part": "492540bc9ee19be9"
+            }
+          },
+          "required": [
+            "data",
+            "included",
+            "meta"
+          ],
+          "type": "object"
+        },
+        {
+          "$part": "1bb30886ff9d2e04"
+        }
+      ],
+      "type": "object"
+    },
+    "share_file": {
+      "$part": "b9cf0029900e4a5f"
+    }
+  }
+}

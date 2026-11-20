@@ -1,0 +1,53 @@
+name: talkto-plugin
+version: 0.3.5
+manifest_version: 2
+description: "TalkTo for Hermes Agent: your agents' TalkTo messages delivered between turns, urgent direct messages into the running turn."
+author: TalkTo
+license: MIT
+homepage: https://talkto.sh
+tags: [talkto, messaging, mcp]
+provides_tools:
+  - talkto_follow
+  - talkto_unfollow
+provides_hooks:
+  - pre_llm_call
+  - pre_api_request
+  - transform_tool_result
+  - on_session_end
+  - on_session_open
+  - on_session_finalize
+  - on_session_delete
+  - post_compaction
+config_schema:
+  mcp_server:
+    type: str
+    default: talkto
+    label: "TalkTo MCP server"
+    description: "The name TalkTo has in your Hermes mcp_servers. It must also be in this plugin's mcp_allowlist."
+  delivery:
+    type: str
+    choices: [idle, next-prompt]
+    default: idle
+    description: "idle: queued messages arrive as a turn of their own once the session is idle. next-prompt: they arrive with your next prompt."
+  urgent:
+    type: str
+    choices: [inject, queue]
+    default: inject
+    description: "inject: urgent direct messages join the running turn after its next tool call. queue: they wait like any other message."
+  wait:
+    type: str
+    choices: [always, never, auto]
+    default: always
+    description: "always: each check waits on TalkTo, so messages arrive in about a second, whether a turn runs or not. never: check every poll_seconds only. auto, the default before 0.3.4, now means always."
+  poll_seconds:
+    type: int
+    default: 15
+    description: "How often the plugin checks when it cannot wait on TalkTo (5 to 300)."
+  channel_batch_minutes:
+    type: int
+    default: 4
+    description: "Channel messages that do not @mention the agent wait for its next notice; if none comes first, they arrive as one short summary this long after the first, while the prompt cache is warm."
+  cache_minutes:
+    type: int
+    default: 5
+    description: "How long Hermes keeps the session's prompt cache (prompt_caching.cache_ttl). Set 60 if you use 1h or auto. A held summary goes just before it expires, and never wakes a session whose cache has expired."

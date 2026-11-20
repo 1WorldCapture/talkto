@@ -1,0 +1,153 @@
+/* Files: one row per sent file or folder, on the same white panel as the channel directory. */
+.ops-files-intro {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.ops-files-table {
+  width: 100%;
+  border: 1px solid var(--subtle-line);
+  border-collapse: collapse;
+  background: var(--surface);
+  font: 14px/1.5 var(--sans);
+}
+.ops-files-table th {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--subtle-line);
+  color: var(--muted);
+  font: 500 13px/1.4 var(--sans);
+  text-align: left;
+  white-space: nowrap;
+}
+.ops-files-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--subtle-line);
+  vertical-align: middle;
+}
+.ops-files-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ops-files-file,
+.ops-files-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ops-files-file > .ops-share-mark {
+  flex: none;
+}
+.ops-files-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.ops-files-person > .agent-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+/* Names keep their width on wide screens and break only when a name is longer than the row. */
+.ops-files-person > span:last-child,
+.ops-files-where {
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+/* A sender's name reads whole on wide screens; names are at most 64 characters. */
+@media (min-width: 1100px) {
+  .ops-files-person > span:last-child {
+    white-space: nowrap;
+  }
+}
+.ops-files-where a {
+  font: 500 13px/1.5 var(--mono);
+}
+.ops-files-size,
+.ops-files-sent,
+.ops-files-expires {
+  color: var(--muted);
+  font: 12px/1.5 var(--mono);
+  white-space: nowrap;
+}
+.ops-files-muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+.ops-files-action {
+  text-align: right;
+  white-space: nowrap;
+}
+.ops-files-table tr[data-state="expired"] .ops-files-title,
+.ops-files-table tr[data-state="incomplete"] .ops-files-title {
+  color: var(--muted);
+}
+
+/*
+  Below a wide main column the seven columns no longer fit: each file becomes a block with its
+  name on top, its details below, and Download at the right.
+*/
+@media (max-width: 1099px) {
+  .ops-files-table,
+  .ops-files-table tbody {
+    display: block;
+  }
+  .ops-files-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .ops-files-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name action"
+      "size action"
+      "sender action"
+      "where action"
+      "sent action"
+      "expires action";
+    gap: 4px 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--subtle-line);
+  }
+  .ops-files-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .ops-files-table td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  .ops-files-name {
+    grid-area: name;
+    margin-bottom: 4px;
+  }
+  .ops-files-size {
+    grid-area: size;
+  }
+  .ops-files-sender {
+    grid-area: sender;
+  }
+  .ops-files-where {
+    grid-area: where;
+  }
+  .ops-files-sent {
+    grid-area: sent;
+  }
+  .ops-files-expires {
+    grid-area: expires;
+  }
+  .ops-files-action {
+    grid-area: action;
+    align-self: start;
+  }
+  .ops-files-sent::before,
+  .ops-files-expires::before {
+    content: attr(data-label) " ";
+  }
+  .ops-files-action .ops-new {
+    min-height: 44px;
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "@talkto/api",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./agent-types": "./src/agent-types.ts",
+    "./agent": "./src/agent.ts",
+    "./updates": "./src/updates.ts",
+    "./renames": "./src/renames.ts",
+    "./removals": "./src/removals.ts",
+    "./plugins": "./src/plugins.ts",
+    "./signal": "./src/signal.ts",
+    "./wake": "./src/wake.ts",
+    "./api": "./src/api.ts",
+    "./health": "./src/health.ts",
+    "./models": "./src/models.ts",
+    "./inputs": "./src/inputs.ts",
+    "./errors": "./src/errors.ts",
+    "./envelope": "./src/envelope.ts",
+    "./security": "./src/security.ts",
+    "./platform": "./src/platform.ts",
+    "./feedback": "./src/feedback.ts",
+    "./dashboard": "./src/dashboard.ts",
+    "./documentation": "./src/documentation.ts",
+    "./agent-guides": "./src/agent-guides.ts",
+    "./billing": "./src/billing.ts",
+    "./pricing": "./src/pricing.ts",
+    "./metering": "./src/metering.ts",
+    "./onboarding": "./src/onboarding.ts",
+    "./starter": "./src/starter.ts",
+    "./account": "./src/account.ts",
+    "./email": "./src/email.ts",
+    "./sign-ins": "./src/sign-ins.ts",
+    "./share": "./src/share.ts",
+    "./guests": "./src/guests.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  }
+}

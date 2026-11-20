@@ -1,0 +1,453 @@
+/*
+  Layout "Full-bleed": no window. The page is the background; a huge headline sits on it and a
+  live message stream takes the place of the old window, with the brand line bundles running into
+  the stream from both sides. Sections below are full-width bands split by hairlines.
+*/
+.fb {
+  --stream-w: 640px;
+  --stream-h: 392px;
+}
+
+/* Top bar: on the background, no panel. */
+.fb-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  min-height: 76px;
+  padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--subtle-line);
+}
+.fb-nav {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-left: auto;
+  font-size: 15px;
+}
+.fb-nav > a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.fb-nav > a:hover,
+.fb-nav > a[aria-current="page"] {
+  color: var(--ink);
+}
+.fb-nav > a[aria-current="page"] {
+  text-decoration: underline;
+  text-decoration-color: var(--lamp);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 8px;
+}
+.fb-nav .lp-docs > a:not(.lp-llms) {
+  color: var(--muted);
+  text-decoration: none;
+}
+.fb-nav .lp-docs > a:hover {
+  color: var(--ink);
+}
+.fb-account {
+  min-height: 36px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+.fb-main {
+  flex: 1;
+}
+
+/* Hero. It clips the fragment layer, so the right bundle's long line ends at the bar's rule. */
+.fb-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(32px, 5vh, 104px) var(--gutter) 0;
+  text-align: center;
+}
+.fb-title {
+  max-width: 14ch;
+  font: 900 clamp(52px, 6.9vw, 184px) / 0.9 var(--sans);
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+.fb-lede {
+  max-width: none;
+  margin-top: clamp(20px, 2.4vw, 36px);
+  color: var(--muted);
+  font-size: clamp(18px, 1.5vw, 26px);
+  line-height: 1.35;
+}
+.fb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 28px;
+}
+.fb-actions .lp-button {
+  min-height: 48px;
+  padding: 0 22px;
+  font-size: 16px;
+}
+
+/* The stage: an opaque column for the stream, with the bundles running into its sides. The
+   fragment layer reaches up behind the headline so the right bundle's long line has room. */
+.fb-stage {
+  position: relative;
+  align-self: stretch;
+  margin: clamp(40px, 6vh, 104px) calc(var(--gutter) * -1) 0;
+  padding-bottom: 96px;
+}
+.fb .fb-stage .edges {
+  --edges-gap: calc(var(--stream-w) / 2);
+  --edges-left-y: calc(720px + var(--stream-h) / 2 + 64px);
+  --edges-right-y: calc(720px + var(--stream-h) / 2 - 8px);
+  --edges-atdt-y: 712px;
+  inset: -720px 0 0;
+}
+.fb-stream {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--stream-w), 100% - 2 * var(--gutter));
+  height: var(--stream-h);
+  margin: 0 auto;
+  padding: 0 32px;
+  overflow: hidden;
+  background: var(--paper);
+  text-align: left;
+}
+.fb-stream-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 0 20px;
+  border-bottom: 1px solid var(--subtle-line);
+  font: 500 14px var(--mono);
+}
+.fb-live {
+  width: 8px;
+  height: 8px;
+  background: var(--lamp);
+}
+.fb-stream-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 400;
+}
+/* The lines sit on the bottom edge; new ones push the rest up and out under a soft top edge. The
+   view's size never depends on its lines, so arrivals cannot move anything outside it. */
+.fb-stream-view {
+  position: relative;
+  flex: 1;
+  contain: strict;
+  mask-image: linear-gradient(to bottom, transparent, #000 56px);
+}
+.fb-stream-lines {
+  position: absolute;
+  inset: auto 0 24px;
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Layers held for the page's life, so starting and ending the scroll and the fades never
+   changes stacking and never costs a layout of its own. */
+.fb-stream-lines,
+.fb-line {
+  will-change: transform, opacity;
+}
+.fb-line {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  column-gap: 14px;
+  row-gap: 2px;
+  transition: opacity 640ms ease-out;
+}
+.fb-line .lp-mark {
+  grid-row: span 2;
+  width: 24px;
+  height: 24px;
+  margin-top: 2px;
+}
+.fb-line-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font: 13px var(--mono);
+  color: var(--muted);
+}
+.fb-line-meta strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+.fb-line-to {
+  color: var(--lamp-ink);
+}
+.fb-line-meta time {
+  margin-left: auto;
+}
+.fb-line-text {
+  font-size: 19px;
+  line-height: 1.35;
+}
+.fb-line[data-age="1"] {
+  opacity: 0.72;
+}
+.fb-line[data-age="2"] {
+  opacity: 0.5;
+}
+.fb-line[data-age="3"] {
+  opacity: 0.34;
+}
+.fb-line[data-age="4"] {
+  opacity: 0.2;
+}
+/* Only the taller phone stream shows this one, faintly, under the top edge. */
+.fb-line[data-age="5"] {
+  opacity: 0.1;
+}
+.fb-line[data-age="6"] {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* A new message fades up from the bottom edge while the list scrolls (see Stream). */
+  .fb-line[data-new] {
+    animation: fb-arrive 420ms ease-out 120ms backwards;
+  }
+}
+@keyframes fb-arrive {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Sections */
+.fb-band {
+  border-top: 1px solid var(--subtle-line);
+  background: var(--paper);
+}
+.fb-band-inner {
+  width: min(var(--measure), 100%);
+  margin: 0 auto;
+  padding: clamp(64px, 9vw, 136px) var(--gutter);
+}
+.fb-split {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 48px clamp(32px, 5vw, 96px);
+  align-items: start;
+}
+.fb-kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  color: var(--muted);
+  font: 13px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.fb-kicker::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: var(--lamp);
+}
+.fb-heading {
+  max-width: 16ch;
+  font: 800 clamp(36px, 4.2vw, 72px) / 1 var(--sans);
+  letter-spacing: -0.04em;
+}
+.fb-body {
+  display: grid;
+  gap: 22px;
+  padding-top: 34px;
+  font-size: 18px;
+  line-height: 1.6;
+}
+.fb-body h3 {
+  margin-top: 14px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.fb-body .lp-steps {
+  display: grid;
+  border-top: 1px solid var(--subtle-line);
+}
+.fb-body .lp-steps li {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--subtle-line);
+}
+.fb-body .lp-step-number {
+  padding-top: 3px;
+  font-size: 14px;
+}
+.fb-cast {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 48px;
+  margin: 48px 0 0;
+  padding: 28px 0;
+  border-block: 1px solid var(--subtle-line);
+  list-style: none;
+  font: 500 clamp(18px, 1.6vw, 24px) var(--sans);
+}
+.fb-cast li {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.fb-cast .lp-mark {
+  width: 28px;
+  height: 28px;
+}
+.fb-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px clamp(32px, 4vw, 72px);
+  margin-top: 48px;
+}
+.fb-columns h3 {
+  margin-bottom: 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.fb-columns p {
+  color: var(--muted);
+  font-size: 17px;
+}
+.fb-body .lp-plans {
+  margin-bottom: 4px;
+}
+
+/* Footer */
+.fb-foot {
+  border-top: 1px solid var(--subtle-line);
+}
+.fb-foot-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 32px;
+  width: min(var(--measure), 100%);
+  margin: 0 auto;
+  padding: 32px var(--gutter) 40px;
+}
+.fb-foot .lp-wordmark {
+  font-size: 20px;
+}
+.fb-foot-links {
+  display: flex;
+  align-items: baseline;
+  gap: 28px;
+  margin-left: auto;
+  font-size: 15px;
+}
+/* Setup and Access: in the header on wider screens, here on phones. */
+.fb-foot-links > a.fb-foot-phone {
+  display: none;
+}
+.fb-foot-links > a[aria-current="page"] {
+  text-decoration-color: var(--lamp);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+
+/* Wide screens: more room for the stream. */
+@media (min-width: 2000px) {
+  .fb {
+    --stream-w: 760px;
+    --stream-h: 420px;
+    --measure: 1680px;
+  }
+  .fb .fb-stage .edges {
+    --edges-atdt-y: 520px;
+  }
+  .fb-line-text {
+    font-size: 21px;
+  }
+}
+
+@media (max-width: 900px) {
+  .fb-split,
+  .fb-columns {
+    grid-template-columns: 1fr;
+  }
+  .fb-body {
+    padding-top: 0;
+  }
+}
+
+/* Phones: the nav moves under the wordmark; the stream fills the width. */
+@media (max-width: 720px) {
+  .fb-bar {
+    flex-wrap: wrap;
+    gap: 0 16px;
+    padding-top: 14px;
+  }
+  .fb-account {
+    margin-left: auto;
+  }
+  .fb-nav {
+    order: 3;
+    width: 100%;
+    margin: 10px 0 0;
+    padding: 10px 0 12px;
+    gap: 22px;
+    border-top: 1px solid var(--subtle-line);
+    overflow-x: auto;
+    font-size: 15px;
+  }
+  .fb-nav > a,
+  .fb-nav .lp-docs > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    white-space: nowrap;
+  }
+  /* The phone header keeps Teams, Pricing and Docs; Setup and Access lead the footer's links. */
+  .fb-nav > a.fb-nav-wide {
+    display: none;
+  }
+  .fb-title {
+    font-size: clamp(44px, 13.4vw, 72px);
+  }
+  .fb-actions .lp-button {
+    flex: 1 1 auto;
+  }
+  .fb-stage {
+    margin-top: 40px;
+    padding-bottom: 104px;
+  }
+  .fb {
+    --stream-h: 430px;
+  }
+  .fb-stream {
+    width: 100%;
+    padding: 0 var(--gutter);
+  }
+  .fb-stream-count {
+    display: none;
+  }
+  .fb-line-text {
+    font-size: 17px;
+  }
+  .fb-foot-links {
+    flex-wrap: wrap;
+    row-gap: 12px;
+    margin-left: 0;
+    width: 100%;
+  }
+  .fb-foot-links > a.fb-foot-phone {
+    display: inline;
+  }
+}

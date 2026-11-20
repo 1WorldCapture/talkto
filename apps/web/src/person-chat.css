@@ -1,0 +1,254 @@
+/* A person's mark: their initial in the connection colour, where an agent shows its tool icon. */
+.person-mark {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: 600 11px/1 var(--sans);
+}
+.ops-dialogue-message > .person-mark {
+  font-size: 12px;
+}
+.ops-dialogue-you {
+  color: var(--muted);
+  font-size: 12px;
+}
+.ops-urgent-tag {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  color: var(--accent-ink);
+  font: 500 11px/18px var(--sans);
+}
+
+/* "Message" on a sender appears beside their name when the message is hovered or focused. */
+.ops-dialogue-message header .ops-message-agent-action {
+  margin-left: auto;
+  opacity: 0;
+}
+.ops-dialogue-message:is(:hover, :focus-within) header .ops-message-agent-action {
+  opacity: 1;
+}
+@media (hover: none) {
+  .ops-dialogue-message header .ops-message-agent-action {
+    opacity: 1;
+  }
+}
+.ops-message-agent-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ops-message-agent-error {
+  color: var(--deletion-ink, var(--ink));
+}
+.text-button.ops-message-agent {
+  min-height: 24px;
+  font-size: 13px;
+}
+
+/* The composer sits under the conversation, edge to edge with it. */
+.ops-composer-region {
+  border-top: 1px solid var(--subtle-line, var(--line));
+  background: var(--surface);
+}
+.ops-composer {
+  display: grid;
+  gap: 8px;
+  padding: 12px 24px 16px;
+}
+.ops-composer textarea {
+  width: 100%;
+  min-height: 64px;
+  max-height: 240px;
+  padding: 10px 12px;
+  resize: vertical;
+  field-sizing: content;
+}
+.ops-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ops-composer-urgent {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+/* In a channel, where the Urgent option would be: who the person posts as. */
+.ops-composer-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.ops-composer-identity .person-mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.ops-composer-identity strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ops-composer-hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+}
+.ops-composer textarea[aria-invalid] + .ops-composer-bar .ops-composer-hint {
+  color: var(--deletion-ink, var(--ink));
+}
+.ops-outbox {
+  list-style: none;
+  margin: 0;
+  padding: 12px 24px 0 64px;
+}
+.ops-outbox li {
+  margin-bottom: 12px;
+}
+.ops-outbox p {
+  max-width: 72ch;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ops-outbox li[data-state="sending"] p {
+  color: var(--muted);
+}
+.ops-outbox small {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--muted);
+}
+.ops-outbox li[data-state="failed"] small {
+  color: var(--deletion-ink, var(--ink));
+}
+
+/* Channels and other chats stay read-only, with a way to message the agents in them. */
+.ops-readonly-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--subtle-line, var(--line));
+  background: var(--surface);
+}
+.ops-readonly-footer p {
+  flex: 1 1 240px;
+  margin: 0;
+  color: var(--muted);
+}
+
+@media (max-width: 959px) {
+  .ops-composer {
+    padding: 8px 16px 12px;
+  }
+  .ops-composer textarea {
+    min-height: 48px;
+    font-size: 16px;
+  }
+  .ops-composer-hint {
+    display: none;
+  }
+  .ops-composer-bar {
+    justify-content: space-between;
+  }
+  .ops-composer-send {
+    min-height: 44px;
+    min-width: 88px;
+  }
+  .ops-outbox {
+    padding: 8px 16px 0 48px;
+  }
+  .ops-readonly-footer {
+    padding: 8px 16px 12px;
+  }
+  .ops-readonly-footer .ops-new {
+    min-height: 44px;
+  }
+  /* The conversation leaves room for what sits under it on a phone. */
+  :root[data-surface="dashboard"] .ops-conversation-log:has(.ops-composer) .ops-dialogue {
+    height: calc(100dvh - var(--bar) - var(--context) - 1px - 128px);
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log:has(.ops-readonly-footer) .ops-dialogue {
+    height: calc(100dvh - var(--bar) - var(--context) - 1px - 112px);
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log:has(.ops-composer) [data-ops-refresh] {
+    bottom: 140px;
+  }
+  :root[data-surface="dashboard"]
+    .ops-conversation-log:has(.ops-readonly-footer)
+    [data-ops-refresh] {
+    bottom: 124px;
+  }
+}
+
+/* The agents list: a person's mark keeps its circle, and each agent has Message beside Rename; Auto-start sits on its wake line. */
+.ops-registry-agent > .person-mark {
+  display: inline-grid;
+  color: var(--accent-ink);
+  font-size: 14px;
+}
+.ops-registry-agent > .ops-registry-actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+/* The wake line wraps instead of truncating, so a narrow card never clips Auto-start under the
+   actions beside it. Auto-start itself never splits at its hyphen. */
+.ops-registry-agent .ops-agent-cadence {
+  overflow: visible;
+  white-space: normal;
+}
+/* Auto-start reads as part of the wake line: same size and color, underlined. */
+.ops-registry-agent .ops-agent-cadence .ops-agent-wakes {
+  display: inline;
+  white-space: nowrap;
+  min-height: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ops-registry-agent .ops-agent-cadence .ops-agent-wakes:hover {
+  color: var(--ink);
+}
+.ops-registry-agent .ops-message-agent-action {
+  display: inline-flex;
+  color: inherit;
+}
+.agent-detail .ops-message-agent-action {
+  display: flex;
+  margin-top: 8px;
+}
+
+/* The dashboard's layout clears icon backgrounds in the dialogue; a person's mark keeps its circle. */
+:root[data-surface="dashboard"] .person-mark,
+:root[data-surface="dashboard"] .ops-dialogue-message > .person-mark {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+/* On wide screens the conversation leaves room for the composer or the read-only note. */
+@media (min-width: 960px) {
+  :root[data-surface="dashboard"] .ops-conversation-log:has(.ops-composer) .ops-dialogue {
+    height: max(280px, calc(100dvh - var(--bar) - 340px - 136px));
+  }
+  :root[data-surface="dashboard"] .ops-conversation-log:has(.ops-readonly-footer) .ops-dialogue {
+    height: max(300px, calc(100dvh - var(--bar) - 340px - 68px));
+  }
+}

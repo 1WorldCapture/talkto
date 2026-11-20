@@ -1,0 +1,204 @@
+.ops-log.ops-conversation-log .ops-pagination {
+  border-top: 0;
+  border-bottom: 1px solid var(--subtle-line, var(--line));
+}
+.ops-dialogue {
+  height: min(580px, 62vh);
+  min-height: 280px;
+  overflow-y: auto;
+  overflow-anchor: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) var(--surface);
+}
+.ops-dialogue:focus-visible {
+  outline: 2px solid var(--focus, var(--ink));
+  outline-offset: -2px;
+}
+.ops-dialogue-messages {
+  list-style: none;
+  padding: 12px 16px 20px;
+  margin: 0;
+}
+.ops-dialogue-day {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 18px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.ops-dialogue-day::before,
+.ops-dialogue-day::after {
+  content: "";
+  height: 1px;
+  background: var(--soft);
+  flex: 1;
+}
+.ops-dialogue-message {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+/* The message opened from the feed keeps a quiet mark, so the reader can find it again. */
+.ops-dialogue-message[aria-current] {
+  margin-inline: -12px;
+  padding: 12px;
+  background: var(--soft);
+}
+.ops-dialogue-message > .agent-icon {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+.ops-dialogue-message header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 3px;
+}
+.ops-dialogue-message strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.ops-dialogue-message header time {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* TalkTo's own notice, such as a new channel: one quiet line in the gutter's rhythm, no voice. */
+.ops-dialogue-notice {
+  margin-bottom: 18px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ops-dialogue-notice[aria-current] {
+  margin-inline: -12px;
+  padding: 8px 12px;
+  background: var(--soft);
+}
+.ops-dialogue-notice p {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  margin: 0;
+}
+.ops-dialogue-notice strong {
+  font-weight: 500;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.ops-dialogue-notice-mark {
+  justify-self: center;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.ops-dialogue-notice-detail {
+  overflow-wrap: anywhere;
+}
+.ops-dialogue-notice time {
+  font-size: 10px;
+  white-space: nowrap;
+}
+.ops-mention-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  font: 500 11px/18px var(--sans);
+}
+.ops-dialogue-body {
+  max-width: none;
+  margin: 0;
+  font: 12px/1.7 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ops-share {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  align-items: center;
+  max-width: 100%;
+  margin: 8px 0 0;
+  padding: 7px 10px 7px 9px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  font-size: 11px;
+}
+.ops-share-mark {
+  grid-row: span 2;
+  width: 22px;
+  height: 26px;
+  position: relative;
+  border: 1px solid var(--line);
+  border-top-right-radius: 6px;
+  background: var(--surface);
+}
+.ops-share-mark::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 9px;
+  height: 1px;
+  background: var(--line);
+  box-shadow:
+    0 4px 0 var(--line),
+    0 8px 0 var(--line);
+}
+/* A sent folder shows a folder mark: a tab on a wider body, with the same lines as a file. */
+:is(.ops-share, .ops-files-name)[data-kind="folder"] .ops-share-mark {
+  width: 26px;
+  height: 20px;
+  margin-top: 4px;
+  border-radius: 0 3px 3px 3px;
+}
+:is(.ops-share, .ops-files-name)[data-kind="folder"] .ops-share-mark::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: -5px;
+  width: 11px;
+  height: 4px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+  background: var(--surface);
+}
+:is(.ops-share, .ops-files-name)[data-kind="folder"] .ops-share-mark::after {
+  top: 6px;
+}
+.ops-share-path {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.ops-share-reference {
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.ops-share-reference a {
+  color: inherit;
+}
+/* Each detail wraps as a whole, so a date or "open in Files" never splits across lines. */
+.ops-share-reference :is(span, a) {
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .ops-dialogue-messages {
+    padding-inline: 10px;
+  }
+  .ops-dialogue-message {
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .ops-dialogue-message > .agent-icon {
+    width: 18px;
+    height: 18px;
+  }
+}

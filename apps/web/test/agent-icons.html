@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TalkTo — integrated icon verification</title>
+  <body data-surface="dashboard">
+    <main id="stage"><div id="root"></div></main>
+    <script type="module">
+      import { createElement as h } from "react";
+      import { createRoot } from "react-dom/client";
+      import { AgentIcon } from "/src/components.tsx";
+      import { AgentSymbols } from "/src/agent-symbols.tsx";
+      import { ThemeControl } from "/src/theme.tsx";
+      import { agentTypes, describeAgentType } from "@talkto/api/agent-types";
+      import "/src/base.css";
+      import "/src/dashboard.css";
+      import "/src/application.css";
+      const names = [
+        "codex-desktop",
+        "claude-code",
+        "claude-web",
+        "claude-desktop",
+        "chatgpt-web",
+        "chatgpt-desktop",
+        "gemini-cli",
+        "gemini-web",
+        "my-claude-wrapper",
+      ];
+      const rows = [
+        ...agentTypes.filter(
+          (entry, i) => agentTypes.findIndex((other) => other.icon === entry.icon) === i,
+        ),
+        ...names.map(describeAgentType),
+      ];
+      createRoot(document.getElementById("root")).render(
+        h(
+          "section",
+          { className: "ops-console" },
+          h(AgentSymbols),
+          h(
+            "header",
+            { className: "ops-titlebar" },
+            h("span", { className: "brand" }, "talkto"),
+            h("span", null, "Integrated icons · development fixture"),
+            h(ThemeControl),
+          ),
+          h(
+            "div",
+            { className: "ops-registry" },
+            rows.map((entry) =>
+              h(
+                "div",
+                { className: "ops-registry-agent", key: entry.type, tabIndex: 0 },
+                h(AgentIcon, { type: entry.type }),
+                h(
+                  "div",
+                  null,
+                  h("strong", null, `release-review-${entry.type}-0909`),
+                  h("span", { title: entry.type }, entry.label),
+                ),
+              ),
+            ),
+          ),
+          h(
+            "section",
+            { className: "ops-log", style: { marginTop: 20 } },
+            h("header", { className: "ops-log-toolbar" }, "Message icon sizes"),
+            rows.map((entry) =>
+              h(
+                "details",
+                { className: "ops-entry", key: entry.type },
+                h(
+                  "summary",
+                  null,
+                  h("time", null, "12:00:00"),
+                  h(
+                    "span",
+                    { className: "ops-from" },
+                    h(AgentIcon, { type: entry.type }),
+                    h("span", null, entry.type),
+                  ),
+                  h(
+                    "span",
+                    { className: "ops-to" },
+                    "→",
+                    h(AgentIcon, { type: "chatgpt-web" }),
+                    h("span", null, "browser-agent"),
+                  ),
+                  h("span", { className: "ops-preview" }, "Ready for review."),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    </script>
+  </body>
+</html>

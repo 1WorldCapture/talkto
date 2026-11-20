@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>TalkTo request tracing verification</title>
+  <style>
+    body {
+      font: 14px monospace;
+      max-width: 900px;
+      margin: 32px auto;
+    }
+    pre {
+      white-space: pre-wrap;
+    }
+  </style>
+  <h1>Request tracing</h1>
+  <p>Local HTTP failures. No events are sent to Sentry.</p>
+  <button id="run">Run verification</button>
+  <pre id="result">Ready</pre>
+  <script type="module">
+    import * as Sentry from "@sentry/react";
+    import { initialize } from "/src/telemetry.ts";
+    import { createServices } from "/src/session.tsx";
+    import { request } from "/src/api.ts";
+    const envelopes = [];
+    const localTransport = () => ({
+      send: async (envelope) => {
+        envelopes.push(envelope);
+        return { statusCode: 200 };
+      },
+      flush: async () => true,
+    });
+    const unsampledPage = {
+      traceId: "cccccccccccccccccccccccccccccccc",
+      parentSpanId: "dddddddddddddddd",
+      sampled: false,
+      sampleRand: 0.9,
+      dsc: { trace_id: "cccccccccccccccccccccccccccccccc", sample_rate: "0.01", sampled: "false" },
+    };
+    const traceRate = new URL(location.href).searchParams.get("rate") === "0" ? 0 : 1;
+    if (import.meta.env.MODE !== "test") throw new Error("Test mode required");
+    initialize(localTransport, traceRate);
+    const { api, queries } = createServices(location.origin);
+    const assert = (condition, message) => {
+      if (!condition) throw new Error(message);
+    };
+    const read = (mode, retry = false) =>
+      queries.fetchQuery({
+        queryKey: ["human", "PRIVATE_USER", "PRIVATE_ACCOUNT", "aggregate", "feed", mode],
+        retry,
+        retryDelay: 0,
+        queryFn: ({ signal }) =>
+          request(
+            api.platform.activity({
+              params: { accountId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
+              query: { query: mode },
+            }),
+            signal,
+          ),
+      });
+    const fails = async (mode, retry = false) => {
+      try {
+        await read(mode, retry);
+      } catch {
+        return;
+      }
+      throw new Error(`Expected failure: ${mode}`);
+    };
+    async function verify() {
+      await fetch("/__trace/reset");
+      Sentry.getActiveSpan()?.end();
+      await Sentry.flush();
+      assert(!Sentry.getActiveSpan(), "page span ended before background requests");
+      assert(Sentry.getClient()?.getOptions().environment === "test", "test telemetry initialized");
+      Sentry.getCurrentScope().setPropagationContext(unsampledPage);
+      for (const mode of ["status", "malformed", "shape", "transport", "timeout"])
+        await fails(mode);
+      await read("success");
+      const slow = fails("slow");
+      await read("fast");
+      await fetch("/__trace/release");
+      await slow;
+      await fails("retry", 2);
+      const cancelled = fails("cancel");
+      await fetch("/__trace/wait-cancel");
+      await queries.cancelQueries();
+      await cancelled;
+      // Wait for the underlying Effect finalizer, independently of Query's cancellation promise.
+      await read("after-cancel");
+      await Sentry.flush();
+      const items = envelopes.flatMap((envelope) => envelope[1]);
+      const events = items.filter(([header]) => header.type === "event").map(([, body]) => body);
+      const spans = items
+        .filter(
+          ([header, body]) =>
+            header.type === "transaction" && body.contexts.trace.op === "http.client",
+        )
+        .map(([, body]) => body);
+      const wire = await (await fetch("/__trace/received")).json();
+      assert(
+        spans.length === 13 * traceRate,
+        `one span per request, including retries/cancel: ${spans.length}`,
+      );
+      // Chromium may retry a reset connection internally within a single fetch.
+      assert(
+        new Set(wire.map((entry) => entry.trace)).size === 13,
+        "13 distinct traced requests reached the server",
+      );
+      assert(
+        new Set(spans.map((span) => span.contexts.trace.span_id)).size === 13 * traceRate,
+        "distinct request spans",
+      );
+      assert(
+        events.length === 7,
+        `seven terminal failures, no retry/cancellation duplicates: ${events.length}`,
+      );
+      if (traceRate)
+        for (const sent of wire) {
+          const span = spans.find(
+            (span) =>
+              sent.trace === `${span.contexts.trace.trace_id}-${span.contexts.trace.span_id}-1`,
+          );
+          assert(span, `wire/span correlation for ${sent.mode}`);
+          assert(span.transaction === "/v1/accounts/:id/activity", "normalized route");
+          assert(span.contexts.trace.data["http.request.method"] === "GET", "HTTP method retained");
+          if (["success", "fast", "after-cancel"].includes(sent.mode))
+            assert(span.contexts.trace.status === "ok", "successful request status");
+          if (sent.mode === "cancel")
+            assert(span.contexts.trace.status === "cancelled", "cancelled span closes");
+          if (sent.mode === "timeout")
+            assert(span.contexts.trace.status === "deadline_exceeded", "timeout classified");
+        }
+      if (traceRate)
+        for (const event of events)
+          assert(
+            spans.some(
+              (span) =>
+                event.contexts.trace.trace_id === span.contexts.trace.trace_id &&
+                event.contexts.trace.span_id === span.contexts.trace.span_id,
+            ),
+            "error/request correlation",
+          );
+      assert(
+        !/PRIVATE_|aaaaaaaa-aaaa/.test(JSON.stringify({ events, spans })),
+        "private content excluded",
+      );
+      for (const event of events)
+        assert(
+          wire.some(
+            (sent) =>
+              sent.trace ===
+              `${event.contexts.trace.trace_id}-${event.contexts.trace.span_id}-${traceRate}`,
+          ),
+          "terminal event retains exact request at either trace rate",
+        );
+      const external = createServices("http://localhost:5218");
+      await request(
+        external.api.platform.activity({
+          params: { accountId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
+          query: { query: "external" },
+        }),
+      );
+      const externalWire = await (await fetch("/__trace/received")).json();
+      assert(
+        externalWire
+          .filter((sent) => sent.mode === "external")
+          .every((sent) => !sent.trace && !sent.traceparent),
+        "unrelated origin receives no trace headers",
+      );
+      external.queries.clear();
+      assert(
+        new Set(wire.map((sent) => sent.trace?.split("-")[0])).size === 13,
+        "each attempt starts a distinct trace despite unsampled page propagation",
+      );
+      assert(
+        Sentry.getCurrentScope().getPropagationContext().traceId === unsampledPage.traceId,
+        "page propagation context unchanged",
+      );
+      await Sentry.close();
+      envelopes.length = 0;
+      await fetch("/__trace/reset");
+      initialize(localTransport);
+      Sentry.getCurrentScope().setPropagationContext(unsampledPage);
+      const params = { accountId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
+      const checkout = { plan: "shop", requestKey: "fixture-checkout" };
+      for (const operation of [
+        api.billing.checkout({ params, payload: checkout }),
+        api.billing.cancelCheckout({ params, payload: checkout }),
+        api.billing.renewal({ params, payload: { cancel: true, requestKey: "fixture-renewal" } }),
+        api.billing.startPaid({ params, payload: { requestKey: "fixture-convert" } }),
+        api.billing.portal({ params }),
+      ])
+        await request(operation, undefined, "billing");
+      await Sentry.flush();
+      const billingWire = await (await fetch("/__trace/received")).json();
+      const billingSpans = envelopes
+        .flatMap((envelope) => envelope[1])
+        .filter(
+          ([header, body]) =>
+            header.type === "transaction" && body.contexts.trace.op === "http.client",
+        )
+        .map(([, body]) => body);
+      assert(
+        billingWire.length === 5 && billingSpans.length === 5,
+        "all five billing roots sampled under shared production policy",
+      );
+      assert(
+        new Set(billingWire.map((sent) => sent.trace?.split("-")[0])).size === 5,
+        "billing actions have distinct trace IDs",
+      );
+      assert(
+        billingWire.every(
+          (sent) => sent.trace?.endsWith("-1") && !sent.trace.startsWith(unsampledPage.traceId),
+        ),
+        "billing does not inherit unsampled page trace",
+      );
+      assert(
+        billingSpans.every((span) =>
+          billingWire.some(
+            (sent) =>
+              sent.trace === `${span.contexts.trace.trace_id}-${span.contexts.trace.span_id}-1`,
+          ),
+        ),
+        "billing wire/export correlation",
+      );
+      assert(
+        Sentry.getCurrentScope().getPropagationContext().traceId === unsampledPage.traceId,
+        "billing leaves page propagation unchanged",
+      );
+      return {
+        status: "passed",
+        traceRate,
+        billingRequests: billingWire.length,
+        billingSpans: billingSpans.length,
+        billingRootPolicy: "shared production policy with seeded unsampled pageload context",
+        requests: new Set(wire.map((entry) => entry.trace)).size,
+        wireAttempts: wire.length,
+        requestSpans: spans.length,
+        terminalErrors: events.length,
+        checks: [
+          "After page span ended",
+          "Overlapping requests",
+          "Every retry traced; one alert",
+          "Success and decoding failures",
+          "Transport loss and timeout",
+          "Cancellation closes span without alert",
+          "Backend headers match browser spans",
+          "Errors match request spans",
+          "Private content excluded",
+        ],
+        events,
+        spans,
+        wire,
+      };
+    }
+    document.querySelector("#run").addEventListener("click", async (event) => {
+      event.target.disabled = true;
+      document.querySelector("#result").textContent =
+        "Running real HTTP checks (includes a 15-second timeout)…";
+      try {
+        document.querySelector("#result").textContent = JSON.stringify(await verify(), null, 2);
+      } catch (error) {
+        document.querySelector("#result").textContent = `FAILED: ${error.message}`;
+      } finally {
+        queries.clear();
+      }
+    });
+  </script>
+</html>

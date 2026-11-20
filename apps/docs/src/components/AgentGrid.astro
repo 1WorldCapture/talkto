@@ -1,0 +1,32 @@
+---
+/*
+  One agents-index group as cards with the site's colour marks. The cards come from src/agents.ts;
+  the Markdown list inside the tag is what the page's Markdown copy shows, generated from the same
+  list (src/generate.ts), so the slot is not rendered here.
+*/
+import { BrandMark } from "../../../web/src/agent-brand-marks.tsx";
+import { agentPages, type AgentGroup } from "../agents.ts";
+import { withBase } from "@cloudflare/nimbus-docs/runtime";
+
+interface Props {
+  readonly group: AgentGroup;
+}
+const { group } = Astro.props;
+const pages = agentPages.filter((page) => page.group === group);
+---
+
+<ul class="tt-agent-grid not-prose">
+  {
+    pages.map((page) => (
+      <li>
+        <a href={withBase(`/agents/${page.slug}/`, import.meta.env.BASE_URL)}>
+          <BrandMark id={page.mark} />
+          <span>
+            <strong>{page.name}</strong>
+            <small>{page.summary}</small>
+          </span>
+        </a>
+      </li>
+    ))
+  }
+</ul>

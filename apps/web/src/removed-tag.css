@@ -1,0 +1,16 @@
+/* A removed agent's quiet outlined label, beside its name in lists and in message history; the
+   same label marks a server guest in the Access dialog. */
+.removed-tag,
+.guest-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font: 500 11px/18px var(--sans);
+  vertical-align: middle;
+}
+.ops-registry-agent .removed-tag {
+  display: inline-block;
+  font-size: 11px;
+}

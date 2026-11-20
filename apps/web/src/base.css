@@ -1,0 +1,812 @@
+@font-face {
+  font-family: "Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/approved-1.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/approved-2.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/approved-3.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/approved-4.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/approved-5.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Source Serif";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url(/fonts/approved-6.woff2) format("woff2");
+}
+/* The approved Latin files omit arrows and the check mark. IBM's own unmodified "Pi" files supply
+   only those characters, so they match Plex instead of borrowing each one from a system font. */
+@font-face {
+  font-family: "Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-400-pi.woff2") format("woff2");
+  unicode-range: U+2190-2199, U+2713;
+}
+@font-face {
+  font-family: "Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-500-pi.woff2") format("woff2");
+  unicode-range: U+2190-2199, U+2713;
+}
+@font-face {
+  font-family: "Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-600-pi.woff2") format("woff2");
+  unicode-range: U+2190-2199, U+2713;
+}
+@font-face {
+  font-family: "Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-mono-400-pi.woff2") format("woff2");
+  unicode-range: U+2190-2199, U+2713;
+}
+@font-face {
+  font-family: "Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-mono-500-pi.woff2") format("woff2");
+  unicode-range: U+2190-2199, U+2713;
+}
+
+:root {
+  --sans: "Plex Sans", sans-serif;
+  --mono: "Plex Mono", monospace;
+  --serif: "Source Serif", Georgia, serif;
+  --paper: #eeefec;
+  --surface: #fff;
+  --ink: #292b2c;
+  --muted: #5f6366;
+  --line: #9ea3a3;
+  --accent: #e3e9ef;
+  --accent-ink: #3c526a;
+  --soft: #f0f1ef;
+  --positive: #45604d;
+  --subtle-line: #d5d7d3;
+  --stripe: #a9acab;
+  --shadow: #c0c3be;
+  color-scheme: light;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 13px/1.6 var(--sans);
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+button {
+  cursor: pointer;
+}
+a {
+  color: inherit;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+/* One closed box for every native select, with a thin chevron drawn in the text colour.
+   The list that opens stays the system's own, so phones keep their native picker. */
+select {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 3px 28px 3px 8px;
+  color: var(--ink);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(
+      45deg,
+      transparent calc(50% - 0.75px),
+      currentColor calc(50% - 0.75px) calc(50% + 0.75px),
+      transparent calc(50% + 0.75px)
+    ),
+    linear-gradient(
+      135deg,
+      transparent calc(50% - 0.75px),
+      currentColor calc(50% - 0.75px) calc(50% + 0.75px),
+      transparent calc(50% + 0.75px)
+    );
+  background-position:
+    right 15px center,
+    right 10px center;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+select:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+figure,
+blockquote {
+  margin: 0;
+}
+h1,
+h2,
+h3 {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+p {
+  max-width: 65ch;
+}
+button {
+  border: 0;
+}
+h1 {
+  font-size: 18px;
+}
+h2 {
+  font-size: 14px;
+}
+h3 {
+  font-size: 13px;
+}
+.mono,
+.meta,
+code,
+time {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.meta {
+  color: var(--muted);
+  font-size: 10px;
+}
+.muted {
+  color: var(--muted);
+}
+.label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.row,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.actions {
+  flex-wrap: wrap;
+}
+.spread {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.btn {
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 3px 10px;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  text-decoration: none;
+  box-shadow: 1px 1px 0 var(--line);
+  white-space: nowrap;
+}
+.btn:hover {
+  background: var(--soft);
+}
+.btn.accent {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.btn.secondary {
+  border-color: var(--line);
+  box-shadow: none;
+}
+.btn.small {
+  min-height: 24px;
+  padding: 2px 9px;
+  font-size: 11px;
+}
+.text-button {
+  padding: 3px 0;
+  min-height: 24px;
+  background: none;
+  color: var(--ink);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+#stage {
+  padding: 32px 24px 48px;
+  min-height: 100vh;
+}
+.card-shell {
+  width: min(760px, 100%);
+  margin: 9px auto 0;
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  box-shadow:
+    3px 3px 0 var(--paper),
+    4px 4px 0 var(--line),
+    7px 7px 0 var(--paper),
+    8px 8px 0 var(--shadow);
+  overflow: hidden;
+}
+.card-titlebar {
+  height: 29px;
+  padding: 0;
+  border-bottom: 1px solid var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  background: repeating-linear-gradient(to bottom, transparent 0 2px, var(--stripe) 2px 3px);
+  background-clip: content-box;
+}
+.card-titlebar .brand {
+  height: 28px;
+  font: 500 17px var(--serif);
+  letter-spacing: 0;
+  background: var(--surface);
+  margin-left: 16px;
+  padding: 0 10px;
+}
+.card-titlebar .card-account-link {
+  min-width: 94px;
+  min-height: 24px;
+  height: 24px;
+  margin: 0 8px 0 auto;
+  padding: 0 8px;
+  background: var(--surface);
+  font-size: 11px;
+}
+.card-titlebar .card-account-link:hover {
+  background: var(--soft);
+}
+.card-titlebar .card-account-link:focus-visible {
+  outline-offset: -3px;
+}
+.card-body {
+  display: grid;
+  grid-template-columns: 122px 1fr;
+  min-height: 480px;
+}
+.card-index {
+  padding: 21px 13px;
+  border-right: 1px solid var(--subtle-line);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.card-index .card-nav {
+  padding: 5px 7px;
+  text-align: left;
+  background: none;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.card-index .card-nav[aria-current="page"] {
+  background: var(--soft);
+  color: var(--ink);
+}
+.card-resources {
+  display: grid;
+  gap: 16px;
+  font-size: 11px;
+  margin: 26px 0 0 7px;
+}
+.card-content {
+  padding: 26px 29px 22px;
+  min-width: 0;
+}
+.card-content h1 {
+  font: 400 25px/1.3 var(--serif);
+  letter-spacing: -0.035em;
+  margin-bottom: 17px;
+}
+.card-content p {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.card-content p + p {
+  margin-top: 12px;
+}
+.card-content h2 {
+  font-size: 13px;
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+.card-content .plain-steps {
+  font-size: 13px;
+  gap: 13px;
+  margin-top: 16px;
+}
+.setup-diagram {
+  position: relative;
+  max-width: 490px;
+  margin: 30px auto 4px;
+  padding: 24px 16px 16px;
+  border: 1px solid var(--line);
+  font: 11px/1.6 var(--mono);
+}
+.setup-diagram figcaption {
+  position: absolute;
+  top: -10px;
+  left: 12px;
+  padding: 0 6px;
+  background: var(--surface);
+}
+.setup-servers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.setup-server {
+  border: 1px solid var(--ink);
+  box-shadow:
+    2px 2px 0 var(--surface),
+    3px 3px 0 var(--line);
+}
+.setup-server header {
+  padding: 6px 10px;
+  background: var(--soft);
+  border-bottom: 1px solid var(--ink);
+  font-weight: 500;
+}
+.setup-channel {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.setup-direct {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+}
+.setup-peers,
+.setup-peer {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.access-diagram {
+  max-width: 490px;
+  margin: 24px auto 4px;
+  font: 11px/1.6 var(--mono);
+}
+.access-diagram .setup-servers {
+  gap: 24px;
+}
+.access-diagram header,
+.access-server-storage {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.access-diagram header svg,
+.access-server-storage svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.access-server-agents {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.access-server-storage {
+  padding: 8px 10px;
+}
+@media (max-width: 420px) {
+  .setup-servers {
+    grid-template-columns: 1fr;
+  }
+}
+.public-plans {
+  margin: 24px 0;
+  border-top: 1px solid var(--line);
+}
+.public-plan {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: baseline;
+  gap: 8px 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--subtle-line);
+  font-variant-numeric: tabular-nums;
+}
+.public-plan dt {
+  font-weight: 600;
+}
+.public-plan dd {
+  margin: 0;
+}
+.public-plan-price strong {
+  font: 400 22px var(--serif);
+}
+.public-plan-price span,
+.public-plan-messages {
+  font-size: 11px;
+}
+.public-plan-messages {
+  font-family: var(--mono);
+}
+.public-pricing-action {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.public-pricing-action .btn {
+  background: var(--ink);
+  color: var(--surface);
+}
+.public-pricing-action span {
+  font-size: 11px;
+  color: var(--muted);
+}
+@media (max-width: 420px) {
+  .public-plan {
+    grid-template-columns: 1fr auto;
+  }
+  .public-plan-messages {
+    grid-column: 1 / -1;
+  }
+}
+/* Shared SVG vocabulary. The provider marks inherit one foreground color. */
+.agent-definitions {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* Hermes Agent's mask has a light-theme and a dark-theme drawing (additional-agent-symbols.tsx). */
+.agent-hermes-dark,
+:root[data-theme="dark"] .agent-hermes-light {
+  display: none;
+}
+:root[data-theme="dark"] .agent-hermes-dark {
+  display: inline;
+}
+.agent-icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.agent-avatar {
+  background: none;
+  border: 0;
+}
+.agent-avatar .agent-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--ink);
+}
+.agent-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-name .agent-icon {
+  width: 15px;
+  height: 15px;
+}
+.messaging-player {
+  --signal-claude: #d97757;
+  --signal-codex: #2874db;
+  --signal-cursor: #26251e;
+  --signal-pi: #26251e;
+  --signal-grok: #26251e;
+  --signal-droid: #26251e;
+  margin: 24px 0 0;
+  min-width: 0;
+}
+body[data-direction="relay"] .messaging-player {
+  --signal-claude: #ed9878;
+  --signal-codex: #66aaff;
+  --signal-cursor: #f1f0e8;
+  --signal-pi: #f1f0e8;
+  --signal-grok: #f1f0e8;
+  --signal-droid: #f1f0e8;
+}
+.network-drawing {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  color: var(--ink);
+}
+.network-drawing .wire {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.network-drawing .bus-wire {
+  opacity: 0.42;
+}
+.network-drawing .panel {
+  fill: var(--surface);
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.network-drawing .screen {
+  fill: var(--soft);
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.network-drawing text {
+  fill: currentColor;
+  font: 12px var(--mono);
+}
+.network-drawing .window-name {
+  font: 13px var(--sans);
+}
+.network-drawing .direct-label {
+  font: 11px var(--sans);
+}
+.actor-rest {
+  fill: currentColor;
+  opacity: 0.36;
+}
+.actor-lit {
+  opacity: 0;
+  fill: currentColor;
+}
+.signal-claude {
+  color: var(--signal-claude);
+}
+.signal-codex {
+  color: var(--signal-codex);
+}
+.signal-cursor {
+  color: var(--signal-cursor);
+}
+.signal-pi {
+  color: var(--signal-pi);
+}
+.signal-grok {
+  color: var(--signal-grok);
+}
+.signal-droid {
+  color: var(--signal-droid);
+}
+.message-route {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  opacity: 0;
+  stroke-linejoin: round;
+}
+.message-packet {
+  opacity: 0;
+}
+.message-packet rect {
+  fill: currentColor;
+  stroke: var(--surface);
+  stroke-width: 1;
+}
+.message-packet path {
+  fill: none;
+  stroke: var(--surface);
+  stroke-width: 1;
+}
+.route-arrow {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  opacity: 0;
+}
+.channel-highlight {
+  fill: currentColor;
+  opacity: 0;
+}
+.player-caption {
+  min-height: 43px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font: 11px/1.6 var(--mono);
+  margin-top: 11px;
+}
+.player-caption strong {
+  font-weight: 500;
+  color: var(--ink);
+}
+.player-caption > span {
+  color: var(--muted);
+}
+.card-content .messaging-player {
+  margin: 18px 0 0;
+}
+.card-content .network-drawing {
+  max-width: 490px;
+  margin: auto;
+}
+.relay-drawing .messaging-player {
+  margin: 0;
+}
+@media (max-width: 650px) {
+  .network-drawing text,
+  .network-drawing .node-name,
+  .network-drawing .window-name,
+  .network-drawing .direct-label {
+    font-size: 16px;
+  }
+  .player-caption {
+    font-size: 11px;
+    min-height: 44px;
+  }
+  .messaging-player {
+    margin-top: 19px;
+  }
+}
+
+.card-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
+  min-height: 45px;
+  padding: 9px 13px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+}
+.card-from {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-right: auto;
+  font: 10px var(--mono);
+  color: var(--muted);
+  text-decoration: none;
+}
+.card-from:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.card-foot .actions {
+  gap: 8px;
+  flex-shrink: 0;
+}
+.card-documentation {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  align-items: baseline;
+  justify-items: start;
+  gap: 3px 6px;
+}
+.copy-documentation {
+  padding: 0;
+  min-width: 24px;
+  min-height: 24px;
+  background: none;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.copy-documentation:hover {
+  color: var(--ink);
+}
+.copy-unavailable {
+  grid-column: 1 / -1;
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+}
+.card-foot .btn {
+  min-height: 23px;
+  padding: 0 8px;
+  font-size: 14px;
+}
+.card-position {
+  font: 10px var(--mono);
+  color: var(--muted);
+  padding: 0 4px;
+}
+.card-under {
+  width: min(760px, 100%);
+  margin: 17px auto 0;
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  justify-content: flex-end;
+}

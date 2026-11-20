@@ -1,0 +1,49 @@
+/* Removing agents: the dialog's modal and buttons, including the deletion-coloured one, come from
+   application.css and brand-app.css. The Activity notice matches the renames strip. */
+.modal.removal-dialog {
+  width: min(460px, calc(100% - 32px));
+  font-family: var(--sans);
+}
+.modal.removal-dialog p {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+.removal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ops-restore-agent small {
+  color: var(--deletion-ink);
+}
+.removal-notices {
+  margin-top: 16px;
+  padding: 4px 16px;
+  background: var(--soft);
+  border: 1px solid var(--subtle-line, var(--line));
+}
+.removal-notices ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.removal-notices li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  padding: 6px 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.removal-notices li + li {
+  border-top: 1px solid var(--subtle-line, var(--line));
+}
+.removal-notices strong {
+  font: 500 13px var(--mono);
+}
+.removal-notices time {
+  color: var(--muted);
+  font-size: 13px;
+}

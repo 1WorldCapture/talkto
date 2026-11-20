@@ -1,0 +1,32 @@
+node_modules/
+.wrangler/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+worker-configuration.d.ts
+# Written by pnpm selfhost:config; holds deployment IDs, no secrets.
+apps/server/wrangler.selfhost.jsonc
+.talkto/
+
+# Docs site: Astro's generated types, Nimbus's build cache, and the pages generated from instructions.md and pricing.ts
+apps/docs/.astro/
+apps/docs/.nimbus/
+apps/docs/src/content/docs/agents/
+apps/docs/src/content/partials/generated/
+
+# Internal work that must never be committed (it stays out of the public repository too):
+# design records, the brand kit, design sources, archived prototypes, the product spec and archives.
+/.product/
+/brand/
+/design/
+/prototypes/
+/PRODUCT_SPEC.md
+*.tar.gz
+*.zip

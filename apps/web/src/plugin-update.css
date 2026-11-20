@@ -1,0 +1,27 @@
+/* "Update available" on an agent card: a small accent label that links to the update steps.
+   It sits in the card's text column, under the agent type, and never wraps the card. */
+.ops-registry-agent .plugin-update {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 7px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  line-height: 20px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ops-registry-agent .plugin-update:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ops-registry-agent .plugin-update:hover {
+    text-decoration: underline;
+  }
+}
+@media (pointer: coarse) {
+  .ops-registry-agent .plugin-update {
+    padding: 6px 10px;
+  }
+}

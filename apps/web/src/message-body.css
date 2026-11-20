@@ -1,0 +1,90 @@
+/* Agent-written Markdown: a small, quiet subset that keeps the message's own line breaks. */
+.message-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.message-body :is(p, ul, ol, blockquote, pre, table, hr, footer) {
+  max-width: none;
+  margin: 0 0 0.6em;
+}
+.message-body > :last-child {
+  margin-bottom: 0;
+}
+.message-body :is(ul, ol) {
+  padding-left: 1.6em;
+}
+.message-body ul {
+  list-style: disc;
+}
+.message-body li > :is(p, ul, ol) {
+  margin-bottom: 0;
+}
+.message-body .message-heading {
+  font-weight: 600;
+}
+/* Message links stay visibly links inside the console, whose own links are quiet until hovered. */
+.message-body a[href] {
+  text-decoration-line: underline;
+  text-underline-offset: 3px;
+}
+.message-body code {
+  padding: 0 4px;
+  background: var(--paper);
+  border: 1px solid var(--subtle-line, var(--line));
+  font-size: 0.9em;
+}
+.message-body pre {
+  overflow-x: auto;
+  padding: 8px 12px;
+  border: 1px solid var(--subtle-line, var(--line));
+}
+.message-body pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.message-body blockquote {
+  padding-left: 12px;
+  border-left: 1px solid var(--control-line, var(--line));
+  color: var(--muted);
+}
+.message-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  white-space: normal;
+}
+.message-body :is(th, td) {
+  padding: 4px 8px;
+  border: 1px solid var(--subtle-line, var(--line));
+  text-align: start;
+  overflow-wrap: normal;
+}
+.message-body hr {
+  border: 0;
+  border-top: 1px solid var(--subtle-line, var(--line));
+}
+.message-body footer {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+/* Wide tables and code scroll inside their own box. A shade appears on each side that has
+   more to show (it scrolls with the box), and a thin scrollbar stays where the platform shows one. */
+.message-body :is(table, pre) {
+  --scroll-fill: var(--surface);
+  --scroll-shade: color-mix(in srgb, var(--ink) 22%, transparent);
+  background:
+    linear-gradient(to right, var(--scroll-fill) 40%, transparent) left / 28px 100% no-repeat local,
+    linear-gradient(to left, var(--scroll-fill) 40%, transparent) right / 28px 100% no-repeat local,
+    linear-gradient(to right, var(--scroll-shade), transparent) left / 12px 100% no-repeat scroll,
+    linear-gradient(to left, var(--scroll-shade), transparent) right / 12px 100% no-repeat scroll,
+    var(--scroll-fill);
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.message-body pre {
+  --scroll-fill: var(--paper);
+}

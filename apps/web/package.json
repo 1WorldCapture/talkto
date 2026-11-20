@@ -1,0 +1,29 @@
+{
+  "name": "@talkto/web",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "vite build && vite build --ssr src/prerender.tsx --outDir dist-render && node tools/prerender.mjs && pnpm --filter @talkto/docs build:into ../web/dist",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-concurrency=4 --test-timeout=60000 test/*.test.mjs"
+  },
+  "dependencies": {
+    "@sentry/react": "10.74.0",
+    "@talkto/api": "workspace:*",
+    "@talkto/telemetry": "workspace:*",
+    "@tanstack/react-query": "5.102.8",
+    "@tanstack/react-router": "1.170.33",
+    "effect": "catalog:",
+    "markdown-to-jsx": "9.10.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "vite": "8.2.2"
+  }
+}

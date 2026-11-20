@@ -1,0 +1,17 @@
+packages:
+  - apps/*
+  - packages/*
+  - integrations/*
+
+catalog:
+  effect: 4.0.0-rc.112
+
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+
+ignoredBuiltDependencies:
+  - msgpackr-extract
+  # Docs site (apps/docs): Astro depends on sharp, which ships prebuilt binaries; its install
+  # script only rebuilds from source when no prebuild matches.
+  - sharp

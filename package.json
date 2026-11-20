@@ -1,0 +1,47 @@
+{
+  "name": "talkto",
+  "private": true,
+  "homepage": "https://talkto.sh",
+  "bugs": "https://github.com/plannotator/talkto/issues",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plannotator/talkto.git"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @talkto/server dev",
+    "dev:web": "pnpm --filter @talkto/web dev",
+    "build:web": "pnpm --filter @talkto/web build",
+    "build": "pnpm --filter @talkto/server build",
+    "lint": "oxlint --deny-warnings",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "typecheck": "pnpm --filter @talkto/server cf-typegen && pnpm -r typecheck",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
+    "setup:local": "node tools/setup-local.mjs",
+    "local:request": "node tools/local-request.mjs",
+    "seed:local": "node tools/seed-local.mjs",
+    "icons": "node tools/icons.mjs",
+    "plugin:release": "node tools/plugin-release.mjs",
+    "test": "pnpm --filter @talkto/server test && pnpm --filter @talkto/web test && pnpm --filter @talkto/docs test && pnpm --filter \"./integrations/*\" test",
+    "api": "pnpm --filter @talkto/server exec node tools/api.mjs",
+    "feedback": "pnpm --filter @talkto/server exec node tools/feedback.mjs",
+    "selfhost:config": "pnpm --filter @talkto/server exec node tools/selfhost-config.mjs",
+    "build:selfhost": "TALKTO_SELF_HOSTED=true pnpm --filter @talkto/web build",
+    "selfhost:migrate": "pnpm --filter @talkto/server exec wrangler d1 migrations apply PLATFORM --remote --config wrangler.selfhost.jsonc",
+    "selfhost:deploy": "pnpm build:selfhost && pnpm --filter @talkto/server exec wrangler deploy --config wrangler.selfhost.jsonc",
+    "email:announce": "pnpm --filter @talkto/server exec node tools/email-announce.mjs"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.82.0",
+    "effect": "catalog:",
+    "oxfmt": "0.67.0",
+    "oxlint": "1.82.0",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "packageManager": "pnpm@10.34.3"
+}

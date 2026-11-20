@@ -1,0 +1,13 @@
+---
+/* The public site's footer line: the wordmark, the site's pages and one "from Plannotator" link. */
+import Logo from "./Logo.astro";
+import { footerLinks } from "../footer.ts";
+---
+
+<footer class="tt-footer">
+  <Logo href="/" />
+  <nav aria-label="TalkTo">
+    {footerLinks().map(({ name, href }) => <a href={href}>{name}</a>)}
+  </nav>
+  <a class="tt-from" href="https://plannotator.ai">from Plannotator</a>
+</footer>

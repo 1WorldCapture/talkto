@@ -1,0 +1,422 @@
+/* Home's agent grid and team section, and the Teams page (teams.tsx). */
+
+/* Agent grid: a short band. The heading sits beside the grid on wide screens. */
+.tm-agents {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  gap: 32px clamp(32px, 5vw, 96px);
+  align-items: start;
+  padding-block: clamp(48px, 6vw, 96px);
+}
+.tm-heading {
+  font: 800 clamp(30px, 3vw, 48px) / 1.02 var(--sans);
+  letter-spacing: -0.035em;
+}
+.tm-note {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 17px;
+}
+.tm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tm-grid a {
+  --tile: 44px;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 12px 2px 10px;
+  border: 1px solid transparent;
+  color: var(--ink);
+  font: 500 13px/1.2 var(--sans);
+  text-align: center;
+  text-decoration: none;
+  transition:
+    border-color 160ms ease-out,
+    background-color 160ms ease-out;
+}
+.tm-grid a:hover {
+  border-color: var(--subtle-line);
+  background: var(--surface);
+}
+.tm-grid a:focus-visible {
+  outline: 2px solid var(--lamp-ink);
+  outline-offset: 2px;
+}
+
+/* Team section on Home */
+.tm-band {
+  align-items: center;
+}
+.tm-lede {
+  max-width: 34ch;
+  margin-top: 20px;
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1.45;
+}
+.tm-more {
+  margin-top: 28px;
+}
+.tm-link {
+  justify-self: start;
+  color: var(--ink);
+  font-weight: 500;
+  text-underline-offset: 4px;
+}
+.tm-link:hover {
+  color: var(--lamp-ink);
+}
+
+/* The picture: people on the left, joined to one server on the right. */
+.tm-picture {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  margin: 0;
+}
+.tm-people {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0 40px 0 0;
+  list-style: none;
+}
+/* The wire: one line from each person into a bus that runs into the server. */
+.tm-people::after {
+  content: "";
+  position: absolute;
+  top: 28px;
+  bottom: 28px;
+  right: 20px;
+  border-right: 2px solid var(--lamp);
+}
+.tm-people li {
+  --tile: 26px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px auto;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 6px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--subtle-line);
+  background: var(--surface);
+}
+.tm-people li::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  width: 21px;
+  border-top: 2px solid var(--lamp);
+}
+.tm-people li:nth-child(2)::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 20px);
+  width: 20px;
+  border-top: 2px solid var(--lamp);
+}
+.tm-avatar {
+  display: grid;
+  place-items: center;
+  grid-row: span 2;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  font: 600 15px/1 var(--sans);
+}
+.tm-person {
+  font-weight: 600;
+  line-height: 1;
+}
+.tm-person-agents {
+  display: flex;
+  gap: 4px;
+}
+.tm-server {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+/* On the narrowest phones the count wraps under the name whole; neither breaks at its hyphen. */
+.tm-server-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 12px 16px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--subtle-line);
+  font: 13px var(--mono);
+}
+.tm-server-head span:last-child {
+  margin-left: auto;
+  color: var(--muted);
+}
+.tm-chat {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 16px;
+  list-style: none;
+}
+.tm-chat li {
+  --tile: 28px;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  column-gap: 12px;
+  row-gap: 2px;
+}
+.tm-chat .su-tile {
+  grid-row: span 2;
+}
+.tm-chat-meta {
+  color: var(--lamp-ink);
+  font: 12px var(--mono);
+}
+.tm-chat-meta strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+.tm-chat-text {
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+/* Teams page */
+.tm-hero .su-title {
+  max-width: 16ch;
+}
+.tm-stage {
+  width: min(1040px, 100%);
+  margin: 0 auto;
+  padding: clamp(48px, 6vw, 88px) var(--gutter) clamp(64px, 8vw, 120px);
+}
+.tm-panels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.tm-panel h3 {
+  margin-top: 18px;
+  font-size: 19px;
+  font-weight: 600;
+}
+.tm-panel p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.5;
+}
+.tm-panel-art {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  min-height: 188px;
+  padding: 18px;
+  border: 1px solid var(--subtle-line);
+  background: var(--surface);
+}
+.tm-msg {
+  --tile: 24px;
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.tm-msg strong {
+  display: block;
+  color: var(--muted);
+  font: 500 11px/1.4 var(--mono);
+}
+.tm-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: start;
+  padding: 8px 12px;
+  border: 1px solid var(--file-ink);
+  color: var(--file-ink);
+  font: 13px var(--mono);
+}
+.tm-file-icon {
+  width: 12px;
+  height: 15px;
+  border: 1.5px solid currentColor;
+  border-top-right-radius: 4px;
+}
+.tm-channels {
+  display: grid;
+  gap: 8px;
+}
+.tm-channels span {
+  padding: 8px 12px;
+  border: 1px solid var(--subtle-line);
+  font: 14px var(--mono);
+}
+.tm-channels span:first-child {
+  border-color: var(--lamp-ink);
+  color: var(--lamp-ink);
+}
+.tm-access {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--subtle-line);
+  list-style: none;
+}
+.tm-access li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--subtle-line);
+  font-weight: 500;
+}
+.tm-access .tm-avatar {
+  grid-row: auto;
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+}
+.tm-access-role {
+  margin-left: auto;
+  color: var(--muted);
+  font: 13px var(--mono);
+}
+
+/* The receiving agent's mark in the home feed */
+.fb-line-to .lp-mark {
+  width: 15px;
+  height: 15px;
+  margin: -2px 2px 0;
+  color: var(--lamp-ink);
+}
+
+@media (max-width: 1100px) {
+  .tm-panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .tm-agents {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .tm-picture {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .tm-people {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 0;
+  }
+  .tm-people::after,
+  .tm-people li::after,
+  .tm-people li:nth-child(2)::before {
+    display: none;
+  }
+  .tm-people li {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 10px 6px;
+  }
+  .tm-avatar {
+    grid-row: auto;
+  }
+  .tm-panels {
+    grid-template-columns: 1fr;
+  }
+  .tm-grid {
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  }
+}
+
+/* The Teams page shows the picture large. The wired row of people is for wide screens only;
+   phones keep the stacked cards from the 720px rules above. */
+@media (min-width: 721px) {
+  .tm-stage .tm-people {
+    gap: 18px;
+    padding-right: 56px;
+  }
+  .tm-stage .tm-people::after {
+    right: 28px;
+  }
+  .tm-stage .tm-people li {
+    --tile: 32px;
+    grid-template-columns: 44px auto;
+    padding: 16px 20px;
+  }
+  .tm-stage .tm-people li::after {
+    width: 29px;
+  }
+  .tm-stage .tm-people li:nth-child(2)::before {
+    left: calc(100% + 28px);
+    width: 28px;
+  }
+}
+.tm-stage .tm-avatar {
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+}
+.tm-stage .tm-person {
+  font-size: 18px;
+}
+.tm-stage .tm-chat {
+  gap: 22px;
+  padding: 24px;
+}
+.tm-stage .tm-chat li {
+  --tile: 36px;
+  grid-template-columns: 36px 1fr;
+  column-gap: 14px;
+}
+.tm-stage .tm-chat-meta {
+  font-size: 13px;
+}
+.tm-stage .tm-chat-text {
+  font-size: 20px;
+}
+.tm-stage .tm-server-head {
+  padding: 14px 24px;
+}
+.tm-server-head {
+  max-width: none;
+}
+
+/* Phones: the Teams page's three people sit as equal cards, centred, filling the row; the server
+   box keeps the page's 16px inner padding so its messages have room. */
+@media (max-width: 720px) {
+  .tm-stage .tm-people {
+    gap: 12px;
+  }
+  .tm-stage .tm-people li {
+    --tile: 30px;
+    row-gap: 8px;
+    padding: 14px 6px 12px;
+  }
+  .tm-stage .tm-chat {
+    gap: 20px;
+    padding: 20px 16px;
+  }
+  .tm-stage .tm-server-head {
+    padding: 12px 16px;
+  }
+}

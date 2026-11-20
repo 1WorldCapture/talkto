@@ -1,0 +1,408 @@
+/* The agent flow (agent-flow.tsx) in the dashboard's Connect agents dialog: the prompt box,
+   numbered steps, the agent grid and one agent's install. The dialog maps its tokens onto the
+   --flow-* lines and fill. */
+.connect-body {
+  --flow-line: var(--subtle-line);
+  --flow-card: var(--surface);
+  --flow-strong: var(--control-line);
+}
+.agent-prompt {
+  --prompt-background: var(--surface);
+  --prompt-radius: 0;
+  --prompt-height: 160px;
+}
+.agent-prompt-field {
+  position: relative;
+  margin-bottom: 16px;
+}
+.agent-prompt-field textarea {
+  display: block;
+  width: 100%;
+  height: var(--prompt-height);
+  resize: none;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--prompt-radius);
+  background: var(--prompt-background);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.7;
+}
+.agent-prompt-fade {
+  position: absolute;
+  pointer-events: none;
+  bottom: 1px;
+  left: 1px;
+  right: 16px;
+  height: 32px;
+  border-radius: 0 0 var(--prompt-radius) var(--prompt-radius);
+  background: linear-gradient(to bottom, transparent, var(--prompt-background));
+  opacity: 0;
+}
+.agent-prompt-field[data-more="true"] .agent-prompt-fade {
+  opacity: 1;
+}
+.agent-prompt > button {
+  width: 100%;
+}
+.agent-prompt-status {
+  min-height: 1.6em;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.agent-prompt[data-reveal] > button {
+  min-height: 48px;
+  font-size: 15px;
+}
+.agent-prompt[data-reveal] .agent-prompt-status {
+  margin: 8px 0 0;
+  text-align: center;
+}
+.agent-prompt-details {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--subtle-line);
+}
+.agent-prompt-details > summary {
+  width: fit-content;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.agent-prompt-details > summary:hover,
+.agent-prompt-details[open] > summary {
+  color: var(--ink);
+}
+.agent-prompt-details[open] > summary {
+  margin-bottom: 12px;
+}
+.agent-prompt-details .agent-prompt-field {
+  --prompt-height: 200px;
+  margin: 0;
+}
+.agent-prompt-details textarea {
+  line-height: 1.6;
+}
+.connect-steps {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: connect-step;
+}
+.connect-steps li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  counter-increment: connect-step;
+}
+.connect-steps li::before {
+  content: counter(connect-step);
+  color: var(--muted);
+  font: 13px/1 var(--mono);
+  text-align: right;
+}
+.connect-steps li > div {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.connect-body {
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .agent-pick {
+    --tile: 32px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 104px;
+    padding: 14px 6px 12px;
+    border: 1px solid var(--flow-line);
+    background: var(--flow-card);
+    transition:
+      border-color 150ms ease,
+      background-color 150ms ease;
+  }
+  .agent-pick .su-tile {
+    margin-bottom: 4px;
+  }
+  .agent-pick[aria-pressed="true"] {
+    border-color: var(--ink);
+    background: var(--soft);
+  }
+  .agent-pick[aria-pressed="true"]::after {
+    content: "";
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 6px;
+    height: 6px;
+    background: var(--lamp, #f01ef0);
+  }
+  .agent-pick[aria-disabled="true"] {
+    cursor: wait;
+  }
+  .agent-pick-name {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .agent-pick-how {
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--muted);
+  }
+  .agent-grid[hidden] {
+    display: none;
+  }
+  .agent-more {
+    margin: 8px 0;
+  }
+  .agent-setup {
+    text-align: left;
+    font-size: 14px;
+  }
+  .agent-setup code {
+    font: 13px/1.5 var(--mono);
+  }
+  .agent-setup :is(li, .setup-note) code:not(.su-code code) {
+    padding: 1px 4px;
+    background: var(--soft);
+    overflow-wrap: anywhere;
+  }
+  .agent-setup strong {
+    font-weight: 600;
+  }
+  .install-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-bottom: 18px;
+    border: 1px solid var(--flow-line);
+  }
+  .install-tabs [role="tab"] {
+    min-height: 44px;
+    padding: 8px 10px;
+    background: var(--flow-card);
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.3;
+  }
+  .install-tabs [role="tab"] + [role="tab"] {
+    border-left: 1px solid var(--flow-line);
+  }
+  .install-tabs [role="tab"][aria-selected="true"] {
+    background: var(--soft);
+    color: var(--ink);
+    font-weight: 500;
+    box-shadow: inset 0 -2px 0 var(--ink);
+  }
+  .install-tabs [role="tab"]:focus-visible {
+    outline-offset: -2px;
+  }
+  .setup-lead {
+    margin-bottom: 12px;
+  }
+  .setup-steps {
+    gap: 14px;
+  }
+  .setup-steps li > div {
+    gap: 8px;
+  }
+  .setup-steps .su-code {
+    padding: 8px 8px 8px 12px;
+  }
+  .setup-steps .su-code code {
+    padding-top: 5px;
+  }
+  .setup-steps .su-copy {
+    min-width: 72px;
+  }
+  /* Numbered steps: install, sign in, join, the optional wake. Every step has the same weight;
+     the person's own step is framed, its number filled, so it is never read as a footnote. */
+  .flow-step {
+    text-align: left;
+  }
+  .flow-step + .flow-step {
+    margin-top: 24px;
+  }
+  .flow-step-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .flow-step-number {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--ink);
+    font: 12px/1 var(--mono);
+  }
+  .flow-step-tag {
+    margin-left: auto;
+    padding: 2px 6px;
+    border: 1px solid var(--flow-strong);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .flow-step[data-tone="you"] {
+    padding: 14px 14px 16px;
+    border: 1px solid var(--ink);
+  }
+  .flow-step[data-tone="you"] .flow-step-number {
+    background: var(--ink);
+    color: var(--flow-card);
+  }
+  /* The choice between two ways to connect: two plain rows, each with what it gives. */
+  .connect-ways {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    margin: 0 0 24px;
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+  .connect-ways-question {
+    margin-bottom: 4px;
+    padding: 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .connect-way {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border: 1px solid var(--flow-line);
+    background: var(--flow-card);
+    cursor: pointer;
+  }
+  .connect-way:has(input:checked) {
+    border-color: var(--ink);
+  }
+  .connect-way:has(input:focus-visible) {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .connect-way-plan {
+    margin: -8px 0 24px;
+  }
+  .connect-way-plan > p {
+    margin: 0;
+  }
+  .connect-way input {
+    flex: none;
+    margin: 3px 0 0;
+    accent-color: var(--ink);
+  }
+  .connect-way-text {
+    display: grid;
+    gap: 2px;
+  }
+  .connect-way-title {
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .connect-way-summary {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .agent-setup + .agent-setup {
+    margin-top: 24px;
+  }
+  .flow-step > :is(.inline-link, .text-button) {
+    display: inline-block;
+    margin-top: 14px;
+  }
+  .flow-step-more {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--flow-line);
+  }
+  .same-machine-choices {
+    display: grid;
+    gap: 8px;
+  }
+  .same-machine-choices > button {
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+  }
+  .flow-reminder {
+    margin-top: 16px;
+    padding: 12px 14px;
+    border-left: 2px solid var(--flow-strong);
+    background: var(--soft);
+    font-size: 13px;
+  }
+  .flow-reminder[data-stress="true"] {
+    border-left-color: var(--lamp, #f01ef0);
+  }
+  .flow-reminder > p {
+    margin: 0 0 10px;
+  }
+  .flow-reminder .setup-steps {
+    gap: 8px;
+  }
+  .setup-note {
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .setup-extra {
+    margin-top: 14px;
+    border-top: 1px solid var(--flow-line);
+    border-bottom: 1px solid var(--flow-line);
+  }
+  .setup-extra + .setup-extra {
+    margin-top: 0;
+    border-top: 0;
+  }
+  .setup-extra > summary {
+    padding: 10px 0;
+    font-size: 13px;
+  }
+  .agent-setup :is(.primary, .connect-next) {
+    margin-top: 20px;
+  }
+  .agent-setup > .inline-note {
+    text-align: center;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .agent-pick:hover:not([aria-pressed="true"]) {
+      border-color: var(--flow-strong);
+    }
+    .install-tabs [role="tab"]:hover:not([aria-selected="true"]) {
+      color: var(--ink);
+    }
+  }
+  @media (max-width: 400px) {
+    .agent-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-pick {
+      transition: none;
+    }
+  }
+}
