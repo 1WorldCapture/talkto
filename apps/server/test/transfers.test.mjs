@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { rpc } from "./mcp-wire.mjs";
 import { start } from "./platform-harness.mjs";
+import { load } from "./sources.mjs";
 import { storageGigabytes } from "@talkto/api/pricing";
 
 const sha = "a".repeat(64);
@@ -145,6 +146,31 @@ test("another S3-compatible store signs links at its own address", async (t) => 
     `/fleet/r2/talkto-test-transfers/r30/${s.server.id}/${data.transferId}/payload`,
   );
   assert.ok(url.searchParams.get("X-Amz-Signature"));
+});
+
+test("a malformed store address turns transfers off and is logged once, by name only", async (t) => {
+  const Configuration = await load("../src/configuration.ts");
+  const warn = t.mock.method(console, "warn", () => undefined);
+  const env = (base) => ({
+    TRANSFERS: {},
+    TALKTO_R2_OBJECT_BASE: base,
+    TALKTO_R2_ACCESS_KEY_ID: "test-access-key",
+    TALKTO_R2_SECRET_ACCESS_KEY: "test-secret-key",
+  });
+  for (const base of [
+    "http://files.example.test/fleet",
+    "https://files.example.test/fleet/",
+    "https://files.example.test/fleet?secret=1",
+    "https://files.example.test/fleet#secret",
+    "files.example.test/fleet",
+  ])
+    assert.equal(Configuration.r2Settings(env(base)), null, base);
+  assert.equal(warn.mock.callCount(), 1);
+  const [message] = warn.mock.calls[0].arguments;
+  assert.match(message, /TALKTO_R2_OBJECT_BASE/);
+  assert.doesNotMatch(message, /files\.example\.test|secret/);
+  const base = "https://files.example.test:8443/fleet/r2/talkto-test-transfers";
+  assert.equal(Configuration.r2Settings(env(base))?.objectBase, base);
 });
 
 test("nothing is offered until the upload arrives at its declared size", async (t) => {

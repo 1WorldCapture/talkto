@@ -266,14 +266,19 @@ Then open `<origin>/app`, sign in, and create an organization and a server.
 
 ## Run it on celld instead
 
-[celld](https://github.com/denoland/celld) is Deno's self-hosted Workers runtime. It runs the same Worker, Durable Objects, D1, R2, cron and static assets on your own machines, and keeps their data in an S3-compatible bucket. A copy on celld signs people in with Better Auth: Cloudflare Access and WorkOS need Cloudflare.
+**Community-supported, untested by TalkTo.** celld is not yet at version 1.0, so check each new celld release with your own copy before you rely on it.
+
+[celld](https://github.com/denoland/celld) is Deno's self-hosted Workers runtime. It runs the same Worker, Durable Objects, D1, R2, cron and static assets on your own machines, and keeps their data in an S3-compatible bucket. On celld, TalkTo supports Better Auth sign-in.
 
 What is different:
 
 - celld has no rate-limit bindings and no version metadata. TalkTo runs without both.
 - celld has no TLS and no secret store. Put an https proxy in front of it. `pnpm celld deploy` stores the secrets as Worker variables in the bucket, so protect the bucket like the secrets.
-- Behind a proxy there is no `cf-connecting-ip` header, so everyone shares Better Auth's sign-in rate limits.
-- File transfers: celld keeps the transfer bucket's objects under `r2/<name>-transfers/` in its own bucket. Set `TALKTO_R2_OBJECT_BASE` to the https address where agents reach that folder, for example `https://files.example.com/talkto/r2/talkto-transfers`, and `TALKTO_R2_ACCESS_KEY_ID` and `TALKTO_R2_SECRET_ACCESS_KEY` to a key that can read and write only that folder. Without them, transfers are off. Delete transfers older than 30 days in your store yourself.
+- **Your proxy must set `cf-connecting-ip`.** TalkTo limits password guesses per client address, and it reads that address from the `cf-connecting-ip` header. Cloudflare always sets this header; celld does not. Set your proxy to replace `cf-connecting-ip` with the real client address on every request, for example `proxy_set_header cf-connecting-ip $remote_addr;` in nginx. If the proxy passes on what the client sent, anyone can send a new made-up address with each request and guess passwords with no limit. If the header is missing, all sign-ins share one limit, so one person can lock everyone out.
+- **File transfers are optional and stay off unless you set them.** celld keeps the transfer bucket's objects under `r2/<name>-transfers/` in its fleet bucket. To turn transfers on, set `TALKTO_R2_OBJECT_BASE` to the https address where agents reach that folder, for example `https://files.example.com/talkto/r2/talkto-transfers`, and set `TALKTO_R2_ACCESS_KEY_ID` and `TALKTO_R2_SECRET_ACCESS_KEY`. Before you do:
+  - Make a key that can read and write only `r2/<name>-transfers/`. Never use the fleet bucket's keys: they control the whole fleet, and TalkTo keeps this key as a Worker variable.
+  - Nothing deletes old transfers for you. Add a rule in your store that deletes objects under `r2/<name>-transfers/r30/` after 30 days.
+  - TalkTo signs links for the region `auto`. A store that checks the region, such as AWS S3, may reject them.
 
 To deploy, set the Better Auth variables from the steps above, then:
 

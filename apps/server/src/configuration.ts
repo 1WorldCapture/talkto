@@ -69,9 +69,18 @@ export interface R2Settings {
   readonly accessKeyId: string;
   readonly secretAccessKey: string;
 }
+/** An https address with no trailing slash, query or fragment, so `<base>/<key>?…` stays one URL. */
+const validObjectBase = (base: string) =>
+  URL.canParse(base) &&
+  new URL(base).protocol === "https:" &&
+  !base.endsWith("/") &&
+  !base.includes("?") &&
+  !base.includes("#");
+let objectBaseWarned = false;
 /**
  * R2's own S3 address, unless `TALKTO_R2_OBJECT_BASE` names another S3-compatible store that
- * holds the binding's objects, as a self-hosted Workers runtime does.
+ * holds the binding's objects, as a self-hosted Workers runtime does. A malformed value turns
+ * transfers off and is logged once per isolate, by name only.
  */
 const objectBase = (env: Env): string | undefined => {
   const {
@@ -79,10 +88,15 @@ const objectBase = (env: Env): string | undefined => {
     TALKTO_R2_ACCOUNT_ID: accountId,
     TALKTO_R2_BUCKET: name,
   } = env;
-  if (base !== undefined)
-    return URL.canParse(base) && base.startsWith("https://") && !base.endsWith("/")
-      ? base
-      : undefined;
+  if (base !== undefined) {
+    if (validObjectBase(base)) return base;
+    if (!objectBaseWarned)
+      console.warn(
+        "TalkTo file transfers are off: TALKTO_R2_OBJECT_BASE must be an https:// address with no trailing slash, query or fragment.",
+      );
+    objectBaseWarned = true;
+    return undefined;
+  }
   return accountId && name ? `https://${accountId}.r2.cloudflarestorage.com/${name}` : undefined;
 };
 /**

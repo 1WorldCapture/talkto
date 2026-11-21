@@ -9,15 +9,15 @@
 // them) and the values Cloudflare keeps as Worker secrets. celld has no secret store: those values
 // become Worker variables inside the fleet bucket, so protect the bucket like the secrets.
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { experimental_readRawConfig } from "wrangler";
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url));
 const server = here("..");
-const selfhost = join(server, "wrangler.selfhost.jsonc");
 const output = join(server, "wrangler.celld.json");
 const assets = join(server, "celld-assets");
 
@@ -28,7 +28,7 @@ if (command !== "deploy" && command !== "migrate") {
 }
 if (process.env.TALKTO_AUTH_PROVIDER?.trim() !== "better-auth") {
   console.error(
-    "celld needs TALKTO_AUTH_PROVIDER=better-auth: Cloudflare Access and WorkOS need Cloudflare.",
+    "Set TALKTO_AUTH_PROVIDER=better-auth: on celld, TalkTo supports Better Auth sign-in.",
   );
   process.exit(1);
 }
@@ -39,7 +39,10 @@ if (missing.length > 0) {
 }
 
 // The Cloudflare account and D1 database IDs mean nothing to celld; the template still wants them.
-const generated = spawnSync(process.execPath, [here("selfhost-config.mjs")], {
+// The generated config goes to a temporary directory, so your own wrangler.selfhost.jsonc stays.
+const scratch = mkdtempSync(join(tmpdir(), "talkto-celld-"));
+const selfhost = join(scratch, "wrangler.selfhost.jsonc");
+const generated = spawnSync(process.execPath, [here("selfhost-config.mjs"), "--out", selfhost], {
   stdio: ["ignore", "ignore", "inherit"],
   env: {
     ...process.env,
@@ -47,10 +50,10 @@ const generated = spawnSync(process.execPath, [here("selfhost-config.mjs")], {
     TALKTO_D1_DATABASE_ID: "00000000-0000-4000-8000-000000000000",
   },
 });
-if (generated.status !== 0) process.exit(generated.status ?? 1);
-
-const { rawConfig: config } = experimental_readRawConfig({ config: selfhost });
-rmSync(selfhost);
+const config =
+  generated.status === 0 ? experimental_readRawConfig({ config: selfhost }).rawConfig : null;
+rmSync(scratch, { recursive: true, force: true });
+if (config === null) process.exit(generated.status ?? 1);
 
 // Keys celld rejects. Each is optional to TalkTo: no rate-limit bindings, no version metadata,
 // and the address comes from the proxy in front of celld instead of a Cloudflare route.
@@ -97,7 +100,6 @@ for (const name of [
   if (value) config.vars[name] = value;
 }
 
-writeFileSync(output, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
 const celld = process.env.CELLD ?? "celld";
 // celld bundles the Worker with the esbuild on PATH; use the one Wrangler already installed.
 const esbuild = dirname(
@@ -107,10 +109,21 @@ const args =
   command === "deploy"
     ? ["deploy", output]
     : ["d1", "migrations", "apply", config.d1_databases[0].database_name, output];
-const result = spawnSync(celld, [...args, "--bucket", process.env.CELLD_BUCKET], {
-  cwd: server,
-  stdio: "inherit",
-  env: { ...process.env, PATH: `${esbuild}${delimiter}${process.env.PATH}` },
-});
-rmSync(output);
-process.exit(result.status ?? 1);
+// The config holds the secrets. Ctrl-C reaches celld as well; this process waits for celld to
+// stop, so the `finally` below always deletes the config.
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => {});
+let status = 1;
+try {
+  rmSync(output, { force: true });
+  writeFileSync(output, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  const result = spawnSync(celld, [...args, "--bucket", process.env.CELLD_BUCKET], {
+    cwd: server,
+    stdio: "inherit",
+    env: { ...process.env, PATH: `${esbuild}${delimiter}${process.env.PATH}` },
+  });
+  if (result.error) console.error(`Could not run ${celld}: ${result.error.message}`);
+  status = result.status ?? 1;
+} finally {
+  rmSync(output, { force: true });
+}
+process.exit(status);
