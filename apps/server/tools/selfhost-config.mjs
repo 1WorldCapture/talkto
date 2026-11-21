@@ -4,11 +4,14 @@
 // Auth's secret is a Worker secret (`wrangler secret put BETTER_AUTH_SECRET`), never in this file.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import { experimental_readRawConfig } from "wrangler";
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url));
 const template = here("../wrangler.selfhost.example.jsonc");
-const output = here("../wrangler.selfhost.jsonc");
+// `--out <file>` writes somewhere else; `pnpm celld` uses it to leave your own config alone.
+const { values: args } = parseArgs({ options: { out: { type: "string" } } });
+const output = args.out ?? here("../wrangler.selfhost.jsonc");
 
 const problems = [];
 const setting = (name, pattern, hint, fallback) => {
@@ -154,7 +157,7 @@ writeFileSync(
   output,
   `// Written by pnpm selfhost:config from wrangler.selfhost.example.jsonc. Holds no secrets.\n${text}\n`,
 );
-console.log(`Wrote apps/server/wrangler.selfhost.jsonc for ${origin}:`);
+console.log(`Wrote ${args.out ?? "apps/server/wrangler.selfhost.jsonc"} for ${origin}:`);
 console.log(`  Worker ${name}, D1 ${name}-platform, R2 ${name}-transfers`);
 console.log(`  ${config.workers_dev ? "workers.dev address" : `Custom Domain ${host}`}`);
 console.log(
