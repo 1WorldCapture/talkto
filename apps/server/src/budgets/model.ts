@@ -191,11 +191,21 @@ export const describePlan = (value: Terms) =>
     ? `the organization's ${planNames[value.plan]} plan`
     : "the Free limits that apply to an organization without a paid plan";
 const count = (value: number) => value.toLocaleString("en-US");
+/** "1 second" or "12 seconds". */
+export const seconds = (value: number) => `${value} second${value === 1 ? "" : "s"}`;
+/**
+ * The one "Wait N seconds" in a read refusal. The Worker finds it to give the refusal again with
+ * the seconds left (`refusals.ts`), so every refusal writes it through here.
+ */
+export const waitFor = (value: number) => `Wait ${seconds(value)}`;
 /** Why reads were slowed, naming the plan's numbers and what to do. */
 export const readMessage = (value: Terms, slow: boolean, wait: number) =>
   slow
-    ? `The organization has used the ${count(value.monthly)} reads a month that ${describePlan(value)} includes, until ${value.periodEnd}. Agents keep receiving, slowly: ${count(value.slowPerMinute)} read${value.slowPerMinute === 1 ? "" : "s"} a minute across the organization until then. Wait ${wait} seconds, then retry the same call; poll less often, and ask the organization owner about a larger plan.`
-    : `The organization is reading faster than ${describePlan(value)} allows: ${count(value.perMinute)} reads a minute across all of its servers, with bursts up to ${count(value.burst)}. Wait ${wait} seconds, then retry the same call. Polling every 30–60 seconds as the monitoring procedure describes stays well under this.`;
+    ? `The organization has used the ${count(value.monthly)} reads a month that ${describePlan(value)} includes, until ${value.periodEnd}. Agents keep receiving, slowly: ${count(value.slowPerMinute)} read${value.slowPerMinute === 1 ? "" : "s"} a minute across the organization until then. ${waitFor(wait)}, then retry the same call; poll less often, and ask the organization owner about a larger plan.`
+    : `The organization is reading faster than ${describePlan(value)} allows: ${count(value.perMinute)} reads a minute across all of its servers, with bursts up to ${count(value.burst)}. ${waitFor(wait)}, then retry the same call. Polling every 30–60 seconds as the monitoring procedure describes stays well under this.`;
 /** Why an admin call was refused: the month's number is spent. */
 export const adminMessage = (value: Terms, wait: number) =>
-  `The organization has used the ${count(value.adminMonthly)} admin calls a month (registering, renaming, channels, signal links, wakes and refused sends) that ${describePlan(value)} includes, until ${value.periodEnd}. Messages and reads still work. Retry in ${wait} seconds at the earliest, or ask the organization owner about a larger plan.`;
+  `The organization has used the ${count(value.adminMonthly)} admin calls a month (registering, renaming, channels, signal links, wakes and refused sends) that ${describePlan(value)} includes, until ${value.periodEnd}. Messages and reads still work. Retry in ${seconds(wait)} at the earliest, or ask the organization owner about a larger plan.`;
+/** The same, for a person on the website: what they tried, in their terms, and no agent advice. */
+export const websiteAdminMessage = (value: Terms, wait: number) =>
+  `The organization has used the ${count(value.adminMonthly)} changes a month other than messages (such as agents joining or being renamed, channels, signal links, wake settings and wake tests) that ${describePlan(value)} includes, until ${value.periodEnd}. Messages and reading still work. Try again in ${seconds(wait)}, or ask the organization owner about a larger plan.`;

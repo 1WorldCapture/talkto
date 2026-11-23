@@ -4,6 +4,8 @@ import * as M from "@talkto/api/models";
 import * as U from "@talkto/api/updates";
 import type * as P from "@talkto/api/platform";
 import type * as Access from "./access.js";
+import { atStep, describeFailure, runtimeFlags, type Step } from "./failure-log.js";
+import * as Telemetry from "./telemetry.js";
 import * as Updates from "./updates.js";
 import * as Signal from "./update-signal.js";
 
@@ -20,6 +22,10 @@ import * as Signal from "./update-signal.js";
  * that started at "now" keeps what arrived; `end` and the deadline answer with the last page;
  * each re-read is a full read under current access, so a revoked grant ends the wait with its
  * failure; and the call counts as one read however often it reads again.
+ *
+ * When the watch fails to open (Cloudflare sometimes fails to reach the object), the call reads
+ * every few seconds until its deadline instead, so the caller still gets a held answer, not an
+ * error. Sentry records each such failure as a warning.
  */
 
 type Server = ReturnType<Env["SERVERS"]["getByName"]>;
@@ -40,14 +46,33 @@ interface Read<R> {
 /** The private URL of a server object's watch route; the host is never resolved. */
 const watchUrl = `https://server.talkto.internal${Signal.watchPath}`;
 const timedOut: Outcome = "timeout";
+const rechecked: Outcome = "recheck";
 /**
  * The largest first read sent in a header. A first read is a few KiB at most unless an HTTP
  * caller pads its body or headers; a larger one goes as before: the watch, then a separate read.
  */
 const firstReadLimit = 16 * 1024;
+/** How often a call whose watch failed to open reads again while it waits. */
+const fallbackPollMillis = 3_000;
+
+/**
+ * Name the step of a server-object call that rejected, for its failure log and report. The
+ * rejection itself, and so what the caller receives, is unchanged.
+ */
+const at =
+  (step: Step) =>
+  <A>(effect: Effect.Effect<A>): Effect.Effect<A> =>
+    effect.pipe(Effect.tapDefect((defect) => Effect.sync(() => atStep(defect, step))));
+
+/** What a held call waits on between reads. */
+interface Waiter {
+  /** Wait up to `millis` for a reason to read again. */
+  readonly next: (millis: number) => Effect.Effect<Outcome>;
+  readonly close: () => void;
+}
 
 /** The Worker's end of one watch. Frames that arrive during a read are kept, not lost. */
-class Watcher {
+class Watcher implements Waiter {
   private recheck = false;
   private ended: "end" | "closed" | null = null;
   private wake: (() => void) | null = null;
@@ -103,9 +128,21 @@ class Watcher {
   }
 }
 
+/**
+ * Stands in for a watch that failed to open: the call reads again every few seconds, and the
+ * deadline still answers with the last page.
+ */
+const poller: Waiter = {
+  next: (millis) =>
+    millis <= fallbackPollMillis
+      ? Effect.as(Effect.sleep(millis), timedOut)
+      : Effect.as(Effect.sleep(fallbackPollMillis), rechecked),
+  close: () => {},
+};
+
 /** What asking for a watch and a first read found; null parts mean the object did not do them. */
 interface Opened {
-  readonly watcher: Watcher | null;
+  readonly watcher: Waiter | null;
   /** The watch route's answer when the first read answered at once. */
   readonly answer: Response | null;
   /** The empty first page an opened watch holds. */
@@ -117,8 +154,7 @@ const nothing: Opened = { watcher: null, answer: null, page: null };
  * Register a watch and read once, in that order, in one request to the server object. An object
  * still on code from before first reads only opens the watch, and a full, erasing or unready one
  * refuses before reading; the call then reads separately, and without a watch answers at once.
- * The request is the call's first read, so a request that fails fails the call as a read would:
- * reading again could count the read twice.
+ * A request that fails falls back to polling in `hold`.
  */
 const open = (server: Server, authority: Authority, watch: Signal.Watch, first: () => string) =>
   Effect.promise(() => {
@@ -133,6 +169,7 @@ const open = (server: Server, authority: Authority, watch: Signal.Watch, first: 
       headers.set(Signal.organizationHeader, authority.organizationId);
     return server.fetch(new Request(watchUrl, { headers }));
   }).pipe(
+    at("watch"),
     Effect.map((response): Opened => {
       if (response.headers.has(Signal.answeredHeader)) return { ...nothing, answer: response };
       const socket = response.webSocket;
@@ -167,27 +204,46 @@ const continuation = (input: U.Input, checkpoint: M.Cursor): U.Input => {
   // Re-reads keep reporting the plugin, so the page that answers still names its newest version.
   return input.plugin === undefined ? next : { ...next, plugin: input.plugin };
 };
-/** Hold one call: read, then wait on a watch and read again until a page answers or time is up. */
+/**
+ * Hold one call: read, then wait on a watch and read again until a page answers or time is up.
+ *
+ * A watch that fails to open does not fail the call: it reads on a new stub, since Cloudflare
+ * may break a stub after a failure, and then polls (`poller`). If the object did read before
+ * failing, that call counts two reads. An object Cloudflare reports overloaded still fails the
+ * call, so polling never adds load to it.
+ */
 const hold = Effect.fn("UpdateWait.hold")(function* <R>(
-  server: Server,
+  connect: () => Server,
   authority: Authority,
   input: U.Input,
   first: First<R>,
-  read: (input: U.Input, reread: boolean) => Effect.Effect<Read<R>>,
+  read: (server: Server, input: U.Input, reread: boolean) => Effect.Effect<Read<R>>,
 ) {
+  let server = connect();
   const waitMillis = (input.waitSeconds ?? 0) * 1000;
   const selection = waitMillis === 0 ? null : yield* Updates.selectionOf(input);
-  if (selection === null) return (yield* read(input, false)).reply;
+  if (selection === null) return (yield* read(server, input, false)).reply;
   const deadline = (yield* Clock.currentTimeMillis) + waitMillis;
   return yield* Effect.acquireUseRelease(
     // The watch is registered before the first read: a send that commits after that read wakes it.
-    open(server, authority, { participantId: input.participantId, selection }, first.request),
+    open(server, authority, { participantId: input.participantId, selection }, first.request).pipe(
+      Effect.catchDefect((defect) =>
+        runtimeFlags(defect).overloaded === true
+          ? Effect.die(defect)
+          : Effect.sync((): Opened => {
+              console.warn("update-wait: watch failed to open; polling", describeFailure(defect));
+              Telemetry.watchFallback(defect);
+              server = connect();
+              return { ...nothing, watcher: poller };
+            }),
+      ),
+    ),
     (opened) =>
       Effect.gen(function* () {
         if (opened.answer !== null) return yield* first.answered(opened.answer);
         const watcher = opened.watcher;
         let step =
-          opened.page === null ? yield* read(input, false) : yield* first.held(opened.page);
+          opened.page === null ? yield* read(server, input, false) : yield* first.held(opened.page);
         if (watcher === null) return step.reply;
         for (;;) {
           if (step.page === null || !step.page.empty) return step.reply;
@@ -195,8 +251,10 @@ const hold = Effect.fn("UpdateWait.hold")(function* <R>(
           if (left <= 0) return step.reply;
           const outcome = yield* watcher.next(left);
           if (outcome === "end" || outcome === "timeout") return step.reply;
-          step = yield* read(continuation(input, step.page.checkpoint), true);
-          // A watch the runtime dropped (a deploy, a reset) gets one last read, then answers.
+          // A watch the runtime dropped (a deploy, a reset) gets one last read, then answers. A
+          // reset breaks this stub for every later call, so that read goes through a new one.
+          if (outcome === "closed") server = connect();
+          step = yield* read(server, continuation(input, step.page.checkpoint), true);
           if (outcome === "closed") return step.reply;
         }
       }),
@@ -210,12 +268,12 @@ const hold = Effect.fn("UpdateWait.hold")(function* <R>(
  * The reply is not decoded here: the MCP boundary checks it against the tool's contract once.
  */
 export const invokeAgent = (
-  server: Server,
+  connect: () => Server,
   authority: Authority,
   command: A.Command,
   meta: A.Meta,
 ): Effect.Effect<A.UncheckedReply> => {
-  const call = (current: A.Command, reread: boolean) =>
+  const call = (server: Server, current: A.Command, reread: boolean) =>
     Effect.promise(
       async () =>
         await server.invokeAgent(
@@ -225,9 +283,13 @@ export const invokeAgent = (
           meta,
           reread,
         ),
-    ).pipe(Effect.flatMap(Schema.decodeUnknownEffect(A.UncheckedReply)), Effect.orDie);
+    ).pipe(
+      at("invoke"),
+      Effect.flatMap(Schema.decodeUnknownEffect(A.UncheckedReply)),
+      Effect.orDie,
+    );
   if (command.tool !== U.toolName || (command.input.waitSeconds ?? 0) === 0)
-    return call(command, false);
+    return call(connect(), command, false);
   const { serverId, ...input } = command.input;
   // Holding needs only where the page ends; a failure or any other reply answers at once.
   const toRead = (reply: A.UncheckedReply): Read<A.UncheckedReply> => {
@@ -238,14 +300,17 @@ export const invokeAgent = (
     request: () => Schema.encodeSync(Signal.FirstRead)({ kind: "agent", command, meta }),
     answered: (response) =>
       Effect.promise(() => response.text()).pipe(
+        at("first_read"),
         Effect.flatMap(Schema.decodeUnknownEffect(Signal.AgentReply)),
         Effect.orDie,
       ),
     held: (page) =>
       Schema.decodeUnknownEffect(Signal.AgentPage)(page).pipe(Effect.orDie, Effect.map(toRead)),
   };
-  return hold(server, authority, input, first, (current, reread) =>
-    call({ tool: U.toolName, input: { ...current, serverId } }, reread).pipe(Effect.map(toRead)),
+  return hold(connect, authority, input, first, (server, current, reread) =>
+    call(server, { tool: U.toolName, input: { ...current, serverId } }, reread).pipe(
+      Effect.map(toRead),
+    ),
   );
 };
 /** Where an MCP page ends; the reply itself is checked once, at the MCP boundary. */
@@ -270,12 +335,12 @@ const httpRead = (text: string, init: ResponseInit): Read<Response> => {
  * straight through. `request` carries the Worker's authority headers and `payload` its body.
  */
 export const forward = (
-  server: Server,
+  connect: () => Server,
   authority: Authority,
   request: Request,
   payload: Uint8Array | null,
 ): Effect.Effect<Response> => {
-  const once = Effect.promise(() => server.fetch(request));
+  const once = Effect.promise(() => connect().fetch(request));
   if (
     request.method !== "POST" ||
     payload === null ||
@@ -310,7 +375,7 @@ export const forward = (
         Effect.map((held) => httpRead(held.body, { status: 200, headers: held.headers })),
       ),
   };
-  return hold(server, authority, input.value, first, (current, reread) => {
+  return hold(connect, authority, input.value, first, (server, current, reread) => {
     const headers = new Headers(request.headers);
     if (reread) headers.set(Signal.rereadHeader, "1");
     const body = reread ? JSON.stringify(current) : payload;

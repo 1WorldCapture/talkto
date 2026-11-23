@@ -89,6 +89,28 @@ export const ArchiveCursor = Schema.Struct({
 }).annotate({ parseOptions: { onExcessProperty: "error" } });
 /** Parsed archive continuation. */
 export type ArchiveCursor = typeof ArchiveCursor.Type;
+/**
+ * What one feed page reads, for its weight (`reads.ts`): `search` scans the search index, `window`
+ * every message in a time window (a timeline selection, read through the creation-time index and
+ * sorted), and `page` at most one page of rows walked in order on the primary key or the
+ * conversation index, like a history page: the first page, older pages, the live check and one
+ * conversation's pages. A continuation keeps its first page's search and window. Only weighs the
+ * read; the feed still validates the cursor before reading anything, so a cursor that does not
+ * decode reads nothing and weighs as a page.
+ */
+export const feedReach = (input: D.FeedInput): "page" | "search" | "window" => {
+  if (!("cursor" in input))
+    return input.query !== undefined ? "search" : input.start !== undefined ? "window" : "page";
+  const decoded = Encoding.decodeBase64UrlString(input.cursor);
+  if (Result.isFailure(decoded)) return "page";
+  const state = Schema.decodeUnknownResult(Schema.fromJsonString(MessageCursor))(decoded.success);
+  if (Result.isFailure(state)) return "page";
+  return state.success.query !== null
+    ? "search"
+    : state.success.afterTime !== null || state.success.beforeTime !== null
+      ? "window"
+      : "page";
+};
 /** Serialize a trusted cursor using base64url UTF-8, never credentials. */
 export const encodeCursor = (
   value:

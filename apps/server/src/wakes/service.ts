@@ -87,7 +87,8 @@ export interface Interface {
    * real wake, and reads the answer in `lastTest`. Each test starts a real run on the person's
    * account, so only the dashboard calls this; no MCP tool does. At most one test per
    * `Policy.testIntervalMs` (or the host's longer minimum), never within the host's minimum of a
-   * real wake, and counted in the agent's wake budget. A test never moves the target's checkpoint,
+   * real wake, and counted in the agent's wake budget. Its read is the person's (the website's
+   * per-person bound, never the agents' bucket), and so is its admin call. A test never moves the target's checkpoint,
    * due time, failures or last attempt, so the cadence is unchanged; the next real wake waits only
    * for the host's own minimum after it.
    */
@@ -627,8 +628,13 @@ export const layer = Layer.effect(
           return yield* invalid(
             "Waking Claude Code routines, Grok Bot and Town is not enabled on this deployment.",
           );
-        // A test counts against the agent's own read limit, like every wake.
-        yield* reads.admit(access, { operation: "wake_test", transport: "wake", participantId });
+        // A test is a person's click on the website (only the dashboard reaches this): it is read
+        // as one of the person's website reads on this server, never against the agents' bucket.
+        yield* reads.admit(access, {
+          operation: "wake_test",
+          transport: "dashboard",
+          participantId: null,
+        });
         const at = yield* Clock.currentTimeMillis;
         const gone = () => invalid("This Auto-start no longer exists. Add it again.");
         const prepared = yield* run(access, "wakes.test", (tx) =>

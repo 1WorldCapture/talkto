@@ -13,6 +13,7 @@ import type { AccessContext } from "./access.js";
 import { trace } from "@talkto/telemetry/effect";
 import * as Monitoring from "./monitoring.js";
 import * as Reads from "./reads.js";
+import * as Navigation from "./navigation.js";
 import * as Wakes from "./wakes/service.js";
 
 /** Authority and diagnostics supplied by the verified runtime boundary for one request. */
@@ -36,6 +37,12 @@ export class RequestContext extends Context.Service<
   }
 >()("@talkto/HttpRequestContext") {}
 
+/** A feed page's operation by what it reads; only searches and time windows are deep reads. */
+const feedOperations = {
+  page: "serverFeed",
+  search: "serverFeedSearch",
+  window: "serverFeedWindow",
+} as const;
 const respond = Effect.fn("Http.respond")(function* <A, C, F extends Errors.Failure>(
   reads: Reads.Reads["Service"],
   serverId: M.ServerId,
@@ -51,7 +58,8 @@ const respond = Effect.fn("Http.respond")(function* <A, C, F extends Errors.Fail
   const access = { ...context.access, serverId };
   const call = {
     operation: read?.operation ?? "",
-    transport: "http" as const,
+    // The website's views have their own per-person bound and never wait on the agents' bucket.
+    transport: context.website ? ("dashboard" as const) : ("http" as const),
     participantId: read?.participantId ?? null,
   };
   const guarded =
@@ -134,7 +142,7 @@ const handlers = HttpApiBuilder.group(Api, "server", (routes) =>
         }),
       serverFeed: ({ params, query }) =>
         respond(reads, params.serverId, (access) => service.serverFeed(access, query), {
-          operation: "serverFeed",
+          operation: feedOperations[Navigation.feedReach(query)],
         }),
       getServer: ({ params }) =>
         respond(reads, params.serverId, (access) => service.getServer(access), {

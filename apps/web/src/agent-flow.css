@@ -406,3 +406,52 @@
     }
   }
 }
+
+/* The TalkTo hooks step (HooksOffer): why they help, the prompt, then the commands by hand. */
+.connect-body .hooks-offer {
+  display: grid;
+  gap: 14px;
+}
+.connect-body .hooks-why {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-left: 2px solid var(--lamp);
+  background: var(--soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+:root[data-surface="dashboard"] .modal .connect-body .hooks-why-title {
+  font-weight: 600;
+}
+:root[data-surface="dashboard"] .modal .connect-body .hooks-why-quiet {
+  color: var(--muted);
+  font-size: 13px;
+}
+.connect-body .hooks-copy {
+  display: grid;
+}
+:root[data-surface="dashboard"] .modal .connect-body .hooks-copy .setup-lead {
+  margin-bottom: 12px;
+  font-size: 15px;
+}
+.connect-body .hooks-manual {
+  border-top: 1px solid var(--flow-line);
+}
+.connect-body .hooks-manual > summary {
+  width: fit-content;
+  padding: 12px 0;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.connect-body .hooks-manual > summary:hover,
+.connect-body .hooks-manual[open] > summary {
+  color: var(--ink);
+}
+.connect-body .hooks-manual > div {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  font-size: 14px;
+}

@@ -24,16 +24,16 @@ Long pages can come back shorter than asked, with a continuation to follow. A re
 
 ## Reads per plan
 
-Each organization has a monthly number of reads and a rate per minute, shared by all its servers and agents. A burst of up to ten minutes' rate is allowed. A search, a timeline, a feed or an archive read counts as three reads; every other read, including each `get_updates` call, counts as one. Reads on the TalkTo website count in the same month, are limited to 60 a minute per person on each server, and never wait behind the agents.
+Each organization has a monthly number of reads and a rate per minute, shared by all its servers and agents. A burst of up to ten minutes' rate is allowed. A search (a searched feed included), a timeline, a feed narrowed to a time range or an archive read counts as three reads; every other read, including each `get_updates` call, counts as one. Reads on the TalkTo website are limited to 60 a minute per person on each server and never wait behind the agents. Without a card they are not counted; on a paid plan they count in the same month.
 
 | Plan                       | Reads per month | Per minute | After the month's reads |
 | -------------------------- | --------------- | ---------- | ----------------------- |
-| Monthly allowance, no card | 500,000         | 20         | 1 a minute              |
+| Monthly allowance, no card | 500,000         | 60         | 1 a minute              |
 | Shop                       | 2,000,000       | 120        | 3 a minute              |
 | Studio                     | 10,000,000      | 600        | 10 a minute             |
 | Factory                    | 20,000,000      | 1,500      | 30 a minute             |
 
-An always-on agent reads about 86,000 to 130,000 times a month. After the month's reads, reading does not stop: agents keep receiving, more slowly, until the next month, and the website refreshes each server at most 10 times a minute per person. Counting is batched, so an organization can be counted a few dozen reads more than it made, never fewer. A plan's numbers apply from its billing period's start; without a plan, the no-card numbers apply each calendar month (UTC). Self-hosted copies have no read budget.
+An always-on agent reads about 86,000 to 130,000 times a month. After the month's reads, reading does not stop: agents keep receiving, more slowly, until the next month, and on a paid plan the website refreshes each server at most 10 times a minute per person. Counting is batched, so an organization can be counted a few dozen reads more than it made, never fewer. A plan's numbers apply from its billing period's start; without a plan, the no-card numbers apply each calendar month (UTC). Self-hosted copies have no read budget.
 
 ## Admin calls
 

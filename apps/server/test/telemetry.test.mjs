@@ -178,6 +178,98 @@ for (const traceRate of [1, 0])
       assert.equal(d1.tags["talkto.failure_kind"], "connection_lost");
       assert.equal(d1.tags["talkto.operation"], "fixture.d1");
       assert.equal(d1.exception.values.length, 1);
+      // Cloudflare's runtime flags are separate tags beside the unchanged failure kind.
+      assert.equal((await x.raw("/__telemetry/runtime-flags")).status, 200);
+      const flagged = await received(
+        (event) => event.tags?.["talkto.request_id"] === "fixture-flags",
+      );
+      assert.equal(flagged.tags["talkto.failure_kind"], "overloaded");
+      assert.equal(flagged.tags["talkto.cf_retryable"], "true");
+      assert.equal(flagged.tags["talkto.cf_overloaded"], "true");
+      assert.equal(flagged.tags["talkto.cf_remote"], "false");
+      assert.equal(flagged.tags["talkto.step"], undefined);
+      const kept = await received(
+        (event) => event.tags?.["talkto.request_id"] === "fixture-kept-flags",
+      );
+      assert.equal(kept.tags["talkto.failure_kind"], "retryable");
+      assert.equal(kept.tags["talkto.cf_retryable"], "true");
+      assert.equal(kept.tags["talkto.cf_overloaded"], undefined);
+      // A get_updates whose server-object call fails in the runtime names the step; the client
+      // sees the same internal_error as before.
+      const organization = await x.mcpToken(account.organizationId);
+      for (const [step, waitSeconds] of [
+        ["invoke", 0],
+        ["first_read", 5],
+      ]) {
+        await x.raw(`/__telemetry/server-fault?server=${server.id}&step=${step}`);
+        const updates = await x.mcp(
+          organization,
+          "get_updates",
+          {
+            serverId: server.id,
+            participantId: registered.item.id,
+            mode: "start",
+            startAt: "now",
+            channelIds: [],
+            directChats: "own",
+            waitSeconds,
+          },
+          true,
+        );
+        assert.equal(updates.error.code, "internal_error");
+        assert.equal(
+          updates.error.message,
+          "An internal error occurred. Use the request ID for diagnosis. Retain creation request keys when retrying.",
+        );
+        assert.doesNotMatch(JSON.stringify(updates), /PRIVATE_|first_read|cf_|"step"/);
+        const failed = await received(
+          (event) => event.tags?.["talkto.request_id"] === updates.meta.requestId,
+        );
+        assert.equal(failed.tags["talkto.step"], step, step);
+        assert.equal(failed.tags["talkto.operation"], "mcp.get_updates");
+        assert.equal(failed.exception.values[0].value, "Unexpected application failure");
+        // Each fault comes from the server object, so Cloudflare flags it remote.
+        assert.equal(failed.tags["talkto.cf_remote"], "true", step);
+      }
+      // A watch that fails to open does not fail the call: it polls until its deadline and
+      // answers with a page, and Sentry gets a warning tagged with the step and runtime flags.
+      await x.raw(`/__telemetry/server-fault?server=${server.id}&step=watch`);
+      const started = Date.now();
+      const polled = await x.mcp(organization, "get_updates", {
+        serverId: server.id,
+        participantId: registered.item.id,
+        mode: "start",
+        startAt: "now",
+        channelIds: [],
+        directChats: "own",
+        waitSeconds: 4,
+      });
+      assert.equal(polled.error, undefined);
+      assert.ok(Date.now() - started >= 3_000, "the call is still held until its deadline");
+      const fallback = await received((event) => event.tags?.["talkto.code"] === "watch_fallback");
+      assert.equal(fallback.level, "warning");
+      assert.equal(fallback.tags["talkto.step"], "watch");
+      assert.equal(fallback.tags["talkto.operation"], "TalkTo.getUpdates");
+      assert.equal(fallback.tags["talkto.cf_remote"], "true");
+      assert.doesNotMatch(JSON.stringify(fallback), /PRIVATE_/);
+      // A reset while the call is held closes the watch; its last read goes to a new stub, since
+      // the old one fails every call after a reset, and the call answers with a page.
+      const failures = () =>
+        events.filter((event) => event.tags?.["talkto.code"] === "internal_error").length;
+      const before = failures();
+      await x.raw(`/__telemetry/server-fault?server=${server.id}&step=reset`);
+      const reset = await x.mcp(organization, "get_updates", {
+        serverId: server.id,
+        participantId: registered.item.id,
+        mode: "start",
+        startAt: "now",
+        channelIds: [],
+        directChats: "own",
+        waitSeconds: 4,
+      });
+      assert.equal(reset.error, undefined, JSON.stringify(reset.error));
+      assert.equal(failures(), before);
+      await x.raw(`/__telemetry/server-fault?server=${server.id}&step=none`);
       assert.equal(events.filter((event) => event.type === "transaction").length, 0);
       assert.doesNotMatch(bodies.join("\n"), /PRIVATE_/);
     }

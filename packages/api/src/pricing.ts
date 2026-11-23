@@ -126,8 +126,9 @@ export const free = { messages: 2000, servers: 1, people: 1, storageGigabytes: 2
 /**
  * Read budgets per organization (owner decision, November 16, 2026). A read is any call that
  * returns messages or server state without writing: get_updates, get_context, read_messages,
- * transfer reads, the HTTP API's GETs and polls, and the web app's views. A deep read counts
- * `deepReadUnits`: a search, a history-archive page, or a server-wide timeline or feed page.
+ * transfer reads, the HTTP API's GETs and polls, and, on a paid plan, the web app's views (on
+ * Free's numbers they are not counted). A deep read counts `deepReadUnits`: a search, a
+ * history-archive page, a server-wide timeline, or a feed page with a search or time window.
  * `monthly` units count per billing month (Free and organizations without a paid plan: per UTC
  * calendar month). `perMinute` is the steady organization-wide rate, with bursts up to
  * `readBurstMinutes` minutes of it saved up. After `monthly`, agents keep receiving at
@@ -136,7 +137,7 @@ export const free = { messages: 2000, servers: 1, people: 1, storageGigabytes: 2
  * self-hosted organizations have no read budget.
  */
 export const reads = {
-  free: { monthly: 500_000, perMinute: 20, slowPerMinute: 1 },
+  free: { monthly: 500_000, perMinute: 60, slowPerMinute: 1 },
   shop: { monthly: 2_000_000, perMinute: 120, slowPerMinute: 3 },
   studio: { monthly: 10_000_000, perMinute: 600, slowPerMinute: 10 },
   factory: { monthly: 20_000_000, perMinute: 1500, slowPerMinute: 30 },
@@ -146,7 +147,7 @@ export const reads = {
 >;
 /** A burst may spend this many minutes of the steady rate at once (a token bucket 10× the rate). */
 export const readBurstMinutes = 10;
-/** What one deep read (search, archive page, server-wide timeline or feed page) counts. */
+/** What one deep read (search, archive page, server-wide timeline, windowed feed page) counts. */
 export const deepReadUnits = 3;
 /**
  * Reads one always-on agent makes in a month, for the site's gloss: idle polling every 30 seconds

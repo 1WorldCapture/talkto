@@ -64,15 +64,19 @@ export const unmeasured = Reads.of({
 
 /**
  * Deep reads count `deepReadUnits` against the read budget: a search (any transport, the web
- * app's included), a history-archive page, and server-wide timeline, sender or feed pages. They
- * scan the search index or up to 2,000 rows across every conversation. Everything else counts 1.
+ * app's included, and a searched feed page), a history-archive page, server-wide timeline and
+ * sender pages, and a feed page within a time window. They scan the search index, up to 2,000 rows
+ * across every conversation, or every message in the window. Everything else counts 1, including
+ * a feed page without a search or window (`serverFeed`: the first page, older pages, the live
+ * check, one conversation's pages), which reads at most one page of rows (`Navigation.feedReach`).
  */
 export const deepOperations: ReadonlySet<string> = new Set([
   "searchMessages",
   "readArchive",
   "serverTimeline",
   "serverTimelineSenders",
-  "serverFeed",
+  "serverFeedSearch",
+  "serverFeedWindow",
   "dashboard.search",
 ]);
 /** The units one read counts against the organization's read budget. */
@@ -80,8 +84,10 @@ export const weight = (read: Read) =>
   read.deep === true || deepOperations.has(read.operation) ? deepReadUnits : 1;
 /**
  * The web app's reads per person per server a minute: a view reads a server's summary and recent
- * activity and refreshes every 3–60 seconds. After the month's read budget the ceiling drops to
- * `dashboardSlowPerMinute`; people still see their servers, refreshing less often.
+ * activity and refreshes every 3–60 seconds. On a paid plan, after the month's read budget the
+ * ceiling drops to `dashboardSlowPerMinute`; people still see their servers, refreshing less often.
+ * On Free's numbers the website's reads are not counted in the month, so the month never slows
+ * them (`budgets/authority.ts`).
  */
 export const dashboardPerMinute = 60;
 export const dashboardSlowPerMinute = 10;
@@ -249,7 +255,12 @@ export const make = (dependencies: Dependencies) => {
     // self-hosted copies (no budget to spend from) have none.
     const client = yield* dependencies.budget();
     if (client === null) return;
-    const subject = subjectOf(access, call.participantId);
+    // A person's changes on the website have their own minute on each server, never the minute
+    // of the agent they change, nor of the agents on their own connection.
+    const website = call.transport === "dashboard";
+    const subject: readonly [kind: string, id: string] = website
+      ? ["website", access.grantId]
+      : subjectOf(access, call.participantId);
     const who = subject[0] === "participant" ? "participant" : "connection";
     const wait = admins(subject.join(":"), yield* dependencies.now);
     if (wait !== null)
@@ -258,9 +269,11 @@ export const make = (dependencies: Dependencies) => {
         action: "retry_after",
         retryAfterSeconds: wait,
         scope: "participant",
-        message: refused
-          ? `Too many refused sends: this ${who} has had ${adminPerMinute} admin calls or refused sends in the last minute on this server. Wait ${wait} seconds, read the earlier refusal, and fix its cause before sending again.`
-          : `Too many admin calls: this ${who} may register, rename, change channels, signal links or wakes, or have sends refused ${adminPerMinute} times a minute on this server. Wait ${wait} seconds, then retry the same call.`,
+        message: website
+          ? `Too many changes from the TalkTo website: a person can change wake settings, test wakes and make other changes ${adminPerMinute} times a minute on one server. ${BudgetModel.waitFor(wait)}, then try again.`
+          : refused
+            ? `Too many refused sends: this ${who} has had ${adminPerMinute} admin calls or refused sends in the last minute on this server. ${BudgetModel.waitFor(wait)}, read the earlier refusal, and fix its cause before sending again.`
+            : `Too many admin calls: this ${who} may register, rename, change channels, signal links or wakes, or have sends refused ${adminPerMinute} times a minute on this server. ${BudgetModel.waitFor(wait)}, then retry the same call.`,
       });
     const outcome = yield* Effect.promise(() => client.spend("admin", 1));
     // A refused send keeps its own refusal; only calls about to run are refused for the month.
@@ -270,7 +283,10 @@ export const make = (dependencies: Dependencies) => {
         action: "retry_after",
         retryAfterSeconds: outcome.retryAfterSeconds,
         scope: "organization",
-        message: BudgetModel.adminMessage(outcome.terms, outcome.retryAfterSeconds),
+        message: (website ? BudgetModel.websiteAdminMessage : BudgetModel.adminMessage)(
+          outcome.terms,
+          outcome.retryAfterSeconds,
+        ),
       });
   });
   return Reads.of({
@@ -299,7 +315,7 @@ export const make = (dependencies: Dependencies) => {
             action: "retry_after",
             retryAfterSeconds: pause,
             scope: "participant",
-            message: `Too many reads from the TalkTo website: a person can refresh one server ${ceiling} times a minute${slow ? " while the organization is past its monthly read budget" : ""}. Wait ${pause} seconds.`,
+            message: `Too many reads from the TalkTo website: a person can refresh one server ${ceiling} times a minute${slow ? " while the organization is past its monthly read budget" : ""}. ${BudgetModel.waitFor(pause)}.`,
           });
         }
         yield* spend("dashboard", weight(read));
@@ -313,7 +329,7 @@ export const make = (dependencies: Dependencies) => {
           action: "retry_after",
           retryAfterSeconds: wait,
           scope: "participant",
-          message: `Too many reads: this ${subject[0] === "participant" ? "participant" : "connection"} is limited to ${settings.participantPerMinute} reads a minute on this server. Wait ${wait} seconds, then retry the same call. Polling every 30–60 seconds as the monitoring procedure describes never reaches this limit.`,
+          message: `Too many reads: this ${subject[0] === "participant" ? "participant" : "connection"} is limited to ${settings.participantPerMinute} reads a minute on this server. ${BudgetModel.waitFor(wait)}, then retry the same call. Polling every 30–60 seconds as the monitoring procedure describes never reaches this limit.`,
         });
       }
       if (settings.budgets) {

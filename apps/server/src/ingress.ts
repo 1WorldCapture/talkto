@@ -242,7 +242,7 @@ export function makeWorker(authenticate: Authenticate): ExportedHandler<Env> {
               // A waiting get_updates is held here, on a watch, not in the server object.
               return run(
                 UpdateWait.invokeAgent(
-                  env.SERVERS.getByName(config.serverId),
+                  () => env.SERVERS.getByName(config.serverId),
                   { principalKey: config.principalKey, organizationId: null },
                   command,
                   meta,
@@ -256,12 +256,11 @@ export function makeWorker(authenticate: Authenticate): ExportedHandler<Env> {
       }
       const forwarded = new Request(url, { method: request.method, headers, body });
       // Default placement follows this request. No centralized object pre-creation or region pinning.
-      const server = env.SERVERS.getByName(config.serverId);
       try {
         // A waiting POST …/updates is held here, on a watch, not in the server object.
         return await run(
           UpdateWait.forward(
-            server,
+            () => env.SERVERS.getByName(config.serverId),
             { principalKey: config.principalKey, organizationId: null },
             forwarded,
             body,

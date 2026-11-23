@@ -106,7 +106,7 @@ test("one participant over its limit is refused with a retry delay; others keep 
   assert.equal(refused.error.retryable, true);
   assert.equal(refused.error.action, "retry_after");
   assert.ok(refused.error.retryAfterSeconds >= 1 && refused.error.retryAfterSeconds <= 12);
-  assert.match(refused.error.message, /Wait \d+ seconds/);
+  assert.match(refused.error.message, /Wait \d+ seconds?,/);
   await s.poll(s.second);
   // Writes are never refused by the read limit.
   await s.x.mcp(s.credential, "send_message", {
@@ -131,14 +131,13 @@ test("one participant over its limit is refused with a retry delay; others keep 
 const pause = (millis) => new Promise((resolve) => setTimeout(resolve, millis));
 /** Server objects the Worker looked up since the last call; no lookup means no request reached one. */
 const lookups = async (s) => (await (await s.x.control("server-lookups")).json()).names;
+/** "Wait 1 second" or "Wait 3 seconds", as refusals write it. */
+const waitFor = (seconds) => `Wait ${seconds} second${seconds === 1 ? "" : "s"}`;
 /** The refusal the server gave, as it reads with `seconds` left. */
 const withSeconds = (error, seconds) => ({
   ...error,
   retryAfterSeconds: seconds,
-  message: error.message.replace(
-    `Wait ${error.retryAfterSeconds} seconds`,
-    `Wait ${seconds} seconds`,
-  ),
+  message: error.message.replace(waitFor(error.retryAfterSeconds), waitFor(seconds)),
 });
 
 test("an early retry is refused by the Worker with the time left, without reaching the server", async (t) => {

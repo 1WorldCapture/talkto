@@ -224,3 +224,70 @@ test("setup says an agent is listening only when TalkTo saw its plugin or hooks 
   assert.equal(listening(agent(undefined)), "unseen", "MCP alone reports nothing");
   assert.equal(listening(agent("someday-plugin")), "unseen", "never claims an unknown plugin");
 });
+
+// The hooks step's prompt (agent-flow.tsx, HooksOffer): the guide's own hook commands, what only
+// the person does, and nothing secret. The hooks are public plugins: no address, key or token.
+test("the hooks prompt carries each hooks agent's own commands and nothing secret", async (t) => {
+  const vite = await createServer({
+    server: { middlewareMode: true, hmr: false },
+    appType: "custom",
+  });
+  t.after(() => vite.close());
+  const { hooksPrompt } = await vite.ssrLoadModule("/src/agent-prompt.ts");
+  const guides = await vite.ssrLoadModule("@talkto/api/agent-guides");
+  // A deployment of its own, so an address leaking into the prompt cannot hide behind talkto.sh.
+  const mcpUrl = "https://hooks-check.example/mcp";
+  const offered = guides.agentGuides.flatMap((guide) => {
+    const hooks = guides.hooksOf(guide.setup(mcpUrl));
+    return hooks === null ? [] : [{ guide, hooks }];
+  });
+  assert.deepEqual(
+    offered.map(({ guide }) => guide.id).sort(),
+    ["antigravity", "codex", "copilot", "cursor", "devin", "droid", "gemini", "grok"],
+    "every tool whose guide offers the hooks",
+  );
+  const prompted = offered.filter(({ hooks }) => hooks.commands.length > 0);
+  // Cursor and VS Code install them by clicks, so they have no prompt, only the manual steps.
+  assert.deepEqual(prompted.map(({ guide }) => guide.id).sort(), [
+    "antigravity",
+    "codex",
+    "devin",
+    "droid",
+    "gemini",
+    "grok",
+  ]);
+  for (const { guide, hooks } of prompted) {
+    const at = `${guide.id}: `;
+    const prompt = hooksPrompt({
+      tool: guide.name,
+      commands: hooks.commands,
+      otherwise: hooks.otherwise.map((step) => [step.text, ...(step.lines ?? [])].join("\n")),
+      yours: hooks.yours.map((step) => step.text),
+    });
+    assert.ok(prompt.startsWith(`Install the TalkTo hooks in ${guide.name} for me.`), at);
+    for (const line of hooks.commands) assert.ok(prompt.includes(`\n${line}\n`), `${at}${line}`);
+    assert.ok(!prompt.includes("hooks-check.example"), `${at}no TalkTo address`);
+    assert.doesNotMatch(prompt, /token|bearer|secret|password|sk-|whsec_|serverId|register_/i, at);
+    // Every tool loads new hooks in a new session; the agent tells the person to start one.
+    assert.match(prompt, /tell me what I have to do myself:\n(- .+\n)*- .*new session\.$/, at);
+    assert.ok(prompt.length < 700, `${at}short (${prompt.length})`);
+  }
+  const codex = prompted.find(({ guide }) => guide.id === "codex");
+  assert.equal(
+    hooksPrompt({
+      tool: "Codex",
+      commands: codex.hooks.commands,
+      otherwise: [],
+      yours: codex.hooks.yours.map((step) => step.text),
+    }),
+    `Install the TalkTo hooks in Codex for me. They tell you when TalkTo messages are waiting, so you can answer without me asking.
+
+Run these commands in your shell, in order:
+
+codex plugin marketplace add talkto-sh/talkto-plugin
+codex plugin add talkto-hooks@talkto
+
+When you finish, tell me what I have to do myself:
+- Trust the hooks in /hooks and start a new session.`,
+  );
+});

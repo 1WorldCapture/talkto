@@ -989,6 +989,53 @@ const paste = async (s, kind, url, token, participantId = s.ana) => {
 const testPath = (s, wake, participantId = s.ana) =>
   `${s.wakesPath(participantId)}/${wake.wakeId}/test`;
 
+test("Send a test is the person's read and admin call, never the agent's", async (t) => {
+  const s = await setup(t, { wakeTokens: true, readBudgets: true, adminBudgets: true });
+  await s.x.control(`quota/configure?account=${s.account.id}`, {
+    budgets: { perMinute: 60, burst: 2 },
+  });
+  assert.equal(
+    (await s.x.control(`limiter-clock?server=${s.server.id}`, { hold: true })).status,
+    200,
+  );
+  const token = `sk-ant-oat01-${randomBytes(24).toString("base64url")}`;
+  const wake = await paste(s, "claude_routine", fire, token);
+  const poll = (error = false) =>
+    s.x.mcp(
+      s.credential,
+      "get_updates",
+      {
+        serverId: s.server.id,
+        participantId: s.ana,
+        mode: "start",
+        channelIds: [],
+        directChats: "own",
+        startAt: "now",
+      },
+      error,
+    );
+  // The agents' bucket is empty and Ana has spent her thirty admin calls this minute.
+  for (let read = 0; read < 2; read++) await poll();
+  assert.equal((await poll(true)).error.code, "rate_limited");
+  for (let call = 0; call < 30; call++)
+    await s.x.mcp(s.credential, "create_channel", {
+      serverId: s.server.id,
+      participantId: s.ana,
+      requestKey: randomUUID(),
+      name: `room-${call}`,
+    });
+  await s.x.control("read-events");
+  const tested = await s.dashboard("POST", testPath(s, wake));
+  assert.equal(tested.status, 200, tested.text);
+  assert.equal(tested.json.data.lastTest.accepted, true);
+  // Read as one of the person's website reads, keyed to their grant, not to Ana.
+  const events = (await (await s.x.control("read-events")).json()).events;
+  assert.deepEqual(
+    events.map((event) => [event[3], event[5], event[6], event[7]]),
+    [["grant", "wake_test", "dashboard", "allowed"]],
+  );
+});
+
 test("Send a test starts the routine once through the real request, and changes no delivery state", async (t) => {
   const s = await setup(t, { wakeTokens: true });
   const token = `sk-ant-oat01-${randomBytes(24).toString("base64url")}`;

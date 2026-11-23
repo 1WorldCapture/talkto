@@ -207,7 +207,7 @@ export default function Conversation() {
       setPending((all) =>
         all.map((item) =>
           item.key === entry.key
-            ? { ...item, status: "failed", problem: describeError(error) }
+            ? { ...item, status: "failed", problem: describeError(error, "send") }
             : item,
         ),
       );

@@ -4,6 +4,7 @@ import * as Envelope from "@talkto/api/envelope";
 import * as M from "@talkto/api/models";
 import type * as P from "@talkto/api/platform";
 import type * as Access from "./access.js";
+import * as BudgetModel from "./budgets/model.js";
 import * as Reads from "./reads.js";
 
 /**
@@ -115,13 +116,13 @@ const requests = memory<HttpRefusal>(capacity);
  */
 const wordingOf = (message: string, seconds: number): Wording | null => {
   if (message === Reads.backstopMessage) return null;
-  const marker = `Wait ${seconds} seconds`;
+  const marker = BudgetModel.waitFor(seconds);
   const at = message.indexOf(marker);
   if (at === -1 || message.includes(marker, at + 1)) return null;
   return { before: message.slice(0, at), after: message.slice(at + marker.length) };
 };
 const worded = (wording: Wording, seconds: number) =>
-  `${wording.before}Wait ${seconds} seconds${wording.after}`;
+  `${wording.before}${BudgetModel.waitFor(seconds)}${wording.after}`;
 
 /** The subject a server object's read limit counts for this tool call, or null for other tools. */
 const agentKey = (caller: Caller, command: A.Command) => {

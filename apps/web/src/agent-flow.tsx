@@ -8,8 +8,11 @@ import {
   type ReactNode,
 } from "react";
 import { BrandMark } from "./agent-brand-marks.js";
-import { installPrompt } from "./agent-prompt.js";
+import { hooksPrompt, installPrompt } from "./agent-prompt.js";
 import {
+  hooksIntro,
+  hooksOf,
+  hooksWhileIdle,
   installGuideUrl,
   runsCommands,
   setupParts,
@@ -42,10 +45,16 @@ export function AgentPrompt({
   prompt,
   buttonClassName = "btn",
   reveal = false,
+  label = "Copy prompt",
+  name = "Agent connection prompt",
 }: {
   readonly prompt: string | null;
   readonly buttonClassName?: string;
   readonly reveal?: boolean;
+  /** The Copy button's words. */
+  readonly label?: string;
+  /** The text field's accessible name. */
+  readonly name?: string;
 }) {
   const id = useId();
   const field = useRef<HTMLTextAreaElement>(null);
@@ -86,7 +95,7 @@ export function AgentPrompt({
   const promptField = (
     <>
       <label className="sr-only" htmlFor={id}>
-        Agent connection prompt
+        {name}
       </label>
       <div className="agent-prompt-field" data-more={more}>
         <textarea
@@ -108,7 +117,7 @@ export function AgentPrompt({
       disabled={prompt === null}
       onClick={() => void copyPrompt()}
     >
-      Copy prompt
+      {label}
     </button>
   );
   const status = (
@@ -133,6 +142,59 @@ export function AgentPrompt({
       {copyButton}
       {status}
     </div>
+  );
+}
+
+/**
+ * Copies text on a click, with no page in between. `flash` is the button's brief "Copied";
+ * `state` stays, for the line that says what to do next. When the browser refuses, `state` is
+ * "refused" and the surface shows the text to select instead.
+ */
+export function useCopy(text: string | null) {
+  const [state, setState] = useState<"idle" | "copied" | "refused">("idle");
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    if (!flash) return;
+    const timer = setTimeout(() => setFlash(false), 2500);
+    return () => clearTimeout(timer);
+  }, [flash]);
+  const copy = async () => {
+    if (text === null) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setState("copied");
+      setFlash(true);
+    } catch {
+      setState("refused");
+    }
+  };
+  return { state, flash, copy };
+}
+
+/** A button that copies right away: "Copied" with the magenta square, like the Copy lines. */
+export function CopyNowButton({
+  copier,
+  ready,
+  label,
+  className,
+}: {
+  readonly copier: ReturnType<typeof useCopy>;
+  /** False while the text loads; the button waits. */
+  readonly ready: boolean;
+  readonly label: string;
+  readonly className: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`${className} copy-now`}
+      data-copied={copier.flash}
+      disabled={!ready}
+      onClick={() => void copier.copy()}
+    >
+      {copier.flash && <i aria-hidden="true" />}
+      {copier.flash ? "Copied" : label}
+    </button>
   );
 }
 
@@ -587,5 +649,68 @@ export function SameMachine({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * The TalkTo hooks step: why they help, then a prompt the agent installs them from (with the text
+ * behind "Read the prompt first", like the join prompt), then the same commands to run by hand.
+ * Cursor and VS Code install them by clicks, so they show only the manual steps.
+ */
+export function HooksOffer({ guide, mcpUrl }: { readonly guide: Guide; readonly mcpUrl: string }) {
+  const hooks = hooksOf(guide.setup(mcpUrl));
+  if (hooks === null) return null;
+  const prompt =
+    hooks.commands.length === 0
+      ? null
+      : hooksPrompt({
+          tool: guide.name,
+          commands: hooks.commands,
+          otherwise: hooks.otherwise.map((step) =>
+            [step.text.replaceAll("**", ""), ...(step.lines ?? [])].join("\n"),
+          ),
+          yours: hooks.yours.map((step) => step.text),
+        });
+  const name = guide.name;
+  // The why block says what the intro says; the steps keep only what to do.
+  const manual = hooks.extra.steps.map((step) => {
+    const text = step.text.replace(hooksIntro, "").trim();
+    return { ...step, text: text === "" ? "In a terminal, run:" : text };
+  });
+  return (
+    <section className="hooks-offer">
+      <div className="hooks-why" role="note">
+        <p className="hooks-why-title">Why hooks?</p>
+        <p>
+          Without hooks, {name} sees new TalkTo messages only when you ask it to check. With them,{" "}
+          {name} hears about waiting messages each time it finishes a reply, and mid-task when
+          someone messages it directly or @mentions it. It answers without you asking.
+        </p>
+        <p className="hooks-why-quiet">
+          <Rich text={hooksWhileIdle(guide)} />
+        </p>
+      </div>
+      {prompt !== null && (
+        <div className="hooks-copy">
+          <p className="setup-lead">
+            Paste this into {name}. It installs the hooks and tells you what’s left for you.
+          </p>
+          <AgentPrompt
+            prompt={prompt}
+            label={`Copy prompt for ${name}`}
+            name="Prompt that installs the TalkTo hooks"
+            reveal
+          />
+        </div>
+      )}
+      <details className="hooks-manual" open>
+        <summary>{prompt === null ? "Install them" : "Or run it yourself"}</summary>
+        <div>
+          {manual.map((step) => (
+            <StepBody key={step.text} step={step} mcpUrl={mcpUrl} />
+          ))}
+        </div>
+      </details>
+    </section>
   );
 }

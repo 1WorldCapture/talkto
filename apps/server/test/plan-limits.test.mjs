@@ -4,6 +4,24 @@ import { test } from "node:test";
 import { start } from "./platform-harness.mjs";
 
 const pause = (millis) => new Promise((resolve) => setTimeout(resolve, millis));
+/** A person signed in on the TalkTo website: each call answers with its status and JSON body. */
+const website = async (x, user = "user_alice") => {
+  const flow = await x.browserLogin(user);
+  const cookie = (await flow.callback()).headers
+    .getSetCookie()
+    .find((value) => value.startsWith("__Host-talkto-session="))
+    .split(";")[0];
+  return async (method, path, value) => {
+    const response = await x.raw(path, {
+      method,
+      headers: { cookie, origin: "https://talkto.test", "content-type": "application/json" },
+      body: value === undefined ? undefined : JSON.stringify(value),
+    });
+    return { status: response.status, json: JSON.parse(await response.text()) };
+  };
+};
+/** Server objects the Worker looked up since the last call; none means no request reached one. */
+const lookups = async (x) => (await (await x.control("server-lookups")).json()).names;
 
 /**
  * One organization with budgets on, one server and one agent. `budgets` replaces the plan's
@@ -54,6 +72,21 @@ const setup = async (t, options = {}, budgets = null) => {
       (await x.control(`limiter-clock?server=${server.id}`, { hold: true })).status,
       200,
     );
+  /**
+   * Put the organization on a paid plan for the month around now. The overrides above still set
+   * its numbers; only the plan changes, and with it whether the website's reads count.
+   */
+  const paid = async (plan = "shop") => {
+    const day = 86_400_000;
+    const response = await x.control(`storage/plan?account=${account.id}`, {
+      accountId: account.id,
+      plan,
+      start: new Date(Date.now() - day).toISOString(),
+      end: new Date(Date.now() + 29 * day).toISOString(),
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await budgets_()).usage.terms.paid, true);
+  };
   return {
     x,
     account,
@@ -65,6 +98,7 @@ const setup = async (t, options = {}, budgets = null) => {
     search,
     usage: budgets_,
     holdLimits,
+    paid,
   };
 };
 
@@ -141,7 +175,7 @@ test("after the monthly budget, agents keep receiving through the slow lane", as
   });
 });
 
-test("dashboard reads count in the budget, never wait on the agents' bucket, and are bounded per person", async (t) => {
+test("on Free dashboard reads never count or wait on the agents' bucket, and are bounded per person", async (t) => {
   const s = await setup(t, {}, { perMinute: 60, burst: 2 });
   await s.holdLimits();
   for (let read = 0; read < 2; read++) await s.poll();
@@ -151,8 +185,8 @@ test("dashboard reads count in the budget, never wait on the agents' bucket, and
   // The agents' bucket is empty, yet the website still searches this server.
   assert.equal((await searchAll()).search.unavailableServers, 0);
   const { usage } = await s.usage();
-  // Two polls and one website search of three units.
-  assert.ok(usage.reads.used >= 2 + 3, JSON.stringify(usage));
+  // Two polls; on Free's numbers the website search counts nowhere.
+  assert.deepEqual([usage.reads.used, usage.reads.beyond], [2, 0], JSON.stringify(usage));
   // Sixty a minute per person per server, then the server answers as unavailable. The limit's
   // clock is held, so however slowly a loaded machine answers, nothing refills: the first search
   // took one of the sixty, so exactly five of these are refused.
@@ -161,8 +195,90 @@ test("dashboard reads count in the budget, never wait on the agents' bucket, and
   assert.equal(refused, 5, `${refused} of 64 refused after the first`);
 });
 
-test("past the monthly budget the website refreshes more slowly", async (t) => {
+test("a server's pages on the website never wait on the agents' bucket", async (t) => {
+  const s = await setup(t, {}, { perMinute: 60, burst: 2 });
+  await s.paid();
+  await s.holdLimits();
+  for (let read = 0; read < 2; read++) await s.poll();
+  assert.equal((await s.poll(true)).error.code, "rate_limited");
+  const callback = await (await s.x.browserLogin("user_alice")).callback();
+  const cookie = callback.headers
+    .getSetCookie()
+    .find((value) => value.startsWith("__Host-talkto-session="))
+    .split(";")[0];
+  const page = (headers) =>
+    s.x.raw(`/v1/servers/${s.server.id}/messages`, { method: "GET", headers });
+  // The Activity tab refreshes this feed: from the website it still loads, and on a paid plan
+  // counts one read.
+  const website = await page({ cookie, origin: "https://talkto.test" });
+  assert.equal(website.status, 200, await website.clone().text());
+  const { usage } = await s.usage();
+  assert.ok(usage.reads.used >= 2 + 1, JSON.stringify(usage));
+  // The same request with an access token is an API client, and waits with the agents.
+  const client = await page({ authorization: `Bearer ${await s.x.token("user_alice")}` });
+  const refusal = await client.text();
+  assert.equal(client.status, 429, refusal);
+  assert.match(JSON.parse(refusal).error.message, /reads a minute across all of its servers/);
+});
+
+test("a feed page without a search or time window counts one read; searches and windows count three", async (t) => {
+  const s = await setup(t, {}, { monthly: 2_000_000, perMinute: 120 });
+  await s.paid();
+  for (const body of ["First.", "Second."])
+    await s.x.mcp(s.credential, "send_message", {
+      serverId: s.server.id,
+      participantId: s.agent.item.id,
+      requestKey: randomUUID(),
+      target: { kind: "conversation", conversationId: s.agent.generalConversationId },
+      body,
+    });
+  const callback = await (await s.x.browserLogin("user_alice")).callback();
+  const cookie = callback.headers
+    .getSetCookie()
+    .find((value) => value.startsWith("__Host-talkto-session="))
+    .split(";")[0];
+  const feed = async (query) => {
+    const response = await s.x.raw(`/v1/servers/${s.server.id}/messages${query}`, {
+      method: "GET",
+      headers: { cookie, origin: "https://talkto.test" },
+    });
+    const text = await response.text();
+    assert.equal(response.status, 200, text);
+    return JSON.parse(text).data;
+  };
+  await s.x.control(`meter/configure?server=${s.server.id}`, { restart: true });
+  const used = async () => (await s.usage()).usage.reads.used;
+  const before = await used();
+  const counted = async (query) => {
+    const at = await used();
+    const data = await feed(query);
+    return { data, units: (await used()) - at };
+  };
+  const cursor = (value) => `?cursor=${encodeURIComponent(value)}`;
+  // The Activity tab: its first page, an older page and the live check.
+  const first = await counted("?limit=1");
+  assert.equal(first.units, 1);
+  assert.notEqual(first.data.nextCursor, null);
+  assert.equal((await counted(cursor(first.data.nextCursor))).units, 1);
+  assert.equal((await counted(cursor(first.data.liveCursor))).units, 1);
+  // One conversation, as its reader opens it.
+  const general = `?conversationId=${encodeURIComponent(s.agent.generalConversationId)}`;
+  assert.equal((await counted(general)).units, 1);
+  // A search stays a deep read, refreshed live or not, and so does a time window.
+  const searched = await counted("?query=needle");
+  assert.equal(searched.units, 3);
+  assert.equal((await counted(cursor(searched.data.liveCursor))).units, 3);
+  const end = new Date(Date.now() + 60_000).toISOString();
+  const start = new Date(Date.now() - 3_600_000).toISOString();
+  const windowed = await counted(`?start=${start}&end=${end}`);
+  assert.equal(windowed.units, 3);
+  assert.equal((await counted(cursor(windowed.data.liveCursor))).units, 3);
+  assert.equal((await used()) - before, 4 * 1 + 4 * 3);
+});
+
+test("on a paid plan, past the monthly budget the website refreshes more slowly", async (t) => {
   const s = await setup(t, {}, { monthly: 3, perMinute: 600, slowPerMinute: 1 });
+  await s.paid();
   await s.holdLimits();
   const searchAll = () =>
     s.x.call("user_alice", "GET", `/v1/accounts/${s.account.id}/activity?query=needle`);
@@ -174,6 +290,42 @@ test("past the monthly budget the website refreshes more slowly", async (t) => {
   assert.equal(usage.reads.used, 3);
   // Eleven searches of three units; leases may run one block (10) ahead.
   assert.ok(usage.reads.beyond >= 30 && usage.reads.beyond <= 40, String(usage.reads.beyond));
+});
+
+test("a website refusal says to wait 1 second, and the Worker still answers its early retry", async (t) => {
+  const s = await setup(t);
+  await s.holdLimits();
+  const dashboard = await website(s.x);
+  const page = () => dashboard("GET", `/v1/servers/${s.server.id}/participants`);
+  // Sixty a minute per person per server; at that rate a refusal always waits one second.
+  for (let read = 0; read < 60; read++) assert.equal((await page()).status, 200, `read ${read}`);
+  const refused = await page();
+  assert.equal(refused.status, 429, JSON.stringify(refused.json));
+  assert.equal(refused.json.error.retryAfterSeconds, 1);
+  assert.match(
+    refused.json.error.message,
+    /^Too many reads from the TalkTo website: .* Wait 1 second\.$/,
+  );
+  // The Worker recognised the refusal: the early retry gets it again without reaching the server.
+  await lookups(s.x);
+  const early = await page();
+  assert.equal(early.status, 429);
+  assert.equal(early.json.error.message, refused.json.error.message);
+  assert.deepEqual(await lookups(s.x), []);
+});
+
+test("on Free the website's reads are not counted, and a spent month never slows them", async (t) => {
+  const s = await setup(t, {}, { monthly: 3, perMinute: 600, slowPerMinute: 1 });
+  await s.holdLimits();
+  // The agents spend the month.
+  for (let read = 0; read < 3; read++) await s.poll();
+  const searchAll = () =>
+    s.x.call("user_alice", "GET", `/v1/accounts/${s.account.id}/activity?query=needle`);
+  // Past the ten a minute a paid plan's website gets once its month is spent.
+  for (let read = 0; read < 20; read++)
+    assert.equal((await searchAll()).search.unavailableServers, 0, `search ${read}`);
+  const { usage } = await s.usage();
+  assert.deepEqual([usage.reads.used, usage.reads.beyond], [3, 0], JSON.stringify(usage));
 });
 
 test("self-hosted copies have no read budget", async (t) => {
@@ -231,6 +383,32 @@ const channel = (s, name, participantId = s.agent.item.id, error = false) =>
     { serverId: s.server.id, participantId, requestKey: randomUUID(), name },
     error,
   );
+
+test("a person's changes on the website have their own minute, refused in a person's words", async (t) => {
+  const s = await setup(t, { readBudgets: false, adminBudgets: true });
+  await s.holdLimits();
+  // The agent spends its own thirty admin calls a minute.
+  for (let call = 0; call < 30; call++) await channel(s, `room-${call}`);
+  assert.equal(
+    (await channel(s, "one-too-many", s.agent.item.id, true)).error.code,
+    "rate_limited",
+  );
+  // The person can still change that agent's wake settings: thirty times, then a wait.
+  const dashboard = await website(s.x);
+  const choose = () =>
+    dashboard("PUT", `/v1/servers/${s.server.id}/participants/${s.agent.item.id}/wake-cadence`, {
+      cadence: "every_5_minutes",
+    });
+  for (let call = 0; call < 30; call++) {
+    const answer = await choose();
+    assert.equal(answer.status, 200, `change ${call}: ${JSON.stringify(answer.json)}`);
+  }
+  const refused = await choose();
+  assert.equal(refused.status, 429, JSON.stringify(refused.json));
+  assert.match(refused.json.error.message, /^Too many changes from the TalkTo website: /);
+  assert.match(refused.json.error.message, /Wait \d+ seconds?, then try again\.$/);
+  assert.doesNotMatch(refused.json.error.message, /connection|participant|retry the same call/);
+});
 
 test("each agent may make 30 admin calls a minute on a server", async (t) => {
   const s = await setup(t, { readBudgets: false, adminBudgets: true });
@@ -599,7 +777,7 @@ const wave = async (s, count, read = () => s.poll(), lane = "read") => {
 };
 
 for (const [plan, budgets] of [
-  ["Free", { perMinute: 20 }],
+  ["Free", { perMinute: 60 }],
   ["Shop", { monthly: 2_000_000, perMinute: 120 }],
   ["Factory", { monthly: 20_000_000, perMinute: 1500 }],
 ])
@@ -624,6 +802,7 @@ test("concurrent deep reads and website reads on a fresh server are all counted"
     { participantReadsPerMinute: 10_000 },
     { monthly: 2_000_000, perMinute: 120 },
   );
+  await s.paid();
   const deep = await wave(s, 10, () => s.search());
   const searchAll = () =>
     s.x.call("user_alice", "GET", `/v1/accounts/${s.account.id}/activity?query=needle`);

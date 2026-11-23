@@ -126,10 +126,17 @@ export const retryRead = (count: number, error: Error) =>
     "internal_error",
   ].includes(error.code);
 
-/** Words for an error a person can act on; unknown failures never show raw details. */
-export function describeError(error: Error | null) {
+/**
+ * Words for an error a person can act on; unknown failures never show raw details. A limit
+ * names what was limited: a send (a person may send 30 messages a minute on a server) or, by
+ * default, how often the app reads the server.
+ */
+export function describeError(error: Error | null, attempt: "read" | "send" = "read") {
   if (!(error instanceof ApiError)) return "Something went wrong. Try again.";
-  if (error.code === "rate_limited") return "You're sending quickly. Wait a moment and try again.";
+  if (error.code === "rate_limited")
+    return attempt === "send"
+      ? "You're sending quickly. Wait a moment and try again."
+      : "TalkTo is limiting how often this server can be loaded right now. Wait a moment and try again.";
   if (error.code === "unauthenticated") return "Your sign-in has ended. Sign in again.";
   if (error.code === "forbidden" || error.code === "server_unavailable")
     return "You no longer have access to this server.";

@@ -201,8 +201,12 @@ export function make(
         }
         const spent = month("read", terms).used;
         const remaining = terms.monthly - spent;
-        // The web app's reads count in the month but never wait on the agents' bucket; past the
-        // budget they count apart, and each server slows them per person.
+        // The web app's reads never wait on the agents' bucket. On Free's numbers (Free, the
+        // trial, no plan) they are not counted at all, and the month never slows them (owner,
+        // November 22, 2026). On a paid plan they count in the month; past the budget they count
+        // apart, and each server slows them per person.
+        if (request.lane === "dashboard" && terms.plan === "free")
+          return { kind: "granted", units: M.Count.make(want), slow: false, terms };
         if (request.lane === "dashboard") {
           const within = Math.max(0, Math.min(want, remaining));
           count("read", terms, within, want - within);

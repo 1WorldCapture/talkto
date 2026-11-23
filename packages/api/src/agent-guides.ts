@@ -150,9 +150,9 @@ export interface AgentGuide {
   readonly setup: (mcpUrl: string) => AgentSetup;
 }
 
-const hooksIntro =
+export const hooksIntro =
   "TalkTo hooks tell the agent when messages wait: when each turn ends, and mid-turn for urgent direct messages.";
-const hooksTitle = "Optional: TalkTo hooks";
+export const hooksTitle = "Optional: TalkTo hooks";
 /** Gemini CLI and Antigravity install the hooks from a clone of the plugin repository. */
 const cloneCommand = `git clone https://github.com/${pluginRepository}`;
 const terminal = "In a terminal, run:";
@@ -316,8 +316,8 @@ const guides = [
           {
             title: hooksTitle,
             steps: [
-              { text: hooksIntro, lines: hookCommands.codex },
-              { text: "Then trust the hooks in `/hooks` and start a new session." },
+              { text: hooksIntro, lines: hookCommands.codex, by: "agent" },
+              { text: "Then trust the hooks in `/hooks` and start a new session.", by: "you" },
             ],
           },
         ],
@@ -585,6 +585,7 @@ const guides = [
             {
               text: `${hooksIntro} In Antigravity they also wake an idle agent: the agent starts a watcher in every session that joins TalkTo. Choose **Yes, allow this time** when Antigravity asks to run it, and tell the agent to stop watching if you want it off. Clone \`${pluginRepository}\`, then install from the cloned folder (\`<clone>\`):`,
               lines: [cloneCommand, ...hookCommands.antigravity],
+              by: "agent",
             },
           ],
         },
@@ -610,7 +611,7 @@ const guides = [
         {
           title: hooksTitle,
           steps: [
-            { text: hooksIntro, lines: hookCommands.grok },
+            { text: hooksIntro, lines: hookCommands.grok, by: "agent" },
             {
               text: "If Grok says it is already installed, update it instead:",
               lines: hookCommands.grokUpdate,
@@ -632,7 +633,12 @@ const guides = [
         { text: terminal, lines: [toolCommands(mcpUrl).droidAdd], by: "agent" },
         { text: "In Droid, run `/mcp` and choose **Authenticate** on TalkTo.", by: "you" },
       ],
-      extras: [{ title: hooksTitle, steps: [{ text: hooksIntro, lines: hookCommands.droid }] }],
+      extras: [
+        {
+          title: hooksTitle,
+          steps: [{ text: hooksIntro, lines: hookCommands.droid, by: "agent" }],
+        },
+      ],
     }),
   },
   {
@@ -675,6 +681,7 @@ const guides = [
             {
               text: `${hooksIntro} Clone \`${pluginRepository}\`, then install from the cloned folder (\`<clone>\`):`,
               lines: [cloneCommand, ...hookCommands.gemini],
+              by: "agent",
             },
           ],
         },
@@ -703,8 +710,8 @@ const guides = [
           {
             title: hooksTitle,
             steps: [
-              { text: hooksIntro, lines: hookCommands.devin },
-              { text: "Then choose talkto-hooks." },
+              { text: hooksIntro, lines: hookCommands.devin, by: "agent" },
+              { text: "Then choose talkto-hooks.", by: "you" },
             ],
           },
         ],
@@ -978,6 +985,40 @@ export const findAgentGuide = (id: string | undefined) =>
   agentGuides.find((guide) => guide.id === id) ?? null;
 
 /** Whether an agent running in the tool can run its install itself: some step is its command. */
+/**
+ * A recipe's TalkTo hooks, when it offers them: the extra itself, the commands an agent can run
+ * for the person (`by: "agent"` lines), what to run instead when that fails (unmarked steps with
+ * lines), and what only the person does afterwards (`by: "you"`).
+ * Cursor and VS Code install them by clicks, so they have no commands.
+ */
+export const hooksOf = (
+  setup: AgentSetup,
+): {
+  readonly extra: SetupExtra;
+  readonly commands: ReadonlyArray<string>;
+  readonly otherwise: ReadonlyArray<SetupStep>;
+  readonly yours: ReadonlyArray<SetupStep>;
+} | null => {
+  const extra = setup.extras.find((item) => item.title === hooksTitle);
+  if (extra === undefined) return null;
+  return {
+    extra,
+    commands: extra.steps.flatMap((step) => (step.by === "agent" ? (step.lines ?? []) : [])),
+    otherwise: extra.steps.filter((step) => step.by === undefined && step.lines !== undefined),
+    yours: extra.steps.filter((step) => step.by === "you"),
+  };
+};
+
+/**
+ * What the hooks do while the agent is idle, for the "Why hooks?" note. They speak only inside a
+ * turn, except in Antigravity, whose hooks bring a watcher that starts a turn while it is idle
+ * (docs/agent-integrations.md, section 4.7).
+ */
+export const hooksWhileIdle = (guide: Pick<AgentGuide, "id" | "name">): string =>
+  guide.id === "antigravity"
+    ? "While Antigravity is idle, a watcher it starts in each TalkTo session wakes it for direct messages and @mentions. Choose **Yes, allow this time** when Antigravity asks to run it."
+    : `When ${guide.name} is idle, messages wait until you next talk to it.`;
+
 export const runsCommands = (setup: AgentSetup): boolean =>
   setup.steps.some((step) => step.by === "agent");
 

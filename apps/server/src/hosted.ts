@@ -468,7 +468,12 @@ const mcpIngress = Effect.fn("Hosted.mcp")(function* (
           command,
           requestMeta,
           Effect.suspend(() =>
-            UpdateWait.invokeAgent(env.SERVERS.getByName(serverId), caller, command, requestMeta),
+            UpdateWait.invokeAgent(
+              () => env.SERVERS.getByName(serverId),
+              caller,
+              command,
+              requestMeta,
+            ),
           ),
         ),
       );
@@ -861,7 +866,7 @@ export function makeWorker(
                     meta.requestId,
                     Effect.suspend(() =>
                       UpdateWait.forward(
-                        env.SERVERS.getByName(parsed.success),
+                        () => env.SERVERS.getByName(parsed.success),
                         caller,
                         forwarded,
                         payload,

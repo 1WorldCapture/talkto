@@ -228,3 +228,69 @@
 :root[data-surface="dashboard"] .modal .connect-body .same-machine-choices > .btn {
   margin-top: 0;
 }
+
+/* The join prompt for an agent that already has TalkTo: a band above the grid, one click to copy. */
+.connect-copy-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-bottom: 32px;
+  padding: 20px 20px 20px 24px;
+  border: 1px solid var(--control-line);
+  background: var(--soft);
+}
+.connect-copy-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+:root[data-surface="dashboard"] .modal .connect-copy-title {
+  font: 600 16px/1.35 var(--sans);
+}
+:root[data-surface="dashboard"] .modal .connect-copy-lead {
+  color: var(--muted);
+  font-size: 14px;
+}
+.connect-copy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.connect-copy-actions .btn {
+  /* Wide enough for both labels, so "Copied" does not move the row. */
+  min-width: 184px;
+  min-height: 44px;
+  padding: 0 20px;
+  font-size: 15px;
+}
+:root[data-surface="dashboard"] .modal .connect-copy-actions .text-button {
+  color: var(--ink);
+  font-weight: 500;
+}
+:root[data-surface="dashboard"] .modal .connect-body .connect-refused {
+  margin: 0 0 20px;
+}
+/* Copied: the Copy lines' magenta square, on a primary button. */
+.copy-now i {
+  width: 8px;
+  height: 8px;
+  background: var(--lamp);
+}
+:root[data-surface="dashboard"] .copy-now[data-copied="true"] {
+  border-color: var(--lamp-ink);
+}
+@media (max-width: 560px) {
+  .connect-copy-bar {
+    padding: 16px;
+  }
+  .connect-copy-actions,
+  .connect-copy-actions .btn {
+    width: 100%;
+  }
+  .connect-copy-actions {
+    justify-content: center;
+  }
+}

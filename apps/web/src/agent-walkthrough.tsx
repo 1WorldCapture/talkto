@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   connectWays,
+  hooksOf,
+  hooksTitle,
   runsCommands,
   setupParts,
   type AgentSetup,
@@ -12,6 +14,7 @@ import {
   AgentPrompt,
   ConnectWays,
   findGuide,
+  HooksOffer,
   InstallTabs,
   Rich,
   StepBody,
@@ -37,12 +40,16 @@ type Kind =
   | { readonly kind: "install"; readonly steps: ReadonlyArray<SetupStep>; readonly first: boolean }
   | { readonly kind: "sign-in"; readonly steps: ReadonlyArray<SetupStep> }
   | { readonly kind: "join" }
+  /** The TalkTo hooks, after the join: recommended, and the person may skip it. */
+  | { readonly kind: "hooks" }
   | { readonly kind: "wake"; readonly steps: ReadonlyArray<SetupStep> }
   | { readonly kind: "auto-start"; readonly step: SetupStep };
 export type Step = Kind & {
   readonly key: string;
   readonly title: string;
   readonly summary: string;
+  /** A word after the title in the step list, such as Recommended. */
+  readonly tag?: string;
 };
 
 /**
@@ -129,8 +136,24 @@ export const planOf = (
     title: `Have it join ${serverName}`,
     summary: `Paste one prompt. ${guide.id === "mcp" ? "It" : name} joins under its own name, and this page sees it arrive.`,
   };
+  // The TalkTo hooks are their own step, recommended, once the agent is in (owner, November 23,
+  // 2026: "more prominent and with an info block to tell me why"). Always last, after any
+  // Auto-start too, so Skip and Done both end the walkthrough the way Done always has, and the
+  // Auto-start form still comes right after the join it needs.
+  const hooks: ReadonlyArray<Step> =
+    hooksOf(setup) !== null
+      ? [
+          {
+            key: "hooks",
+            kind: "hooks",
+            title: `Let ${name} hear new messages`,
+            summary: `${name} hears new messages while it works, and answers without you asking.`,
+            tag: "Recommended",
+          },
+        ]
+      : [];
   const wake = setup.wake;
-  if (!waking || wake === undefined) return [...steps, join];
+  if (!waking || wake === undefined) return [...steps, join, ...hooks];
   // The steps after the join; the last one is the Auto-start form when the wake has one.
   const after = wake.autoStart ? wake.steps.slice(0, -1) : wake.steps;
   const wakePages: Array<Step> = pages(after, "Make it answer on its own").map((page, index) => ({
@@ -153,13 +176,13 @@ export const planOf = (
             summary: "Paste the address and key into TalkTo, then send a test.",
           },
         ];
-  if (wake.autoStart) return [...steps, join, ...wakePages, ...last];
+  if (wake.autoStart) return [...steps, join, ...wakePages, ...last, ...hooks];
   // A host that wakes itself (ChatGPT) needs the right kind of chat, which the person opens before
   // turning TalkTo on in it: right after signing in, ahead of the join.
   const at = steps.findIndex((item) => item.key === "sign-in-0");
   return at < 0
-    ? [...steps, ...wakePages, join]
-    : [...steps.slice(0, at + 1), ...wakePages, ...steps.slice(at + 1), join];
+    ? [...steps, ...wakePages, join, ...hooks]
+    : [...steps.slice(0, at + 1), ...wakePages, ...steps.slice(at + 1), join, ...hooks];
 };
 
 /** Rough minutes for the plan, so the person knows what they are signing up for. */
@@ -263,7 +286,10 @@ export function Walkthrough({
                 <span className="walk-dot" aria-hidden="true">
                   {number < index ? "✓" : number + 1}
                 </span>
-                {item.title}
+                <span className="walk-rail-title">
+                  {item.title}
+                  {item.tag !== undefined && <span className="walk-tag">{item.tag}</span>}
+                </span>
               </button>
             </li>
           ))}
@@ -300,7 +326,10 @@ export function Walkthrough({
                     {number + 1}
                   </span>
                   <span>
-                    <strong>{item.title}</strong>
+                    <strong>
+                      {item.title}
+                      {item.tag !== undefined && <span className="walk-tag">{item.tag}</span>}
+                    </strong>
                     {item.summary !== "" && <span>{item.summary}</span>}
                   </span>
                 </li>
@@ -314,6 +343,7 @@ export function Walkthrough({
           <section className="walk-page" aria-labelledby="walk-heading">
             <p className="walk-kicker">
               Step {index + 1} of {steps.length}
+              {step.tag !== undefined && ` · ${step.tag}`}
             </p>
             <h3 id="walk-heading" ref={heading} tabIndex={-1}>
               {step.title}
@@ -349,6 +379,12 @@ export function Walkthrough({
                 ? ""
                 : "Last step"}
         </span>
+        {/* The hooks step is always the last (planOf), so Skip ends the walkthrough too. */}
+        {step?.kind === "hooks" && (
+          <button type="button" className={secondaryClassName} onClick={finish}>
+            Skip
+          </button>
+        )}
         <button
           type="button"
           className={primaryClassName}
@@ -459,16 +495,19 @@ export function StepContent({
               </p>
             ))}
           {step.first &&
-            setup.extras.map((extra) => (
-              <details key={extra.title} className="connect-extra setup-extra">
-                <summary>{extra.title}</summary>
-                <div>
-                  {extra.steps.map((item) => (
-                    <StepBody key={item.text} step={item} mcpUrl={mcpUrl} />
-                  ))}
-                </div>
-              </details>
-            ))}
+            setup.extras
+              // The hooks have their own step after the join.
+              .filter((extra) => extra.title !== hooksTitle)
+              .map((extra) => (
+                <details key={extra.title} className="connect-extra setup-extra">
+                  <summary>{extra.title}</summary>
+                  <div>
+                    {extra.steps.map((item) => (
+                      <StepBody key={item.text} step={item} mcpUrl={mcpUrl} />
+                    ))}
+                  </div>
+                </details>
+              ))}
           <p className="walk-note">
             Stuck?{" "}
             <a href={agentGuideUrl(guide.id)} target="_blank" rel="noopener noreferrer">
@@ -525,6 +564,16 @@ export function StepContent({
               <strong>Sign in</strong>, then paste the prompt again.
             </p>
           )}
+        </>
+      );
+    case "hooks":
+      return (
+        <>
+          <p className="setup-lead">
+            One more step helps {name} keep up with TalkTo. It’s recommended, and you can add it
+            later.
+          </p>
+          <HooksOffer guide={guide} mcpUrl={mcpUrl} />
         </>
       );
     case "wake":

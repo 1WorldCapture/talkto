@@ -11,6 +11,13 @@ function warm(href: string) {
   document.head.append(link);
 }
 
+// Keys pressed while typing, or inside a dialog (search), belong to that.
+function typing(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return true;
+  return target.closest("dialog, [role='dialog']") !== null;
+}
+
 function initPagination(root: HTMLElement): () => void {
   const highlight = root.querySelector<HTMLElement>("[data-slot='pagination-highlight']");
   const items = Array.from(root.querySelectorAll<HTMLAnchorElement>("[data-nb-pagination-item]"));
@@ -61,11 +68,13 @@ function initPagination(root: HTMLElement): () => void {
   });
   resize.observe(root);
 
-  // [ and ] press the matching key, then go: only while focus is in this bar,
-  // so single-key shortcuts never fire from elsewhere on the page (WCAG
-  // 2.1.4), and never with a modifier held.
+  // [ and ] press the matching key, then go, from anywhere on the page (owner
+  // decision, 2026-11-21): never while typing in a field or a dialog such as
+  // search, and never with a modifier held. Another bar on the same page sees
+  // the event already handled.
   const onKey = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return;
+    if (typing(e.target)) return;
     const item = items.find((i) => i.dataset.nbPaginationKey === e.key);
     if (!item) return;
     e.preventDefault();
@@ -77,7 +86,7 @@ function initPagination(root: HTMLElement): () => void {
   const listens = root.dataset.keys !== "false";
   if (listens) {
     for (const item of items) item.setAttribute("aria-keyshortcuts", item.dataset.nbPaginationKey ?? "");
-    root.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey);
   }
 
   return () => {
@@ -85,7 +94,7 @@ function initPagination(root: HTMLElement): () => void {
     root.removeEventListener("pointerleave", onLeave);
     root.removeEventListener("focusout", onFocusOut);
     resize.disconnect();
-    if (listens) root.removeEventListener("keydown", onKey);
+    if (listens) document.removeEventListener("keydown", onKey);
   };
 }
 

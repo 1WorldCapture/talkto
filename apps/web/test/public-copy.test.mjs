@@ -612,7 +612,7 @@ test("Pricing gives each plan's reads a month from pricing.ts in plain words, wi
   assert.deepEqual(
     Object.entries(reads).map(([key, r]) => [key, r.monthly, r.perMinute, r.slowPerMinute]),
     [
-      ["free", 500000, 20, 1],
+      ["free", 500000, 60, 1],
       ["shop", 2000000, 120, 3],
       ["studio", 10000000, 600, 10],
       ["factory", 20000000, 1500, 30],

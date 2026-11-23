@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type * as P from "@talkto/api/platform";
 import * as I from "@talkto/api/inputs";
@@ -9,23 +9,27 @@ import { agentPrompt } from "./agent-prompt.js";
 import { agentsIndexUrl, type AgentGuideId } from "./landing-parts.js";
 import {
   AgentGrid,
+  CopyNowButton,
   findGuide,
   guideAgentType,
   JoinStep,
   asksSameMachine,
   markInstalled,
   SameMachine,
+  useCopy,
   type Guide,
 } from "./agent-flow.js";
 import { toolName, Walkthrough } from "./agent-walkthrough.js";
 import { AutoStartPanel } from "./agent-wakes.js";
+import { arrival, settleBaseline, startBaseline } from "./join-watch.js";
 import "./agent-connection.css";
 
 type Stage =
   | { readonly kind: "pick" }
   | { readonly kind: "same"; readonly agent: Guide }
   | { readonly kind: "walk"; readonly agent: Guide; readonly skipInstall: boolean }
-  | { readonly kind: "join" };
+  /** `refused`: the browser would not copy, so the prompt is shown to select. */
+  | { readonly kind: "join"; readonly refused?: boolean };
 
 /** The last agent chosen here, so connecting a second agent of the same kind starts on it. */
 const lastAgentKey = "talkto-connect-agent";
@@ -44,11 +48,14 @@ function rememberAgent(id: AgentGuideId) {
   }
 }
 
+/** People and other non-agent members never count as the agent being connected. */
+const isAgent = (participant: { readonly kind?: unknown }) => !participant.kind;
+
 /**
  * Connect agents: pick the agent from onboarding's grid, then its walkthrough
  * (agent-walkthrough.tsx) full screen: the plan first, then one step at a time, ending on
- * Auto-start right here when it answers on its own. "Skip to the prompt" keeps the plain join
- * prompt for someone who has done this before.
+ * Auto-start right here when it answers on its own, or on the TalkTo hooks for a tool that has
+ * them. An agent that already has TalkTo copies the join prompt from the top of the first screen.
  */
 export function ConnectAgentsDialog({
   server,
@@ -71,9 +78,8 @@ export function ConnectAgentsDialog({
   // it" for instead.
   const [askFor, setAskFor] = useState<string | null>(null);
   const waking = (agent: Guide) => askFor !== agent.id;
-  // The server's agents when the dialog opened, so the one that joins during it stands out.
-  const [before, setBefore] = useState<ReadonlySet<string> | null>(null);
-  const walking = stage.kind === "walk";
+  // The server's agents when this walkthrough started, so the one that joins during it stands out.
+  const [baseline, setBaseline] = useState(() => startBaseline(Date.now()));
   const agents = useQuery({
     queryKey: ["human", user.id, server.accountId, server.id, "connect-agents"],
     queryFn: ({ signal }) =>
@@ -84,23 +90,36 @@ export function ConnectAgentsDialog({
         }),
         signal,
       ),
-    refetchInterval: (query) => {
-      if (!walking || before === null) return false;
-      const items = query.state.data?.data.items ?? [];
-      return items.some((agent) => !before.has(agent.id)) ? false : 4000;
-    },
+    // Until the agent being connected joins, including while the baseline waits for a list
+    // fetched since its walkthrough started.
+    refetchInterval: (query) =>
+      stage.kind === "walk" &&
+      arrival(
+        baseline,
+        query.state.data?.data.items ?? [],
+        guideAgentType[stage.agent.id],
+        isAgent,
+      ) === null
+        ? 4000
+        : false,
   });
   const items = agents.data?.data.items;
+  const updatedAt = agents.dataUpdatedAt;
   useEffect(() => {
-    if (before === null && items !== undefined) setBefore(new Set(items.map((agent) => agent.id)));
-  }, [before, items]);
-  const arrivals =
-    before === null ? [] : (items ?? []).filter((agent) => !before.has(agent.id) && !agent.kind);
-  const joinedAs = (guide: Guide) => {
-    const type = guideAgentType[guide.id];
-    return arrivals.find((agent) => agent.agentType === type) ?? arrivals.at(0) ?? null;
-  };
+    if (items === undefined) return;
+    const ids = items.map((agent) => agent.id);
+    setBaseline((current) => settleBaseline(current, { updatedAt, ids }));
+  }, [items, updatedAt]);
+  const joined =
+    stage.kind === "walk"
+      ? arrival(baseline, items ?? [], guideAgentType[stage.agent.id], isAgent)
+      : null;
   const go = (next: Stage) => {
+    // Each walkthrough waits for its own agent: one connected earlier never counts as this one.
+    if (next.kind === "walk") {
+      setBaseline(startBaseline(Date.now()));
+      void agents.refetch();
+    }
     setStage(next);
     body.current?.closest("dialog")?.scrollTo({ top: 0 });
   };
@@ -114,32 +133,25 @@ export function ConnectAgentsDialog({
     <Dialog title={title} className="connect-dialog" close={close}>
       <div ref={body} className="connect-body" data-stage={stage.kind}>
         {stage.kind === "pick" ? (
-          <div className="connect-pick">
-            <p className="connect-question">Which agent are you connecting?</p>
-            <AgentGrid
-              chosen={chosen?.id ?? null}
-              busy={false}
-              choose={(agent) => {
-                rememberAgent(agent.id);
-                go(
-                  asksSameMachine(agent, mcpUrl)
-                    ? { kind: "same", agent }
-                    : { kind: "walk", agent, skipInstall: false },
-                );
-              }}
-            />
-            <p className="connect-quiet">
-              <span>
-                Done this before?{" "}
-                <button type="button" className="text-button" onClick={() => go({ kind: "join" })}>
-                  Skip to the join prompt
-                </button>
-              </span>
-              <a href={agentsIndexUrl} target="_blank" rel="noopener noreferrer">
-                All agents ↗
-              </a>
-            </p>
-          </div>
+          <PickStage
+            server={server}
+            prompt={prompt}
+            grid={
+              <AgentGrid
+                chosen={chosen?.id ?? null}
+                busy={false}
+                choose={(agent) => {
+                  rememberAgent(agent.id);
+                  go(
+                    asksSameMachine(agent, mcpUrl)
+                      ? { kind: "same", agent }
+                      : { kind: "walk", agent, skipInstall: false },
+                  );
+                }}
+              />
+            }
+            join={(refused) => go({ kind: "join", refused })}
+          />
         ) : stage.kind === "same" ? (
           <div className="connect-pick">
             <SameMachine
@@ -176,7 +188,7 @@ export function ConnectAgentsDialog({
                 rememberAgent(agent.id);
                 go({ kind: "walk", agent, skipInstall: false });
               }}
-              joined={joinedAs(stage.agent)}
+              joined={joined}
               check={() => void agents.refetch()}
               skipInstall={stage.skipInstall}
               installed={() => markInstalled(stage.agent)}
@@ -197,6 +209,11 @@ export function ConnectAgentsDialog({
             >
               ← All agents
             </button>
+            {stage.refused === true && (
+              <p className="flow-reminder connect-refused" role="alert">
+                Your browser didn’t allow copying. Select the prompt below and press ⌘C or Ctrl+C.
+              </p>
+            )}
             <JoinStep
               guide={null}
               mcpUrl={mcpUrl}
@@ -204,7 +221,7 @@ export function ConnectAgentsDialog({
               prompt={prompt}
               copyClassName="btn"
               level={3}
-              reveal
+              reveal={stage.refused !== true}
             >
               <p className="connect-quiet">It then shows up under Agents.</p>
             </JoinStep>
@@ -213,5 +230,68 @@ export function ConnectAgentsDialog({
       </div>
       <Notice error={connection.error} retry={() => void connection.refetch()} />
     </Dialog>
+  );
+}
+
+/**
+ * The first screen. An agent that already has TalkTo only needs the join prompt, so it leads, one
+ * click to copy (owner, November 23, 2026: "more obvious that for already connected agents I can
+ * just copy the prompt"); a new agent starts from the grid below. "See the prompt" opens the
+ * prompt's own page, and so does a refused copy, with the text there to select.
+ */
+function PickStage({
+  server,
+  prompt,
+  grid,
+  join,
+}: {
+  readonly server: P.ServerContext;
+  /** The join prompt; null while the TalkTo address loads. */
+  readonly prompt: string | null;
+  readonly grid: ReactNode;
+  /** Opens the join prompt's page; `refused` when copying failed. */
+  readonly join: (refused: boolean) => void;
+}) {
+  const copier = useCopy(prompt);
+  const id = useId();
+  useEffect(() => {
+    if (copier.state === "refused") join(true);
+  }, [copier.state, join]);
+  return (
+    <div className="connect-pick">
+      <section className="connect-copy-bar" aria-labelledby={`${id}-copy`}>
+        <div className="connect-copy-text">
+          <p className="connect-copy-title" id={`${id}-copy`}>
+            Agent already connected to TalkTo?
+          </p>
+          <p className="connect-copy-lead" role="status">
+            {copier.state === "copied"
+              ? `Copied. Paste it into your agent’s chat to join ${server.name}.`
+              : prompt === null
+                ? "Loading your TalkTo address…"
+                : "Paste the join prompt into it."}
+          </p>
+        </div>
+        <div className="connect-copy-actions">
+          <CopyNowButton
+            copier={copier}
+            ready={prompt !== null}
+            label="Copy join prompt"
+            className="btn"
+          />
+          <button type="button" className="text-button" onClick={() => join(false)}>
+            See the prompt
+          </button>
+        </div>
+      </section>
+      <p className="connect-question">Or set up a new agent:</p>
+      {grid}
+      <p className="connect-quiet">
+        <span />
+        <a href={agentsIndexUrl} target="_blank" rel="noopener noreferrer">
+          All agents ↗
+        </a>
+      </p>
+    </div>
   );
 }

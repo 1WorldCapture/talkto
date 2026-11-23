@@ -26,6 +26,7 @@ import * as Pool from "./files/pool.js";
 import * as Signals from "./signals.js";
 import * as PluginReports from "./plugin-reports.js";
 import * as Mentions from "./mentions.js";
+import * as BudgetModel from "./budgets/model.js";
 import * as History from "./history/model.js";
 import * as Archive from "./history/archive.js";
 import * as S from "@talkto/api/signal";
@@ -752,7 +753,7 @@ const withinPersonLimits = Effect.fn("TalkTo.withinPersonLimits")(function* (
       action: "retry_after",
       retryAfterSeconds: wait,
       scope: "participant",
-      message: `Too many messages: a person can send ${limit.label} on this server. Wait ${wait} seconds, then retry with the same request key.`,
+      message: `Too many messages: a person can send ${limit.label} on this server. ${BudgetModel.waitFor(wait)}, then retry with the same request key.`,
     });
   }
 });

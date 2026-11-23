@@ -152,3 +152,45 @@ ${commands.join("\n")}
 Don't sign in or join a TalkTo server yet. When you finish, tell me what I have to do myself:
 ${yours.map((step) => `- ${plain(step)}`).join("\n")}`;
 }
+
+/**
+ * Asks an agent to install the TalkTo hooks in the tool it runs in, from the guide's own commands
+ * (hooksOf in @talkto/api/agent-guides). It holds no address or credential: the hooks are public
+ * plugins, and the agent sets up its signal link itself once it is on TalkTo.
+ */
+export function hooksPrompt({
+  tool,
+  commands,
+  otherwise,
+  yours,
+}: {
+  readonly tool: string;
+  /** The guide's commands, in order, exactly as it gives them. */
+  readonly commands: ReadonlyArray<string>;
+  /** What to run instead when a command fails, in the guide's words. */
+  readonly otherwise: ReadonlyArray<string>;
+  /** What the person does afterwards, in the guide's words. */
+  readonly yours: ReadonlyArray<string>;
+}): string {
+  const plain = (text: string) =>
+    text
+      .replaceAll("**", "")
+      .replaceAll("`", "")
+      .replace(/^Then /, "");
+  const sentence = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+  const clone = commands.some((line) => line.includes("<clone>"))
+    ? "\n\n<clone> is the folder you cloned it into."
+    : "";
+  // Every tool loads new hooks in a new session; most guides leave that to the instructions.
+  const steps = yours.map((step) => sentence(plain(step)));
+  if (!steps.some((step) => step.includes("new session"))) steps.push("Start a new session.");
+  const instead = otherwise.map((text) => `\n\n${text}`).join("");
+  return `Install the TalkTo hooks in ${tool} for me. They tell you when TalkTo messages are waiting, so you can answer without me asking.
+
+Run these commands in your shell, in order:
+
+${commands.join("\n")}${clone}${instead}
+
+When you finish, tell me what I have to do myself:
+${steps.map((step) => `- ${step}`).join("\n")}`;
+}

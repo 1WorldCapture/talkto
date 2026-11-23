@@ -216,6 +216,45 @@ test("every dialog recipe matches the agent guide", async (t) => {
   }
 });
 
+// The TalkTo hooks are their own recommended step for a tool that offers them, after the join and
+// last of all, so Skip and Done both end the walkthrough. A tool without hooks never gets it.
+test("the hooks step comes only for hooks tools, after the join, as the last step", async (t) => {
+  const vite = await createVite({
+    server: { middlewareMode: true, hmr: false },
+    appType: "custom",
+  });
+  t.after(() => vite.close());
+  const { planOf } = await vite.ssrLoadModule("/src/agent-walkthrough.tsx");
+  const { agentGuides } = await vite.ssrLoadModule("/src/landing-parts.tsx");
+  const guides = await vite.ssrLoadModule("@talkto/api/agent-guides");
+  const mcpUrl = "https://talkto.sh/mcp";
+  const withHooks = [];
+  for (const guide of agentGuides) {
+    const setup = guide.setup(mcpUrl);
+    const offers = guides.hooksOf(setup) !== null;
+    if (offers) withHooks.push(guide.id);
+    for (const waking of [true, false])
+      for (const skipInstall of [false, true]) {
+        const at = `${guide.id} (waking ${waking}, skipInstall ${skipInstall}): `;
+        const kinds = planOf(guide, setup, "Release", waking, skipInstall).map((step) => step.kind);
+        const hooks = kinds.indexOf("hooks");
+        assert.equal(hooks >= 0, offers, `${at}hooks step only where the guide offers hooks`);
+        if (!offers) continue;
+        assert.equal(kinds.filter((kind) => kind === "hooks").length, 1, at);
+        assert.ok(hooks > kinds.indexOf("join"), `${at}after the join`);
+        assert.equal(hooks, kinds.length - 1, `${at}the last step`);
+      }
+  }
+  assert.ok(
+    withHooks.includes("codex") && !withHooks.includes("claude-code"),
+    "Codex, not Claude Code",
+  );
+  // The install page no longer folds the hooks away: they have their own step.
+  const codex = agentGuides.find((guide) => guide.id === "codex");
+  const [install] = planOf(codex, codex.setup(mcpUrl), "Release", true, false);
+  assert.equal(install.kind, "install");
+});
+
 // Setup (onboarding.tsx) gives one message per agent. It names the tool's own install file, which
 // must exist for that tool and tell the agent to wait for the join prompt this message is.
 test("setup's message for each agent names its real install file and its slot's key", async (t) => {

@@ -3,6 +3,7 @@ import * as Telemetry from "../src/telemetry.js";
 import { Cause, Effect, Exit, Schema } from "effect";
 import { run } from "@talkto/telemetry/effect";
 import * as Sqlite from "../src/storage/sqlite.js";
+import * as Signal from "../src/update-signal.js";
 import { Persistence } from "../src/persistence.js";
 import { StorageUnavailable } from "@talkto/api/errors";
 import { classify, sample } from "@talkto/telemetry/sampling";
@@ -27,9 +28,53 @@ function options(env: Env): Sentry.CloudflareOptions {
   };
 }
 
+/** The get_updates step a server object fails at, set by `/__telemetry/server-fault`. */
+const ServerFault = Schema.Literals(["invoke", "watch", "first_read", "reset"]);
+const serverFaultKey = "telemetry-server-fault";
+class Unserializable {}
+
 class TelemetryTestServer extends Server {
+  private async fault(step: typeof ServerFault.Type) {
+    return (await this.ctx.storage.get(serverFaultKey)) === step;
+  }
+  override async invokeAgent(
+    ...args: Parameters<Server["invokeAgent"]>
+  ): ReturnType<Server["invokeAgent"]> {
+    const reply = await super.invokeAgent(...args);
+    // A reply RPC cannot serialize fails in the runtime, after this method returned.
+    if (await this.fault("invoke")) return Object.assign(new Unserializable(), reply);
+    return reply;
+  }
   override async fetch(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
+    if (path === "/__telemetry/server-fault") {
+      const step = Schema.decodeUnknownOption(ServerFault)(
+        new URL(request.url).searchParams.get("step"),
+      );
+      if (step._tag === "Some") await this.ctx.storage.put(serverFaultKey, step.value);
+      else await this.ctx.storage.delete(serverFaultKey);
+      return Response.json({ step: step._tag === "Some" ? step.value : null });
+    }
+    // The runtime resets this object while the watch is opening, as a failed Durable Object does.
+    if (path === Signal.watchPath && (await this.fault("watch")))
+      return new Promise<Response>(() => {
+        setTimeout(() => this.ctx.abort("PRIVATE_WATCH_FAILURE"), 0);
+      });
+    // The watch opens, then the runtime resets this object once while the Worker holds the call.
+    if (path === Signal.watchPath && (await this.fault("reset"))) {
+      await this.ctx.storage.delete(serverFaultKey);
+      const opened = await super.fetch(request);
+      setTimeout(() => this.ctx.abort("PRIVATE_RESET"), 200);
+      return opened;
+    }
+    // The first read answered at once, but its body fails while the Worker reads it.
+    if (path === Signal.watchPath && (await this.fault("first_read")))
+      return new Response(
+        new ReadableStream({
+          pull: (controller) => controller.error(new Error("PRIVATE_FIRST_READ_FAILURE")),
+        }),
+        { headers: { [Signal.answeredHeader]: "1" } },
+      );
     if (path === "/__telemetry/sqlite-result")
       return Response.json(await this.ctx.storage.get("telemetry-sqlite-result"));
     if (path === "/__telemetry/sqlite-error") {
@@ -156,6 +201,22 @@ export default Sentry.withSentry(
               .fetch(request)
               .catch(() => new Response(null, { status: 500 }));
           return env.SERVERS.getByName(server).fetch(request);
+        }
+        if (url.pathname === "/__telemetry/runtime-flags") {
+          // Cloudflare's runtime flags are each a tag; failure_kind still names one of them.
+          const runtime = Object.assign(new Error("PRIVATE_RUNTIME_FAILURE"), {
+            retryable: true,
+            overloaded: true,
+            remote: false,
+          });
+          Telemetry.failure("internal_error", "fixture-flags", runtime, "mcp");
+          // A store's safe failure reports the flags of the provider error kept behind it.
+          const kept = Telemetry.withCause(
+            new StorageUnavailable({ operation: "fixture.flags", message: "PRIVATE_SAFE" }),
+            Object.assign(new Error("PRIVATE_KEPT_FAILURE"), { retryable: true }),
+          );
+          Telemetry.failure("storage_unavailable", "fixture-kept-flags", kept, "access");
+          return Response.json({ reported: true });
         }
         if (url.pathname === "/__telemetry/d1-cause") {
           // A store's safe failure names its D1 rejection's class; the rejection never leaves.

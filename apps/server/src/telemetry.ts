@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/cloudflare";
 import { Predicate, Schema } from "effect";
 import { ProviderFailure } from "./billing/model.js";
+import { runtimeFlags, stepOf, type Step } from "./failure-log.js";
 import { sample } from "@talkto/telemetry/sampling";
 import {
   dataCollection,
@@ -123,9 +124,44 @@ function failureKind(error: Error | undefined): string | undefined {
   return runtimeKind(error) ?? runtimeKind(cause);
 }
 
+/** Cloudflare's runtime flags, each its own tag, and the server-object call step that failed. */
+interface RuntimeTags {
+  "talkto.cf_retryable"?: "true" | "false";
+  "talkto.cf_overloaded"?: "true" | "false";
+  "talkto.cf_remote"?: "true" | "false";
+  "talkto.step"?: Step;
+}
+const runtimeTagNames = [
+  "talkto.cf_retryable",
+  "talkto.cf_overloaded",
+  "talkto.cf_remote",
+  "talkto.step",
+] as const;
+const flagTag = (value: boolean) => (value ? "true" : "false");
+
+/**
+ * The flags Cloudflare set on an error, or on the provider error kept behind it with `withCause`,
+ * which `failure_kind` reports only one of, and the step `atStep` recorded. Booleans and fixed
+ * words only, never the message.
+ */
+function runtimeTags(error: Error | undefined): RuntimeTags {
+  const tags: RuntimeTags = {};
+  if (error === undefined) return tags;
+  const cause = causes.get(error);
+  const { retryable, overloaded, remote } =
+    cause === undefined ? runtimeFlags(error) : { ...runtimeFlags(cause), ...runtimeFlags(error) };
+  if (retryable !== undefined) tags["talkto.cf_retryable"] = flagTag(retryable);
+  if (overloaded !== undefined) tags["talkto.cf_overloaded"] = flagTag(overloaded);
+  if (remote !== undefined) tags["talkto.cf_remote"] = flagTag(remote);
+  const step = stepOf(error);
+  if (step !== null) tags["talkto.step"] = step;
+  return tags;
+}
+
 /**
  * Give every exception the SDK captures on its own (Durable Object fetch, RPC and alarm handlers,
- * the cron) the same safe tags `failure` sets: the failing operation and the runtime failure class.
+ * the cron) the same safe tags `failure` sets: the failing operation, the runtime failure class,
+ * Cloudflare's runtime flags and the failed step.
  */
 function annotate(event: Sentry.ErrorEvent, hint: Sentry.EventHint): Sentry.ErrorEvent {
   const tags = { ...event.tags };
@@ -134,11 +170,15 @@ function annotate(event: Sentry.ErrorEvent, hint: Sentry.EventHint): Sentry.Erro
   );
   if (tags["talkto.operation"] === undefined && operation._tag === "Some")
     tags["talkto.operation"] = operation.value.operation;
-  const kind = failureKind(
-    Predicate.isError(hint.originalException) ? hint.originalException : undefined,
-  );
+  const error = Predicate.isError(hint.originalException) ? hint.originalException : undefined;
+  const kind = failureKind(error);
   if (tags["talkto.failure_kind"] === undefined && kind !== undefined)
     tags["talkto.failure_kind"] = kind;
+  const runtime = runtimeTags(error);
+  for (const name of runtimeTagNames) {
+    const value = runtime[name];
+    if (tags[name] === undefined && value !== undefined) tags[name] = value;
+  }
   event.tags = tags;
   return event;
 }
@@ -189,7 +229,7 @@ export function monitored<E>(handler: ExportedHandler<E>): ExportedHandler<E> {
   return wrapped;
 }
 
-interface FailureTags {
+interface FailureTags extends RuntimeTags {
   readonly "talkto.code": string;
   readonly "talkto.request_id": string;
   "talkto.operation"?: string;
@@ -242,7 +282,11 @@ export function failure(
     return;
   const carried = Schema.decodeUnknownOption(Schema.Struct({ operation: Operation }))(error);
   const named = Schema.decodeUnknownOption(Operation)(operation);
-  const tags: FailureTags = { "talkto.code": code, "talkto.request_id": requestId };
+  const tags: FailureTags = {
+    "talkto.code": code,
+    "talkto.request_id": requestId,
+    ...runtimeTags(error),
+  };
   if (stage !== undefined) tags["talkto.stage"] = stage;
   if (carried._tag === "Some") tags["talkto.operation"] = carried.value.operation;
   else if (named._tag === "Some") tags["talkto.operation"] = named.value;
@@ -349,6 +393,29 @@ export function stuckReader(plugin: string | null, polls: number) {
       // "claude-code 0.2.0": Sentry tags keep no slash.
       "talkto.plugin": plugin === null ? "none" : plugin.replace("/", " "),
       "talkto.polls": String(polls),
+    },
+  });
+}
+
+/** Thrown nowhere: names the Sentry issue for a get_updates watch that failed to open. */
+class WatchFallback extends Error {
+  override readonly name = "WatchFallback";
+}
+
+/**
+ * Report a waiting get_updates whose watch failed to open, so the call polled instead of failing.
+ * A warning: the caller still got its answer. Tags carry the runtime flags and step only.
+ */
+export function watchFallback(cause: unknown) {
+  const error = new WatchFallback("A get_updates watch failed to open");
+  Sentry.captureException(error, {
+    level: "warning",
+    fingerprint: ["talkto-watch-fallback"],
+    tags: {
+      "talkto.code": "watch_fallback",
+      "talkto.operation": "TalkTo.getUpdates",
+      ...runtimeTags(Predicate.isError(cause) ? cause : undefined),
+      "talkto.step": "watch",
     },
   });
 }
