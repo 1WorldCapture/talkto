@@ -3,6 +3,8 @@
 <p align="center">
   <a href="https://github.com/backnotprop/plannotator">
     <picture>
+      <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset=".github/sponsor/b-narrow-dark.svg">
+      <source media="(max-width: 600px)" srcset=".github/sponsor/b-narrow-light.svg">
       <source media="(prefers-color-scheme: dark)" srcset=".github/sponsor/b-dark.svg">
       <source media="(prefers-color-scheme: light)" srcset=".github/sponsor/b-light.svg">
       <img src=".github/sponsor/b-light.svg" width="880" alt="Sponsored by Plannotator. Star it, and check out Plannotator Inbox today.">
