@@ -19,6 +19,7 @@ import type * as U from "@talkto/api/updates";
 import * as R from "@talkto/api/renames";
 import type * as Removals from "@talkto/api/removals";
 import * as Files from "./files/model.js";
+import * as Telemetry from "./telemetry.js";
 import { procedure } from "./files/procedure.js";
 import * as Transfers from "./files/transfers.js";
 import * as TransferProcedure from "./files/transfer-procedure.js";
@@ -66,6 +67,7 @@ export interface Interface {
     | E.InvalidCursor
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.ConversationNotFound
     | E.WrongConversationKind
@@ -171,6 +173,7 @@ export interface Interface {
     M.Created<M.Channel>,
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.NameTaken
     | E.IdempotencyConflict
@@ -191,6 +194,7 @@ export interface Interface {
     M.Channel,
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.ConversationNotFound
     | E.WrongConversationKind
@@ -202,7 +206,11 @@ export interface Interface {
     input: I.OpenDirectConversation,
   ) => Response<
     M.Created<M.DirectConversation>,
-    E.ParticipantNotFound | E.NotAnAgent | E.ParticipantRemoved | E.SelfConversation
+    | E.ParticipantNotFound
+    | E.NotAnAgent
+    | E.AgentNotOwned
+    | E.ParticipantRemoved
+    | E.SelfConversation
   >;
   readonly listDirectConversations: (
     access: AccessContext,
@@ -216,6 +224,7 @@ export interface Interface {
     M.Created<M.Message>,
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.ConversationNotFound
     | E.ChannelArchived
@@ -231,6 +240,7 @@ export interface Interface {
     M.Created<M.Message>,
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.ConversationNotFound
     | E.ChannelArchived
@@ -312,7 +322,11 @@ export interface Interface {
     input: Agent.GetFilesAccess,
   ) => Response<
     Agent.FilesAccess,
-    E.ParticipantNotFound | E.NotAnAgent | E.ParticipantRemoved | E.FilesUnavailable
+    | E.ParticipantNotFound
+    | E.NotAnAgent
+    | E.AgentNotOwned
+    | E.ParticipantRemoved
+    | E.FilesUnavailable
   >;
   /** Append the announcement and its file reference in one transaction, metered as a share. */
   readonly shareFile: (
@@ -322,6 +336,7 @@ export interface Interface {
     M.Created<M.Message>,
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.ConversationNotFound
     | E.ChannelArchived
@@ -345,6 +360,7 @@ export interface Interface {
     Agent.TransferUpload,
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.FilesUnavailable
     | E.IdempotencyConflict
@@ -359,6 +375,7 @@ export interface Interface {
     M.Created<M.Message>,
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.ConversationNotFound
     | E.ChannelArchived
@@ -380,6 +397,7 @@ export interface Interface {
     Agent.TransferDownload,
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.FilesUnavailable
     | E.TransferNotFound
@@ -393,6 +411,7 @@ export interface Interface {
     Signals.Minted,
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.ConversationNotFound
     | E.WrongConversationKind
@@ -401,7 +420,10 @@ export interface Interface {
   readonly revokeSignal: (
     access: AccessContext,
     input: Agent.RevokeSignal,
-  ) => Response<S.Revoked, E.ParticipantNotFound | E.NotAnAgent | E.ParticipantRemoved>;
+  ) => Response<
+    S.Revoked,
+    E.ParticipantNotFound | E.NotAnAgent | E.AgentNotOwned | E.ParticipantRemoved
+  >;
   /**
    * Open a link by its secret. There is no caller credential: the grant that minted the link
    * becomes the access, so revoking that grant ends the link.
@@ -641,8 +663,8 @@ const direct = Effect.fn("TalkTo.resolveDirect")(function* (
     return yield* new E.SelfConversation({
       message: "A direct chat requires two different participants.",
     });
-  // An agent may open a chat with a person, but only ever acts as an agent itself.
-  yield* Actors.requireAgent(tx, input.participantId);
+  // An agent may open a chat with a person, but acts only as an agent its own person registered.
+  yield* Actors.requireOwnAgent(tx, access, input.participantId);
   yield* participant(tx, input.recipientId);
   return yield* pairDirect(tx, access, input.participantId, input.recipientId, id, createdAt);
 });
@@ -839,10 +861,11 @@ const append = Effect.fn("TalkTo.append")(function* (
   spend: Spend = plainMessage,
   actor: Actor = "agent",
 ) {
-  // A person's participant never sends through an agent operation, not even as a replay.
+  // A person's participant never sends through an agent operation, not even as a replay, and an
+  // agent sends only as an agent its own person registered.
   const sender =
     actor === "agent"
-      ? yield* Actors.requireAgent(tx, input.participantId)
+      ? yield* Actors.requireOwnAgent(tx, access, input.participantId)
       : yield* participant(tx, input.participantId);
   const prior = yield* tx.messageCreation(access.grantId, input.requestKey);
   if (prior !== null) {
@@ -919,11 +942,15 @@ const filesFailure = (error: Files.Failure): E.FilesUnavailable =>
         operation: "files",
         reason: "absent",
       })
-    : new E.FilesUnavailable({
-        message: "The file store could not complete the operation. Retry shortly.",
-        operation: error.operation,
-        reason: "failed",
-      });
+    : // The store's failure stays behind, so Sentry can tag its safe failure kind.
+      Telemetry.withCause(
+        new E.FilesUnavailable({
+          message: "The file store could not complete the operation. Retry shortly.",
+          operation: error.operation,
+          reason: "failed",
+        }),
+        error,
+      );
 
 const secondsAfter = (at: M.Timestamp, seconds: number) =>
   M.Timestamp.make(DateTime.formatIso(DateTime.add(DateTime.makeUnsafe(at), { seconds })));
@@ -955,6 +982,8 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const persistence = yield* Store.Persistence;
+    // Captured here so every transaction checks agent ownership in the deployment's mode.
+    const ownership = yield* Actors.AgentOwnership;
     const ids = yield* Identifiers;
     const meter = yield* Metering.Meter;
     const shareCost = yield* Metering.ShareCost;
@@ -982,21 +1011,26 @@ export const layer = Layer.effect(
       operation: string,
       body: (tx: Store.Session) => Effect.Effect<A, F>,
     ) =>
-      persistence.transaction(operation, (tx) =>
-        Effect.gen(function* () {
-          const serverId = yield* tx.serverIdentity();
-          const grant = yield* tx.grant(access.grantId);
-          if (
-            serverId !== access.serverId ||
-            grant === null ||
-            grant.principalKey !== access.principalKey ||
-            grant.revokedAt !== null
-          ) {
-            return yield* new E.ServerAccessDenied({ message: "The server is unavailable." });
-          }
-          return yield* body(tx);
-        }),
-      );
+      persistence
+        .transaction(operation, (tx) =>
+          Effect.gen(function* () {
+            const serverId = yield* tx.serverIdentity();
+            const grant = yield* tx.grant(access.grantId);
+            if (
+              serverId !== access.serverId ||
+              grant === null ||
+              grant.principalKey !== access.principalKey ||
+              grant.revokedAt !== null
+            ) {
+              return yield* new E.ServerAccessDenied({ message: "The server is unavailable." });
+            }
+            return yield* body(tx);
+          }),
+        )
+        .pipe(
+          Effect.provideService(Actors.AgentOwnership, ownership),
+          Effect.provideService(Actors.Operation, operation),
+        );
     const pageMessages = Effect.fn("TalkTo.pageMessages")(function* (
       tx: Store.Session,
       state: Navigation.MessageCursor,
@@ -1030,6 +1064,7 @@ export const layer = Layer.effect(
         };
         return yield* run(access, "createSignal", (tx) =>
           Effect.gen(function* () {
+            yield* Actors.requireOwnAgent(tx, access, input.participantId);
             yield* Updates.checkSelection(tx, input.participantId, selection);
             const head = yield* tx.updatesHead();
             yield* tx.removeExpiredSignals(createdAt);
@@ -1050,7 +1085,7 @@ export const layer = Layer.effect(
       }),
       revokeSignal: Effect.fn("TalkTo.revokeSignal")(function* (access, input) {
         return yield* run(access, "revokeSignal", (tx) =>
-          Actors.requireAgent(tx, input.participantId).pipe(
+          Actors.requireOwnAgent(tx, access, input.participantId).pipe(
             Effect.andThen(tx.removeSignals(input.participantId, input.signalId ?? null)),
             Effect.map((revoked) => empty<S.Revoked>({ revoked })),
           ),
@@ -1088,6 +1123,8 @@ export const layer = Layer.effect(
             const head = yield* tx.updatesHead();
             if (head.generation !== stored.generation)
               return yield* new Signals.SignalUnavailable();
+            // A link minted for another person's agent (possible before that was refused) ends.
+            yield* Actors.requireOwnAgent(tx, opened.access, stored.participantId);
             yield* Updates.checkSelection(tx, stored.participantId, stored.selection);
             // `since` only moves forward from where the link started; an unknown ID is ignored.
             const after = since === null ? null : yield* tx.message(since);
@@ -1126,6 +1163,7 @@ export const layer = Layer.effect(
             ServerAccessDenied: () => Effect.fail(new Signals.SignalUnavailable()),
             ParticipantNotFound: () => Effect.fail(new Signals.SignalUnavailable()),
             NotAnAgent: () => Effect.fail(new Signals.SignalUnavailable()),
+            AgentNotOwned: () => Effect.fail(new Signals.SignalUnavailable()),
             ParticipantRemoved: () => Effect.fail(new Signals.SignalUnavailable()),
             ConversationNotFound: () => Effect.fail(new Signals.SignalUnavailable()),
             WrongConversationKind: () => Effect.fail(new Signals.SignalUnavailable()),
@@ -1142,6 +1180,9 @@ export const layer = Layer.effect(
         // a change or once a day), and the page then names the plugin's newest version.
         return yield* run(access, "getUpdates", (tx) =>
           Effect.gen(function* () {
+            // Reading is open to everyone on the server (read_messages), but an agent's updates
+            // stream acts as that agent: its waits, plugin report and read limit are its own.
+            yield* Actors.requireOwnAgent(tx, access, input.participantId);
             const page = yield* Updates.read(tx, access.serverId, input);
             const latest = yield* PluginReports.note(
               tx,
@@ -1468,7 +1509,7 @@ export const layer = Layer.effect(
               const replay = yield* describe(tx, { item, created: false }, [item], [], false);
               return { outcome: replay, notice: null };
             }
-            const creator = yield* Actors.requireAgent(tx, input.participantId);
+            const creator = yield* Actors.requireOwnAgent(tx, access, input.participantId);
             if ((yield* tx.channelNamed(input.name)) !== null)
               return yield* new E.NameTaken({
                 message: "A channel with that name already exists, including archived channels.",
@@ -1544,7 +1585,7 @@ export const layer = Layer.effect(
         const at = yield* now;
         return yield* run(access, "setChannelArchived", (tx) =>
           Effect.gen(function* () {
-            yield* Actors.requireAgent(tx, input.participantId);
+            yield* Actors.requireOwnAgent(tx, access, input.participantId);
             const item = yield* conversation(tx, id);
             if (item.kind !== "channel")
               return yield* new E.WrongConversationKind({
@@ -1746,8 +1787,9 @@ export const layer = Layer.effect(
               plainMessage,
               "person",
             ).pipe(
-              // A person's send is never metered; an archived channel refuses it as it refuses agents.
-              Effect.catchTag("CapacityRequired", (error) => Effect.die(error)),
+              // A person's send is never metered and never acts as an agent; an archived channel
+              // refuses it as it refuses agents.
+              Effect.catchTag(["CapacityRequired", "AgentNotOwned"], (error) => Effect.die(error)),
             );
           }),
         ).pipe(Effect.tap(announce));
@@ -1922,7 +1964,9 @@ export const layer = Layer.effect(
         // remote is fixed can skip its provider; a row that no longer parses reads as null and
         // is re-ensured and rewritten here.
         const known = yield* run(access, "filesAccess", (tx) =>
-          Actors.requireAgent(tx, input.participantId).pipe(Effect.andThen(tx.fileRepository())),
+          Actors.requireOwnAgent(tx, access, input.participantId).pipe(
+            Effect.andThen(tx.fileRepository()),
+          ),
         );
         const repository = yield* store
           .ensure(access.serverId, known)
@@ -1935,7 +1979,7 @@ export const layer = Layer.effect(
         const issuedAt = yield* now;
         const recorded = yield* run(access, "filesAccess.record", (tx) =>
           Effect.gen(function* () {
-            yield* Actors.requireAgent(tx, input.participantId);
+            yield* Actors.requireOwnAgent(tx, access, input.participantId);
             yield* tx.setFileRepository(repository, issuedAt);
             yield* tx.addFileToken({
               id,
@@ -2008,7 +2052,7 @@ export const layer = Layer.effect(
         const manifestBytes = input.kind === "folder" ? input.manifestBytes : null;
         const record = yield* run(access, "prepareTransfer", (tx) =>
           Effect.gen(function* () {
-            yield* Actors.requireAgent(tx, input.participantId);
+            yield* Actors.requireOwnAgent(tx, access, input.participantId);
             const prior = yield* tx.transferCreation(access.grantId, input.requestKey);
             if (prior !== null) {
               if (
@@ -2094,7 +2138,7 @@ export const layer = Layer.effect(
         const units = shareCost.units();
         const owned = (tx: Store.Session) =>
           Effect.gen(function* () {
-            yield* Actors.requireAgent(tx, input.participantId);
+            yield* Actors.requireOwnAgent(tx, access, input.participantId);
             const record = yield* tx.transfer(input.transferId);
             // A pending row never received an upload link, so there is nothing to offer yet.
             if (
@@ -2172,7 +2216,8 @@ export const layer = Layer.effect(
         const at = yield* now;
         const { record } = yield* run(access, "fetchTransfer.read", (tx) =>
           Effect.gen(function* () {
-            yield* Actors.requireAgent(tx, input.participantId);
+            // The receipt names the fetching agent, so it must be the caller's own.
+            yield* Actors.requireOwnAgent(tx, access, input.participantId);
             return yield* deliveredTransfer(tx, input.transferId);
           }),
         );

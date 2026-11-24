@@ -219,6 +219,7 @@ export const failure = (
     | E.InvalidInput
     | E.ParticipantNotFound
     | E.NotAnAgent
+    | E.AgentNotOwned
     | E.ParticipantRemoved
     | E.ConversationNotFound
     | E.WrongConversationKind
@@ -231,6 +232,8 @@ export const failure = (
       return {
         error: { code: codes.forbidden, message: "The server is unavailable.", diagnostic },
       };
+    case "AgentNotOwned":
+      return { error: { code: codes.forbidden, message: error.message, diagnostic } };
     case "StorageUnavailable":
       return {
         error: {

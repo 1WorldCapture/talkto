@@ -139,6 +139,15 @@ export const queueServerInvitation = Effect.fn("EmailHttp.queueServerInvitation"
   );
 });
 
+/** Queue "<owner> deleted <organization>" to each other member. Nothing while email is off. */
+export const queueOrganizationDeleted = Effect.fn("EmailHttp.queueOrganizationDeleted")(function* (
+  env: Env,
+  notice: Parameters<typeof Email.queueOrganizationDeleted>[0],
+) {
+  if (!(yield* Model.enabled(env))) return;
+  yield* Email.queueOrganizationDeleted(notice).pipe(Effect.provide(Store.layer(env.PLATFORM)));
+});
+
 /** Queue "<guest> joined <server>" to the inviter, once per invitation. Nothing while email is off. */
 export const queueServerJoined = Effect.fn("EmailHttp.queueServerJoined")(function* (
   env: Env,

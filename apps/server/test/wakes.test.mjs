@@ -1221,3 +1221,52 @@ test("tests wait for the host's minimum after a real wake and for the wake budge
   assert.equal(elsewhere.status, 400, elsewhere.text);
   assert.match(elsewhere.json.error.message, /no longer exists/);
 });
+
+test("revoke_wake and event subscriptions refuse another person's agent; people still manage any agent's wakes", async (t) => {
+  const s = await setup(t);
+  const root = `/v1/servers/${s.server.id}`;
+  await s.x.control("member", s.x.member(s.account.organizationId, "user_bob"));
+  await s.x.call("user_alice", "PUT", `${root}/access/user_bob`);
+  const bob = await s.x.mcpToken(s.account.organizationId, "user_bob");
+
+  // Ana's subscription, made over Alice's connection.
+  assert.ok((await s.subscribe()).result);
+  const subscribed = (await s.control("inspect")).targets.length;
+  assert.equal(subscribed, 1);
+
+  // Bob's connection cannot revoke Ana's wakes or subscribe to events as her.
+  const revoke = await s.x.mcp(
+    bob,
+    "revoke_wake",
+    { serverId: s.server.id, participantId: s.ana },
+    true,
+  );
+  assert.equal(revoke.error.code, "forbidden");
+  assert.match(revoke.error.message, /registered through another person's access/);
+  const before = s.fake.received.length;
+  const events = await s.protocol(
+    "events/subscribe",
+    {
+      name: "messages.waiting",
+      arguments: s.scope,
+      delivery: { mode: "webhook", url: `${callback}_bob`, secret: s.secret },
+      ttlMs: 3_600_000,
+    },
+    "2026-07-28",
+    bob,
+  );
+  assert.equal(events.error?.code, McpEvents.codes.forbidden, JSON.stringify(events));
+  assert.match(events.error.message, /registered through another person's access/);
+  assert.equal(s.fake.received.length, before, "no challenge went out");
+  assert.equal((await s.control("inspect")).targets.length, subscribed);
+
+  // Bob as a person, on the human HTTP API, manages any agent's wakes, as before.
+  const listed = await s.x.call("user_bob", "GET", `${root}/participants/${s.ana}/wakes`);
+  assert.equal(listed.items.length, 1);
+  const removed = await s.x.call(
+    "user_bob",
+    "DELETE",
+    `${root}/participants/${s.ana}/wakes/${listed.items[0].wakeId}`,
+  );
+  assert.equal(removed.revoked, 1);
+});

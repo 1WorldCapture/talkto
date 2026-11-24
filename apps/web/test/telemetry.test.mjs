@@ -175,3 +175,48 @@ test("a cancelled request's abort, left unhandled by an outside fetch wrapper, i
   assert.equal(other?.exception?.values?.[0]?.type, "AbortError");
   assert.doesNotMatch(JSON.stringify(other), /PRIVATE_/);
 });
+
+test("a query cancelled when the session expires is not reported", async (t) => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: "custom" });
+  t.after(() => vite.close());
+  const privacy = await vite.ssrLoadModule("/../../packages/telemetry/src/privacy.ts");
+  const { createServices } = await vite.ssrLoadModule("/src/session.tsx");
+  const { requestFailure } = await vite.ssrLoadModule("/src/telemetry.ts");
+  const { CancelledError } = await vite.ssrLoadModule("@tanstack/react-query");
+  const events = [];
+  Sentry.init({
+    dsn: "https://test@sentry.test/1",
+    environment: "test",
+    tracesSampleRate: 0,
+    defaultIntegrations: [],
+    dataCollection: privacy.dataCollection,
+    beforeSend: privacy.sanitizeError,
+    transport: () => ({
+      send: async (envelope) => {
+        for (const [header, body] of envelope[1]) {
+          if (header.type === "event") events.push(body);
+        }
+        return { statusCode: 200 };
+      },
+      flush: async () => true,
+    }),
+  });
+  t.after(() => Sentry.close());
+  const { queries } = createServices("http://localhost");
+  t.after(() => queries.clear());
+  // The session-expiry handler cancels in-flight reads this way; each fails with CancelledError.
+  const pending = queries.fetchQuery({
+    queryKey: ["human", "PRIVATE_ID", "accounts"],
+    retry: false,
+    queryFn: () => new Promise(() => undefined),
+  });
+  await queries.cancelQueries({ queryKey: ["human"] }, { revert: false });
+  const error = await pending.then(
+    () => assert.fail("the cancelled query resolved"),
+    (reason) => reason,
+  );
+  assert.ok(error instanceof CancelledError);
+  requestFailure(error, ["human", "PRIVATE_ID", "accounts"]);
+  await Sentry.flush();
+  assert.deepEqual(events, []);
+});

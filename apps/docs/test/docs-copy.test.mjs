@@ -450,6 +450,8 @@ test("how-it-works: the shared platform database holds the tables the page names
     memberships: "Organizations and their members",
     servers: "The list of servers",
     server_access: "Who has access to each server",
+    // Organization and server renames (docs/dashboard-api.md, "Renaming organizations and servers").
+    directory_renames: "Name changes",
     // Invitations to one server (docs/dashboard-api.md, "Server guests"): the address is kept until
     // 30 days after the invitation ends.
     server_invitations: "Server invitations",

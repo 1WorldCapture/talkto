@@ -4,11 +4,21 @@ import { useNavigate } from "@tanstack/react-router";
 import * as P from "@talkto/api/platform";
 import { request, input } from "./api.js";
 import { Dialog, Notice } from "./components.js";
+import { RenameSection } from "./rename-name.js";
 import { useHuman, useServices } from "./session.js";
 import "./server-settings.css";
 
 /** Creator-only management; the API independently checks ownership and exact-name confirmation. */
 export function ServerSettings({ server }: { readonly server: P.ServerContext }) {
+  return (
+    <div className="ops-settings-stack">
+      <RenameSection subject={{ kind: "server", server }} />
+      <DeleteServerSection server={server} />
+    </div>
+  );
+}
+
+function DeleteServerSection({ server }: { readonly server: P.ServerContext }) {
   const [confirming, setConfirming] = useState(false);
   return (
     <section className="ops-server-settings" aria-labelledby="server-settings-title">

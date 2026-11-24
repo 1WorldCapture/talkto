@@ -46,6 +46,12 @@ export type Input =
     }
   | { readonly kind: "product_update"; readonly announcementId: string }
   | {
+      readonly kind: "organization_deleted";
+      readonly accountId: string;
+      readonly organization: string;
+      readonly by: string;
+    }
+  | {
       readonly kind: "server_invitation";
       readonly invitationId: string;
       readonly sends: number;
@@ -350,6 +356,28 @@ export const render = (payload: Input, context: Context): Rendered => {
         },
       ];
       const footer = `You’re getting this because ${inviter} invited this address to a server on TalkTo. If you didn’t expect it, you can ignore this email.`;
+      return {
+        subject,
+        text: textOf(blocks, [footer]),
+        html: htmlOf(subject, blocks, [{ text: footer }]),
+      };
+    }
+    case "organization_deleted": {
+      const organization = named(payload.organization);
+      const by = named(payload.by);
+      const subject = `${by} deleted ${organization} on TalkTo`;
+      const blocks: ReadonlyArray<Block> = [
+        {
+          type: "plain",
+          text: `${by}, its owner, deleted the organization ${organization}. Its servers, with their messages, agents and files, are deleted, and you no longer have access to them.`,
+        },
+        {
+          type: "plain",
+          text: "Your TalkTo account and your other organizations are not affected.",
+        },
+        { type: "link", label: "Open TalkTo", url: `${context.origin}/app` },
+      ];
+      const footer = `You’re getting this because you were a member of ${organization} on TalkTo. Account emails like this one can’t be turned off.`;
       return {
         subject,
         text: textOf(blocks, [footer]),

@@ -43,6 +43,7 @@ import retentionExtension from "../migrations/retention.sql";
 import removalsExtension from "../migrations/removals.sql";
 import historySizeExtension from "../migrations/history-size.sql";
 import wakeTestsExtension from "../migrations/wake-tests.sql";
+import serverNameExtension from "../migrations/server-name.sql";
 import type * as Platform from "../platform/model.js";
 
 /** Incremental migrations after the bootstrap schema, applied in order when their version is absent. */
@@ -71,6 +72,7 @@ const extensions: ReadonlyArray<string> = [
   removalsExtension,
   historySizeExtension,
   wakeTestsExtension,
+  serverNameExtension,
 ];
 
 const epoch = (timestamp: M.Timestamp): number =>
@@ -594,6 +596,35 @@ export const applyAccess = Effect.fn("Sqlite.applyAccess")(function* (
         );
       }),
     catch: () => unavailable("applyAccess"),
+  });
+});
+
+/**
+ * Take the server's new name from the platform directory. A revision no newer than the one held
+ * changes nothing, so deliveries may repeat or arrive out of order. A server not yet initialized
+ * has nothing to rename: provisioning stores the directory's current name.
+ */
+export const renameServer = Effect.fn("Sqlite.renameServer")(function* (
+  storage: DurableObjectStorage,
+  change: Platform.ServerName,
+) {
+  yield* Effect.try({
+    try: () =>
+      storage.transactionSync(() => {
+        if (!hasSchema(storage)) return;
+        const server = storage.sql.exec("SELECT id FROM server").one();
+        if (server.id !== change.serverId) throw new Error("Wrong server binding");
+        const held = storage.sql
+          .exec<{ revision: number }>("SELECT revision FROM server_name_revision WHERE singleton=1")
+          .toArray()[0];
+        if (held !== undefined && held.revision >= change.revision) return;
+        storage.sql.exec("UPDATE server SET name=? WHERE singleton=1", change.name);
+        storage.sql.exec(
+          "INSERT INTO server_name_revision(singleton,revision) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET revision=excluded.revision",
+          change.revision,
+        );
+      }),
+    catch: () => unavailable("renameServer"),
   });
 });
 

@@ -248,7 +248,9 @@ export function DeleteAccountSection({ plan }: { readonly plan: A.DeletionPlan }
               {formatCount(organization.otherMembers, "other member")}. Ownership can’t be
               transferred yet: remove the other members on its{" "}
               <AppLink path={`accounts/${organization.accountId}/members`}>Members page</AppLink>,
-              then come back.
+              or delete it from its{" "}
+              <AppLink path={`accounts/${organization.accountId}/settings`}>Settings</AppLink>, then
+              come back.
             </p>
           ))}
         </div>

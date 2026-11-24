@@ -37,6 +37,31 @@ const conflict = () =>
     code: "idempotency_conflict",
     message: "The request key was already used for a different name.",
   });
+/**
+ * Where each rename target's name lives. Table names are constants, never input. An organization
+ * is live once WorkOS created it and until its deletion; a server until its deletion.
+ */
+const renameTables = {
+  organization: {
+    table: "accounts",
+    live: "organization_id IS NOT NULL AND deletion_requested_at IS NULL",
+  },
+  server: { table: "servers", live: "deletion_requested_at IS NULL" },
+} as const;
+/** The name a target was created with: its earliest rename's previous name, else its name. */
+const createdName = (kind: Model.RenameTarget["kind"], alias: string) =>
+  `COALESCE((SELECT r.previous_name FROM directory_renames r WHERE r.kind='${kind}' AND r.target_id=${alias}.id ORDER BY r.seq LIMIT 1),${alias}.name)`;
+const currentColumns = (kind: Model.RenameTarget["kind"], alias: string) =>
+  `${alias}.name,COALESCE((SELECT MAX(r.seq) FROM directory_renames r WHERE r.kind='${kind}' AND r.target_id=${alias}.id),0) AS revision,
+  EXISTS(SELECT 1 FROM directory_renames r WHERE r.kind='${kind}' AND r.target_id=${alias}.id AND r.applied_at IS NULL) AS pending`;
+const CurrentRow = Schema.Struct({
+  ...Model.CurrentName.fields,
+  pending: Schema.Literals([0, 1]),
+});
+const RenameTarget = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("organization"), id: P.AccountId }),
+  Schema.Struct({ kind: Schema.Literal("server"), id: M.ServerId }),
+]);
 const page = <A>(items: ReadonlyArray<A>, key: (item: A) => string, limit = 100): P.Page<A> => {
   const last = items[limit - 1];
   return {
@@ -115,6 +140,17 @@ export const layer = (
         [id],
       );
     const account = (id: P.AccountId) => one(P.Account, accountStatement(id));
+    /** A live target's name, revision and organization; its one parameter is the target's ID. */
+    const currentQuery = (kind: Model.RenameTarget["kind"]) =>
+      kind === "organization"
+        ? `SELECT ${currentColumns("organization", "a")},a.organization_id AS organizationId FROM accounts a WHERE a.id=? AND a.organization_id IS NOT NULL AND a.deletion_requested_at IS NULL`
+        : `SELECT ${currentColumns("server", "s")},a.organization_id AS organizationId FROM servers s JOIN accounts a ON a.id=s.account_id WHERE s.id=? AND s.deletion_requested_at IS NULL`;
+    const currentStatement = (target: Model.RenameTarget) =>
+      sql(currentQuery(target.kind), [target.id]);
+    const current = (row: typeof CurrentRow.Type): Model.CurrentName => ({
+      ...row,
+      pending: row.pending === 1,
+    });
     const server = (id: M.ServerId) =>
       one(
         Model.ServerReservation,
@@ -184,7 +220,7 @@ export const layer = (
         // and missing limits insert nothing yet still find an account reserved earlier.
         const policy = yield* Effect.result(configuration);
         const value = yield* writeThenFind(
-          Model.AccountReservation,
+          Schema.Struct({ ...Model.AccountReservation.fields, createdName: M.ServerName }),
           Result.isFailure(policy)
             ? []
             : [
@@ -207,14 +243,16 @@ export const layer = (
                 ),
               ],
           sql(
-            `SELECT ${accountColumns},request_key AS requestKey FROM accounts WHERE created_by=? AND request_key=?`,
+            `SELECT ${accountColumns},request_key AS requestKey,${createdName("organization", "accounts")} AS createdName FROM accounts WHERE created_by=? AND request_key=?`,
             [actor.userId, input.requestKey],
           ),
         );
         if (value === null)
           return yield* Result.isFailure(policy) ? policy.failure : Provisioning.denied();
-        if (value.name !== input.name) return yield* conflict();
-        return value;
+        // A retry after a rename still names the organization as it was created.
+        const { createdName: requested, ...reservation } = value;
+        if (requested !== input.name) return yield* conflict();
+        return reservation;
       }),
       completeAccount: Effect.fn("Directory.completeAccount")(function* (id, organizationId) {
         return yield* writeThenFind(
@@ -423,12 +461,16 @@ export const layer = (
                 ),
               ];
           const found = yield* writeThenFind(
-            Schema.Struct({ ...Model.ServerReservation.fields, deleted: Schema.Int }),
+            Schema.Struct({
+              ...Model.ServerReservation.fields,
+              deleted: Schema.Int,
+              createdName: M.ServerName,
+            }),
             [
               ...create,
               sql(
                 `INSERT INTO server_access(server_id,user_id,id,membership_id,principal_key,created_at,revision)
-        SELECT s.id,?,?,?,?,s.created_at,1 FROM servers s WHERE s.account_id=? AND s.created_by=? AND s.request_key=? AND s.name=? AND s.deletion_requested_at IS NULL
+        SELECT s.id,?,?,?,?,s.created_at,1 FROM servers s WHERE s.account_id=? AND s.created_by=? AND s.request_key=? AND ${createdName("server", "s")}=? AND s.deletion_requested_at IS NULL
         AND EXISTS(SELECT 1 FROM memberships WHERE id=? AND status='active')
         ON CONFLICT(server_id,user_id) DO NOTHING`,
                 [
@@ -445,7 +487,7 @@ export const layer = (
               ),
             ],
             sql(
-              `SELECT ${serverColumns}, a.organization_id AS organizationId, s.request_key AS requestKey, s.general_id AS generalId, s.deletion_requested_at IS NOT NULL AS deleted FROM servers s JOIN accounts a ON a.id=s.account_id WHERE s.account_id=? AND s.created_by=? AND s.request_key=?`,
+              `SELECT ${serverColumns}, a.organization_id AS organizationId, s.request_key AS requestKey, s.general_id AS generalId, s.deletion_requested_at IS NOT NULL AS deleted,${createdName("server", "s")} AS createdName FROM servers s JOIN accounts a ON a.id=s.account_id WHERE s.account_id=? AND s.created_by=? AND s.request_key=?`,
               [account.id, actor.userId, input.requestKey],
             ),
           );
@@ -467,9 +509,10 @@ export const layer = (
               return yield* Provisioning.serverLimitReached(cap);
             return yield* Provisioning.denied();
           }
-          const { deleted, ...value } = found;
+          const { deleted, createdName: requested, ...value } = found;
           if (deleted === 1) return yield* missing();
-          if (value.name !== input.name) return yield* conflict();
+          // A retry after a rename still names the server as it was created.
+          if (requested !== input.name) return yield* conflict();
           return value;
         },
       ),
@@ -480,6 +523,83 @@ export const layer = (
             id,
           ]),
         ]),
+      rename: Effect.fn("Directory.rename")(function* (actor, target, input, at) {
+        const { table, live } = renameTables[target.kind];
+        const id = crypto.randomUUID();
+        const key = [target.kind, target.id, actor.userId, input.requestKey] as const;
+        // One transaction: the record is written only for a new key and a different name (a
+        // case-only change counts), the name follows only that record, and the read reports both.
+        const row = yield* writeThenFind(
+          Schema.Struct({
+            ...CurrentRow.fields,
+            recordedId: Schema.NullOr(Schema.String),
+            recordedName: Schema.NullOr(M.ServerName),
+          }),
+          [
+            sql(
+              `INSERT INTO directory_renames(id,kind,target_id,previous_name,name,renamed_by,request_key,renamed_at)
+              SELECT ?,?,t.id,t.name,?,?,?,? FROM ${table} t WHERE t.id=? AND ${live} AND t.name<>?
+              ON CONFLICT(kind,target_id,renamed_by,request_key) DO NOTHING`,
+              [
+                id,
+                target.kind,
+                input.name,
+                actor.userId,
+                input.requestKey,
+                at,
+                target.id,
+                input.name,
+              ],
+            ),
+            sql(
+              `UPDATE ${table} SET name=? WHERE id=? AND EXISTS(SELECT 1 FROM directory_renames WHERE id=?)`,
+              [input.name, target.id, id],
+            ),
+          ],
+          sql(
+            `SELECT c.*,
+            (SELECT id FROM directory_renames WHERE kind=? AND target_id=? AND renamed_by=? AND request_key=?) AS recordedId,
+            (SELECT name FROM directory_renames WHERE kind=? AND target_id=? AND renamed_by=? AND request_key=?) AS recordedName
+            FROM (${currentQuery(target.kind)}) c`,
+            [...key, ...key, target.id],
+          ),
+        );
+        if (row === null) return yield* missing();
+        const { recordedId, recordedName, ...value } = row;
+        // No record: the name was already exactly this, and nothing changed.
+        if (recordedId === null) return { changed: false, current: current(value) };
+        if (recordedName !== input.name) return yield* conflict();
+        return { changed: recordedId === id, current: current(value) };
+      }),
+      currentName: Effect.fn("Directory.currentName")(function* (target) {
+        const row = yield* one(CurrentRow, currentStatement(target));
+        return row === null ? null : current(row);
+      }),
+      nameApplied: (target, revision, at) =>
+        batch([
+          sql(
+            "UPDATE directory_renames SET applied_at=? WHERE kind=? AND target_id=? AND seq<=? AND applied_at IS NULL",
+            [at, target.kind, target.id, revision],
+          ),
+        ]),
+      pendingNames: () =>
+        all(
+          RenameTarget,
+          sql(
+            `SELECT kind,target_id AS id FROM directory_renames WHERE applied_at IS NULL
+            AND ((kind='organization' AND target_id IN (SELECT id FROM accounts WHERE ${renameTables.organization.live}))
+              OR (kind='server' AND target_id IN (SELECT id FROM servers WHERE ${renameTables.server.live})))
+            GROUP BY kind,target_id ORDER BY MIN(seq) LIMIT 20`,
+          ),
+        ),
+      serverRenames: (id, limit) =>
+        all(
+          Model.ServerRenameRecord,
+          sql(
+            "SELECT id,previous_name AS previousName,name,renamed_at AS renamedAt,renamed_by AS renamedBy FROM directory_renames WHERE kind='server' AND target_id=? ORDER BY seq DESC LIMIT ?",
+            [id, limit],
+          ),
+        ),
       deletion,
       beginDeletion: Effect.fn("Directory.beginDeletion")(function* (id, at) {
         yield* batch([
@@ -502,6 +622,11 @@ export const layer = (
           ),
           sql(
             "DELETE FROM activity_progress WHERE server_id=? AND EXISTS(SELECT 1 FROM servers WHERE id=? AND deletion_requested_at IS NOT NULL)",
+            [id, id],
+          ),
+          // Earlier names go with the name: the tombstone keeps no content.
+          sql(
+            "DELETE FROM directory_renames WHERE kind='server' AND target_id=? AND EXISTS(SELECT 1 FROM servers WHERE id=? AND deletion_requested_at IS NOT NULL)",
             [id, id],
           ),
           sql(

@@ -53,6 +53,8 @@ import { ShareJoin } from "./share.js";
 import "./dashboard.css";
 import { useOnboardingState } from "./onboarding-state.js";
 import { ServerSettings } from "./server-settings.js";
+import { OrganizationSettings } from "./organization-settings.js";
+import { ServerRenameNotices } from "./rename-name.js";
 import { ServerTransfers } from "./server-transfers.js";
 import { ServerInvites } from "./server-invites.js";
 import { ConnectAgentsDialog } from "./agent-connection.js";
@@ -449,6 +451,8 @@ function AccountPage({
             ["servers", "Servers"],
             ["members", "Members"],
             ["billing", "Billing"],
+            // The owner's organization settings: its name, for now.
+            ...(account.permissions.rename ? [["settings", "Settings"]] : []),
           ].map(([key, label]) => (
             <AppLink
               key={key}
@@ -466,6 +470,8 @@ function AccountPage({
         <BillingPage accountId={id} />
       ) : view === "members" ? (
         <Members account={account} />
+      ) : view === "settings" && account.permissions.rename ? (
+        <OrganizationSettings account={account} />
       ) : view === "servers" && serverId ? (
         <ServerPage key={serverId} accountId={id} rawId={serverId} />
       ) : view === "servers" ? (
@@ -1058,6 +1064,7 @@ function ServerDetail({
               ) : (
                 <>
                   <ServerStrip accountId={accountId} server={server} />
+                  <ServerRenameNotices accountId={accountId} serverId={id} enabled={!shared} />
                   <RenameNotices accountId={accountId} serverId={id} />
                   <RemovalNotices accountId={accountId} serverId={id} />
                   <FeedRoute accountId={accountId} server={server} files={files} />

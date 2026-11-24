@@ -97,11 +97,14 @@ const emailOf = (id: string) => {
 /** What account deletion asked the provider to delete, and injected provider failures. */
 const deletedUsers = new Set<string>();
 const deletedOrganizations = new Set<string>();
-const identityFaults = { deleteUser: 0, deleteOrganization: 0 };
+const identityFaults = { deleteUser: 0, deleteOrganization: 0, renameOrganization: 0 };
 const IdentityFaults = Schema.Struct({
   deleteUser: Schema.optionalKey(Schema.Int),
   deleteOrganization: Schema.optionalKey(Schema.Int),
+  renameOrganization: Schema.optionalKey(Schema.Int),
 });
+/** Each organization's name as the provider holds it, set by every successful rename. */
+const organizationNames = new Map<string, string>();
 /** Authorized Connect applications per user, what sign-out revoked, and injected failures. */
 const authorizedApps = new Map<string, Model.AuthorizedApplication[]>();
 const revokedApps: Array<{ readonly userId: string; readonly clientId: string }> = [];
@@ -234,6 +237,14 @@ const identity = Layer.succeed(
             updatedAt: reservation.createdAt,
           });
         return organizationId;
+      }),
+    renameOrganization: (organizationId, name) =>
+      Effect.gen(function* () {
+        if (identityFaults.renameOrganization > 0) {
+          identityFaults.renameOrganization--;
+          return yield* injected();
+        }
+        organizationNames.set(organizationId, name);
       }),
     membership: (organizationId, userId) =>
       Effect.sync(
@@ -452,11 +463,48 @@ const measureStatements = (storage: DurableObjectStorage) => {
     });
 };
 
+// R2 head rejections still to inject per server object, keyed by its state before `this` exists.
+const headFaults = new WeakMap<DurableObjectState, { remaining: number }>();
+/**
+ * The server object's R2 binding, whose next `head` calls reject as R2's internal error does when
+ * a test asks. The rejection names the key and a sentinel, which must never reach Sentry.
+ */
+const faultyTransfers = (ctx: DurableObjectState, env: Env): Env => {
+  const bucket = env.TRANSFERS;
+  if (bucket === undefined) return env;
+  const faults = { remaining: 0 };
+  headFaults.set(ctx, faults);
+  const head = (key: string) => {
+    if (faults.remaining === 0) return bucket.head(key);
+    faults.remaining -= 1;
+    return Promise.reject(
+      new Error(`head: PRIVATE_R2_FAILURE ${key} We encountered an internal error. (10001)`),
+    );
+  };
+  const faulty: R2Bucket = {
+    head,
+    get: bucket.get.bind(bucket),
+    put: bucket.put.bind(bucket),
+    createMultipartUpload: bucket.createMultipartUpload.bind(bucket),
+    resumeMultipartUpload: bucket.resumeMultipartUpload.bind(bucket),
+    delete: bucket.delete.bind(bucket),
+    list: bucket.list.bind(bucket),
+  };
+  return { ...env, TRANSFERS: faulty };
+};
+
 /** Fault injection is confined to this test-only Durable Object export. */
 export class PlatformTestServer extends TalkToServer {
   constructor(ctx: DurableObjectState, env: Env) {
     measureStatements(ctx.storage);
-    super(ctx, env);
+    super(ctx, faultyTransfers(ctx, env));
+  }
+  /** Make this server's next `count` R2 head calls reject; returns how many earlier ones were left. */
+  async failTransferHeads(count: number) {
+    const faults = headFaults.get(this.ctx);
+    const left = faults?.remaining ?? 0;
+    if (faults !== undefined) faults.remaining = count;
+    return { left };
   }
   /** Start measuring this object's requests and SQL, or return what it did since and stop. */
   async cost(action: "start" | "take") {
@@ -620,6 +668,23 @@ export class PlatformTestServer extends TalkToServer {
   /** Record read measurements in memory so tests can inspect what the dataset would receive. */
   protected override readEvents(env: Env) {
     return "TEST_RECORD_READS" in env ? recordingDataset : super.readEvents(env);
+  }
+  /**
+   * Leave one participant with no recorded registrant, as an agent whose registering grant row is
+   * unknown: its `created_by_grant_id` names no grant, so `registeredBy` answers null.
+   */
+  async forgetRegistrant(participantId: string) {
+    this.ctx.storage.sql.exec("PRAGMA foreign_keys=OFF");
+    try {
+      this.ctx.storage.sql.exec(
+        "UPDATE participants SET created_by_grant_id=? WHERE id=?",
+        crypto.randomUUID(),
+        participantId,
+      );
+    } finally {
+      this.ctx.storage.sql.exec("PRAGMA foreign_keys=ON");
+    }
+    return { ok: true };
   }
   /** Make this server's own search fail, as a storage fault would, while it stays readable. */
   async breakSearch() {
@@ -1025,6 +1090,14 @@ export default {
           ? Response.json({ deleted: result.success })
           : Response.json({ error: "Prune failed" }, { status: 503 });
       }
+      if (url.pathname === "/__control/forget-registrant") {
+        const participantId = Schema.decodeUnknownSync(Schema.String)(await request.json());
+        return Response.json(
+          await env.SERVERS.getByName(url.searchParams.get("server") ?? "").forgetRegistrant(
+            participantId,
+          ),
+        );
+      }
       if (url.pathname === "/__control/history") {
         const action = Schema.decodeUnknownSync(Schema.Literals(["inspect", "delete"]))(
           await request.json(),
@@ -1170,6 +1243,12 @@ export default {
         return Response.json(
           await env.SERVERS.getByName(url.searchParams.get("server") ?? "").expireTransfers(),
         );
+      if (url.pathname === "/__control/transfer-head-faults")
+        return Response.json(
+          await env.SERVERS.getByName(url.searchParams.get("server") ?? "").failTransferHeads(
+            Number(url.searchParams.get("count")),
+          ),
+        );
       if (url.pathname === "/__control/transfer-objects") {
         const listed = await env.TRANSFERS?.list();
         return Response.json({ keys: listed?.objects.map((object) => object.key) ?? [] });
@@ -1246,6 +1325,7 @@ export default {
         return Response.json({
           users: [...deletedUsers],
           organizations: [...deletedOrganizations],
+          names: Object.fromEntries(organizationNames),
           members: [...members.values()],
           invitations: [...invitations.values()],
         });

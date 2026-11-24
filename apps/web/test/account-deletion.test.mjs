@@ -142,9 +142,10 @@ test("an owned organization with other members blocks deletion and says how to u
   const text = words(html);
   assert.match(
     text,
-    /You own Product studio ?, which has 2 other members\. Ownership can’t be transferred yet: remove the other members on its Members page ?, then come back\./,
+    /You own Product studio ?, which has 2 other members\. Ownership can’t be transferred yet: remove the other members on its Members page ?, or delete it from its Settings ?, then come back\./,
   );
   assert.match(html, new RegExp(`href="/app/accounts/${team.accountId}/members"`));
+  assert.match(html, new RegExp(`href="/app/accounts/${team.accountId}/settings"`));
   assert.match(html, /<button class="ops-danger" disabled="">Delete account…<\/button>/);
   const token = await render(() =>
     createElement(account.DeleteAccountSection, { plan: plan({ website: false }) }),

@@ -563,7 +563,7 @@ export const execute = Effect.fn("Agent.execute")(function* (
     case S.revokeToolName:
       return { ...(yield* service.revokeSignal(access, command.input)), meta };
     case W.revokeToolName:
-      return { ...(yield* (yield* Wakes.Wakes).revoke(access, command.input)), meta };
+      return { ...(yield* (yield* Wakes.Wakes).revoke(access, command.input, "agent")), meta };
     case W.listToolName:
       return { ...(yield* (yield* Wakes.Wakes).list(access, command.input)), meta };
   }

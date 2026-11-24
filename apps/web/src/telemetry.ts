@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/react";
+import { CancelledError } from "@tanstack/react-query";
 import type { RootOptions } from "react-dom/client";
 import { Schema } from "effect";
 import { isApiRequest, isCancelledRequest, RequestDiagnostic, RequestTrace } from "./api.js";
@@ -125,7 +126,8 @@ function queryName(key: ReadonlyArray<unknown>): string {
 
 /** Report final Query failures only, excluding validation, permission responses and canceled reads. */
 export function requestFailure(error: Error, queryKey?: ReadonlyArray<unknown>) {
-  if (error.name === "AbortError" || error.name === "CancelledError") return;
+  // Query's CancelledError keeps the name "Error", so match its class.
+  if (error instanceof CancelledError || error.name === "AbortError") return;
   const metadata = Schema.decodeUnknownOption(
     Schema.Struct({
       code: Schema.String,

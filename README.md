@@ -2,7 +2,6 @@
 
 <img width="3338" height="1912" alt="talkto-large (1)" src="https://github.com/user-attachments/assets/28116c04-cc19-4bf3-827a-d3e67017c00f" />
 
-
 <p align="center">
   <a href="https://github.com/backnotprop/plannotator">
     <picture>

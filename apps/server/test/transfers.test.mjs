@@ -712,3 +712,28 @@ test("the download procedure verifies the hash and unpacks only into a new direc
   assert.notEqual(refused.status, 0);
   assert.equal(existsSync(unpacked), false);
 });
+
+test("one failed R2 size check is retried; two ask the sender to retry", async (t) => {
+  const s = await setup(t);
+  const failHeads = async (count) =>
+    (await s.x.control(`transfer-head-faults?server=${s.server.id}&count=${count}`)).json();
+  const once = (await s.prepare()).data;
+  await s.upload(once.transferId, "payload", 16);
+  await failHeads(1);
+  const sent = await s.complete(once.transferId);
+  assert.equal(sent.data.item.transfer.id, once.transferId);
+  assert.deepEqual(await failHeads(0), { left: 0 }, "the store retried the one failure");
+
+  const twice = (await s.prepare()).data;
+  await s.upload(twice.transferId, "payload", 16);
+  await failHeads(2);
+  const failed = await s.complete(twice.transferId, {}, true);
+  assert.equal(failed.error.code, "files_unavailable");
+  assert.match(failed.error.message, /Retry shortly/);
+  // R2's rejection, its code and the safe kind stay inside the Worker.
+  assert.doesNotMatch(JSON.stringify(failed), /PRIVATE_R2_FAILURE|10001|r2_|failureKind/);
+  assert.deepEqual(await failHeads(0), { left: 0 }, "a size check is tried twice, no more");
+  // Nothing was offered, so the sender's retry sends it.
+  const retried = await s.complete(twice.transferId);
+  assert.equal(retried.data.item.transfer.id, twice.transferId);
+});

@@ -73,6 +73,48 @@ export const AccessCommand = Schema.Struct({
 });
 /** Persisted access command. */
 export interface AccessCommand extends Schema.Schema.Type<typeof AccessCommand> {}
+/** What a rename names: an organization (its TalkTo account) or a server. */
+export type RenameTarget =
+  | { readonly kind: "organization"; readonly id: P.AccountId }
+  | { readonly kind: "server"; readonly id: M.ServerId };
+/**
+ * A target's current name and where it is mirrored. `revision` is the sequence of its latest rename
+ * (0 before any), so a mirror applies a name only when it is newer than the one it holds. `pending`
+ * is true while a rename has not been confirmed by its mirror: WorkOS for an organization, the
+ * server object for a server.
+ */
+export const CurrentName = Schema.Struct({
+  name: M.ServerName,
+  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  organizationId: P.OrganizationId,
+  pending: Schema.Boolean,
+});
+/** Parsed current name. */
+export interface CurrentName extends Schema.Schema.Type<typeof CurrentName> {}
+/** The outcome of one rename request in the directory. */
+export interface Renamed {
+  /** True only for the request that changed the name. */
+  readonly changed: boolean;
+  readonly current: CurrentName;
+}
+/** A recorded server rename and the user who made it (null after their account was deleted). */
+export const ServerRenameRecord = Schema.Struct({
+  id: Schema.String.check(Schema.isUUID(4)),
+  previousName: M.ServerName,
+  name: M.ServerName,
+  renamedAt: M.Timestamp,
+  renamedBy: Schema.NullOr(P.UserId),
+});
+/** Parsed server rename record. */
+export interface ServerRenameRecord extends Schema.Schema.Type<typeof ServerRenameRecord> {}
+/** A server's new name for its server object, applied only when `revision` is newer. */
+export const ServerName = Schema.Struct({
+  serverId: M.ServerId,
+  name: M.ServerName,
+  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+});
+/** Parsed server name delivery. */
+export interface ServerName extends Schema.Schema.Type<typeof ServerName> {}
 /**
  * What decides an organization's people limit: the plan of a paid period covering now, else of an
  * active trial. Neither means `plan: null`.

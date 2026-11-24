@@ -313,6 +313,12 @@
 :root[data-surface="dashboard"] .ops-page-bar input[type="search"] {
   width: min(280px, 100%);
 }
+/* A search followed by the page's button: both sit together at the right, the search first. */
+@media (min-width: 960px) {
+  :root[data-surface="dashboard"] .ops-page-bar > input[type="search"] + .ops-new {
+    margin-left: 0;
+  }
+}
 
 /* Panels: white on paper, hairline edges, no corners. */
 :root[data-surface="dashboard"]

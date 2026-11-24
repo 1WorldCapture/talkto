@@ -195,6 +195,41 @@ export const queueInvitation = Effect.fn("Email.queueInvitation")(function* (
   });
 });
 
+/**
+ * Tell each other member that the owner deleted the organization: once per organization and
+ * member. The name is stored now, while the organization still has it. The outbox class is
+ * `payment`, an account email that cannot be turned off: see `Model.Kind`.
+ */
+export const queueOrganizationDeleted = Effect.fn("Email.queueOrganizationDeleted")(
+  function* (notice: {
+    readonly accountId: P.AccountId;
+    readonly organization: string;
+    readonly by: string;
+    readonly members: ReadonlyArray<string>;
+  }) {
+    const store = yield* Store.Store;
+    const at = iso(yield* now);
+    yield* Effect.forEach(
+      notice.members,
+      (userId) =>
+        store.queueForPerson({
+          key: `organization_deleted:${notice.accountId}:${userId}`,
+          kind: "payment",
+          userId,
+          accountId: notice.accountId,
+          payload: JSON.stringify({
+            kind: "organization_deleted",
+            accountId: notice.accountId,
+            organization: notice.organization,
+            by: notice.by,
+          } satisfies Templates.Payload),
+          at,
+        }),
+      { discard: true },
+    );
+  },
+);
+
 /** Tell the person who sent an invitation that it was accepted: once per invitation. */
 export const queueJoined = Effect.fn("Email.queueJoined")(function* (
   invitation: {

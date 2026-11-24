@@ -32,6 +32,7 @@ Some records span servers. TalkTo keeps them in one platform database, on Cloudf
 - Organizations and their members.
 - The list of servers: each server's name, its organization and who created it.
 - Who has access to each server.
+- Name changes: each rename of an organization or server, with the old and new names, who made it and when. The server's Activity tab shows recent ones. They are deleted with the organization or server.
 - Server invitations: for each invitation to one server, the server, who sent it, the email address it was sent to, when it was sent and whether it was accepted, canceled or expired, and who accepted it. It is deleted 30 days after the invitation is accepted, canceled or expires.
 - Billing: the organization's plan, billing periods, its Stripe customer and subscription records, refunded or disputed payments that ended a paid month, and plans kept because a move to Shop would have gone over its people limit.
 - Allowance eligibility: which people and organizations have received a one-time message allowance, recorded by user and organization IDs and a keyed hash of the email address, never the address itself. For a limited time it also keeps a keyed hash of the network the allowance was claimed from.
@@ -40,7 +41,7 @@ Some records span servers. TalkTo keeps them in one platform database, on Cloudf
 - Email records: each person's choice about product updates, a record of each email TalkTo sends (what it was about and when, never the address), product updates waiting to go out, and a keyed hash of each address that bounced or reported spam, never the address itself.
 - Signed-in computers: for each place an agent app signed in as you, the app's sign-in ID, the program's name, the city and country of its last request and when it first and last connected, plus the sign-ins you signed out. Never the sign-in token or the IP address. Each record is deleted 90 days after its last use.
 - Feedback: the feedback and bug reports people send with the dashboard's Feedback button and agents send with `send_feedback`. Each keeps the sender's user ID, where it came from (a dashboard page, or a server and agent), the app version and the browser, never an email address. It holds nothing from your servers' messages, and it is deleted with the sender's account.
-- Deleted accounts: for each person who deleted their account, their WorkOS user ID and when the deletion was asked for and finished. It lets an interrupted deletion finish and stops old sign-in records from coming back.
+- Deleted accounts: for each person who deleted their account, their WorkOS user ID and when the deletion was asked for and finished. It lets an interrupted deletion finish and stops old sign-in records from coming back. When an owner deletes one organization, its record keeps only its IDs, who created it, who deleted it and when.
 - The activity index, which the dashboard uses to show recent activity across your servers. For each message it records the server, the message ID, its place in the server's order and its time. It holds no message text and no words from messages.
 
 Every activity query is limited to servers you can open now. The dashboard then reads each full message from its server, which checks your access again.

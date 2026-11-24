@@ -274,3 +274,68 @@ for (const traceRate of [1, 0])
       assert.doesNotMatch(bodies.join("\n"), /PRIVATE_/);
     }
   });
+
+test("an R2 size check that fails twice is tagged with R2's safe failure kind", async (t) => {
+  const events = [];
+  const bodies = [];
+  const x = await start(t, {
+    transfers: true,
+    traceRate: 0,
+    telemetry: async (request) => {
+      const body = await request.text();
+      bodies.push(body);
+      const lines = body.trim().split("\n");
+      for (let i = 1; i + 1 < lines.length; i += 2)
+        if (JSON.parse(lines[i]).type === "event") events.push(JSON.parse(lines[i + 1]));
+      return Response.json({});
+    },
+  });
+  const account = await x.account();
+  const credential = await x.mcpToken(account.organizationId);
+  const server = await x.server(account.id);
+  const call = (name, args, error = false) =>
+    x.mcp(credential, name, { serverId: server.id, ...args }, error);
+  const sender = await call("register_participant", {
+    name: "sender",
+    agentType: "claude-code",
+    requestKey: randomUUID(),
+  });
+  const prepared = await call("prepare_transfer", {
+    participantId: sender.data.item.id,
+    requestKey: randomUUID(),
+    name: "report.pdf",
+    kind: "file",
+    bytes: 16,
+    sha256: "a".repeat(64),
+  });
+  const key = `r30/${server.id}/${prepared.data.transferId}/payload`;
+  await x.control(`transfer-object?key=${encodeURIComponent(key)}&bytes=16`);
+  await x.control(`transfer-head-faults?server=${server.id}&count=2`);
+  const failed = await call(
+    "complete_transfer",
+    {
+      participantId: sender.data.item.id,
+      requestKey: randomUUID(),
+      target: { kind: "conversation", conversationId: sender.data.generalConversationId },
+      transferId: prepared.data.transferId,
+      body: "The report.",
+    },
+    true,
+  );
+  assert.equal(failed.error.code, "files_unavailable");
+  const deadline = Date.now() + 10_000;
+  const reported = () =>
+    events.find((event) => event.tags?.["talkto.request_id"] === failed.meta.requestId);
+  while (reported() === undefined && Date.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  const event = reported();
+  assert.ok(event, "the failure is reported");
+  assert.equal(event.tags["talkto.code"], "files_unavailable");
+  assert.equal(event.tags["talkto.stage"], "files");
+  assert.equal(event.tags["talkto.operation"], "size");
+  assert.equal(event.tags["talkto.failure_kind"], "r2_10001");
+  // R2's message, the object key and the server ID never leave the Worker.
+  const sent = bodies.join("\n");
+  assert.doesNotMatch(sent, /PRIVATE_R2_FAILURE|internal error\. \(10001\)/);
+  assert.ok(!sent.includes(key) && !sent.includes(server.id));
+});

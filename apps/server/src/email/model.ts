@@ -30,7 +30,12 @@ export interface Message {
 }
 
 /** Every template's name; wider than `Kind`, which is only the outbox's class of email. */
-export type Template = Kind | "plan_kept" | "server_invitation" | "server_joined";
+export type Template =
+  | Kind
+  | "plan_kept"
+  | "server_invitation"
+  | "server_joined"
+  | "organization_deleted";
 
 /**
  * Why a delivery did not complete. `refused`, `rate_limited` and `quota` mean the provider sent

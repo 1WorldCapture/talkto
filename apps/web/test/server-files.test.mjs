@@ -116,7 +116,10 @@ test("the Files tab lists shares with their sharer, conversation and reference",
   assert.equal(fixture.shares.data.items.length, 1);
   const html = await dashboard(t, fixture, "?tab=files", fixture.shares);
   const tabs = [
-    ...html.matchAll(/<a\b[^>]*>(Activity|Channels|Direct chats|Agents|Files|Settings)</g),
+    // The server's own navigation; the organization bar has its own Settings link.
+    ...html
+      .slice(html.indexOf('aria-label="Server navigation"'))
+      .matchAll(/<a\b[^>]*>(Activity|Channels|Direct chats|Agents|Files|Settings)</g),
   ].map(([, label]) => label);
   assert.deepEqual(tabs, ["Activity", "Channels", "Direct chats", "Agents", "Files", "Settings"]);
   assert.ok(html.includes("Remote"));

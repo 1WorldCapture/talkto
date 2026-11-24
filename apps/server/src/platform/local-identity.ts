@@ -471,6 +471,9 @@ export const make = (database: D1Database) => {
       yield* join(found.id, reservation.createdBy, "admin", at, null);
       return found.id;
     }),
+    renameOrganization: Effect.fn("LocalIdentity.renameOrganization")(function* (id, name) {
+      yield* run(() => sql(`UPDATE local_organizations SET name=? WHERE id=?`, [name, id]).run());
+    }),
     membership: Effect.fn("LocalIdentity.membershipOf")(function* (organizationId, id) {
       return yield* membershipOf(organizationId, id);
     }),

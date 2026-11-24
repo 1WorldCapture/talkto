@@ -96,6 +96,18 @@ export class Store extends Context.Service<
       readonly payload: string;
       readonly at: string;
     }) => Operation<boolean>;
+    /**
+     * Queue one email to one person about an organization, with its payload as given: the
+     * organization may already be marked for deletion. True when a row was written.
+     */
+    readonly queueForPerson: (input: {
+      readonly key: string;
+      readonly kind: Model.Kind;
+      readonly userId: string;
+      readonly accountId: string;
+      readonly payload: string;
+      readonly at: string;
+    }) => Operation<boolean>;
     /** The invitation an email is for, with the address it was sent to; null once deleted. */
     readonly invitation: (id: string) => Operation<Invitation | null>;
     /** Batches claimed longer ago than `before` whose outcome was never recorded. */
@@ -213,6 +225,15 @@ export const layer = (database: D1Database) =>
               input.serverId,
               input.accountId,
             ],
+          ),
+        ).pipe(Effect.map((result) => result.meta.changes > 0)),
+      queueForPerson: (input) =>
+        run(
+          "queue_person",
+          sql(
+            `INSERT OR IGNORE INTO email_outbox(key,user_id,kind,account_id,payload,state,created_at)
+             VALUES(?,?,?,?,?,'pending',?)`,
+            [input.key, input.userId, input.kind, input.accountId, input.payload, input.at],
           ),
         ).pipe(Effect.map((result) => result.meta.changes > 0)),
       invitation: (id) =>

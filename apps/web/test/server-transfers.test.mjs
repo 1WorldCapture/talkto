@@ -175,7 +175,10 @@ test("Files sits after Direct chats and lists every transfer with where it was s
   assert.equal(fixture.transfers.data.items.length, 3);
   const { html } = await dashboard(t, fixture, "?tab=files", fixture.transfers);
   const tabs = [
-    ...html.matchAll(/<a\b[^>]*>(Activity|Channels|Direct chats|Agents|Files|Settings)</g),
+    // The server's own navigation; the organization bar has its own Settings link.
+    ...html
+      .slice(html.indexOf('aria-label="Server navigation"'))
+      .matchAll(/<a\b[^>]*>(Activity|Channels|Direct chats|Agents|Files|Settings)</g),
   ].map(([, label]) => label);
   assert.deepEqual(tabs, ["Activity", "Channels", "Direct chats", "Agents", "Files", "Settings"]);
   assert.match(html, /<a[^>]*aria-current="page"[^>]*>Files<\/a>/, "the Files item is current");

@@ -1,6 +1,7 @@
 import { Config, ConfigProvider, Effect, Option, Schema } from "effect";
 import * as M from "@talkto/api/models";
 import * as Access from "./access.js";
+import * as Actors from "./actors.js";
 
 const Origin = Schema.String.check(
   Schema.makeFilter((s) => {
@@ -34,6 +35,25 @@ export const read = Effect.fn("Configuration.read")(function* (env: Env) {
       () =>
         new ConfigurationUnavailable({
           message: "Set valid TalkTo server, grant, principal, and origin configuration.",
+        }),
+    ),
+  );
+});
+/**
+ * `TALKTO_AGENT_OWNERSHIP`, `watch` or `enforce`. Unset means `enforce`: a local or self-hosted copy
+ * has no earlier use of other people's agents to protect, so it refuses from the start. Hosted
+ * TalkTo sets `watch` explicitly while it learns who relied on the old behaviour.
+ */
+export const readAgentOwnership = Effect.fn("Configuration.readAgentOwnership")(function* (
+  env: Env,
+) {
+  return yield* Config.schema(Actors.OwnershipMode, "TALKTO_AGENT_OWNERSHIP").pipe(
+    Config.withDefault("enforce"),
+    Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
+    Effect.mapError(
+      () =>
+        new ConfigurationUnavailable({
+          message: "Set TALKTO_AGENT_OWNERSHIP to watch or enforce, or remove it.",
         }),
     ),
   );

@@ -5,6 +5,7 @@ import * as P from "@talkto/api/platform";
 import * as M from "@talkto/api/models";
 import * as Model from "../platform/model.js";
 import * as Platform from "../platform/service.js";
+import * as Guests from "../guests/model.js";
 
 type Operation<A> = Effect.Effect<A, Model.Failure>;
 
@@ -38,6 +39,30 @@ export const Created = Schema.Struct({
 });
 /** Parsed server created in another organization. */
 export interface Created extends Schema.Schema.Type<typeof Created> {}
+
+/** One organization as its deletion needs it: who owns it, and how far deletion has come. */
+export const Organization = Schema.Struct({
+  id: P.AccountId,
+  organizationId: Schema.NullOr(P.OrganizationId),
+  name: M.ServerName,
+  createdBy: P.UserId,
+  requestedAt: Schema.NullOr(M.Timestamp),
+  completedAt: Schema.NullOr(M.Timestamp),
+});
+/** Parsed organization. */
+export interface Organization extends Schema.Schema.Type<typeof Organization> {}
+/** What the preview of deleting one organization reads from the directory. */
+export const OrganizationFacts = Schema.Struct({
+  servers: Schema.Array(Schema.Struct({ id: M.ServerId, name: M.ServerName })),
+  guests: M.Count,
+  /** Pending invitations to one of its servers; organization invitations live in the provider. */
+  serverInvitations: M.Count,
+  plan: Schema.NullOr(B.Plan),
+  paidThrough: Schema.NullOr(M.Timestamp),
+  freeStart: Schema.Boolean,
+});
+/** Parsed preview facts. */
+export interface OrganizationFacts extends Schema.Schema.Type<typeof OrganizationFacts> {}
 
 /** Organizations with other members cannot be deleted with their owner; nothing was changed. */
 export class Blocked extends Schema.TaggedError<Blocked>()("AccountDeletionBlocked", {
@@ -80,6 +105,24 @@ export class Store extends Context.Service<
     readonly finish: (userId: P.UserId, at: M.Timestamp) => Operation<boolean>;
     /** Intents the scheduled sync resumes, oldest first. */
     readonly pending: () => Operation<ReadonlyArray<P.UserId>>;
+    /** One organization, live or being deleted; null when it never existed. */
+    readonly organization: (accountId: P.AccountId) => Operation<Organization | null>;
+    /** Servers, guests, plan and free start of a live organization, for the deletion preview. */
+    readonly organizationFacts: (
+      accountId: P.AccountId,
+      at: M.Timestamp,
+    ) => Operation<OrganizationFacts>;
+    /**
+     * Mark one organization and its servers for deletion by its owner, in one batch. Discovery
+     * hides them at once; an earlier mark is kept.
+     */
+    readonly beginOrganization: (
+      accountId: P.AccountId,
+      userId: P.UserId,
+      at: M.Timestamp,
+    ) => Operation<void>;
+    /** Organizations their owner deleted whose tombstone is not yet final, oldest first. */
+    readonly deletingOrganizations: () => Operation<ReadonlyArray<Organization>>;
   }
 >()("@talkto/account-deletion/Store") {}
 
@@ -88,6 +131,25 @@ export class Subscriptions extends Context.Service<
   Subscriptions,
   { readonly close: (accountId: P.AccountId) => Operation<void> }
 >()("@talkto/account-deletion/Subscriptions") {}
+
+/** Notices and counts beyond the directory; both degrade instead of failing a deletion. */
+export class Notices extends Context.Service<
+  Notices,
+  {
+    /** Email each member that the organization was deleted, once per member. */
+    readonly organizationDeleted: (notice: {
+      readonly accountId: P.AccountId;
+      readonly organization: typeof M.ServerName.Type;
+      readonly by: string;
+      readonly members: ReadonlyArray<P.UserId>;
+    }) => Operation<void>;
+    /** Registered agents on a server the person can read; null when it does not answer. */
+    readonly agents: (
+      actor: Model.Actor,
+      serverId: M.ServerId,
+    ) => Effect.Effect<typeof M.Count.Type | null>;
+  }
+>()("@talkto/account-deletion/Notices") {}
 
 /** Human-only account deletion. HTTP adapters supply website evidence; MCP has no route here. */
 export class Service extends Context.Service<
@@ -99,6 +161,22 @@ export class Service extends Context.Service<
       evidence: Model.Evidence,
       input: A.DeleteAccount,
     ) => Effect.Effect<A.DeletedAccount, Model.Failure | Blocked>;
+    /** What deleting one organization would do; its owner only. */
+    readonly organizationPlan: (
+      actor: Model.Actor,
+      evidence: Model.Evidence,
+      accountId: P.AccountId,
+    ) => Operation<A.OrganizationDeletionPlan>;
+    /**
+     * The owner deletes one organization, keeping their account: website session and the typed
+     * name. Repeating it after the first call continues the same deletion.
+     */
+    readonly deleteOrganization: (
+      actor: Model.Actor,
+      evidence: Model.Evidence,
+      accountId: P.AccountId,
+      input: A.DeleteOrganization,
+    ) => Operation<A.DeletedOrganization>;
     /** Scheduled completion of interrupted deletions; bounded per run. */
     readonly resume: () => Operation<void>;
   }
@@ -118,6 +196,14 @@ const unfinished = () =>
     code: "storage_unavailable",
     message: "Account deletion is still finishing. It continues automatically.",
   });
+const organizationWebsite = () =>
+  new Model.Failure({
+    code: "forbidden",
+    message:
+      "Delete an organization on the TalkTo website while signed in. API tokens and agents cannot.",
+  });
+const unavailableOrganization = () =>
+  new Model.Failure({ code: "not_found", message: "The organization is unavailable." });
 const tolerateMissing = <A>(fallback: A) =>
   Effect.catch((error: Model.Failure) =>
     error.code === "not_found" ? Effect.succeed(fallback) : Effect.fail(error),
@@ -132,6 +218,7 @@ export const layer = Layer.effect(
     const identity = yield* Platform.Identity;
     const directory = yield* Platform.Directory;
     const servers = yield* Platform.Servers;
+    const notices = yield* Notices;
 
     /** Every owned organization with its other active members, read from the provider now. */
     const survey = Effect.fn("AccountDeletion.survey")(function* (userId: P.UserId) {
@@ -193,6 +280,59 @@ export const layer = Layer.effect(
       if (account.organizationId !== null) yield* revokeInvitations(account.organizationId);
       yield* identity.deleteOrganization(account);
       yield* store.finishOrganization(account.id, yield* now);
+    });
+    /** Every active member of the organization, up to 2,000 (20 provider pages). */
+    const membersOf = Effect.fn("AccountDeletion.membersOf")(function* (
+      organizationId: P.OrganizationId,
+    ) {
+      const found: P.UserId[] = [];
+      let after: string | undefined;
+      for (let page = 0; page < 20; page++) {
+        const members = yield* identity
+          .members(organizationId, after, 100)
+          .pipe(tolerateMissing<P.Page<P.Member>>({ items: [], nextCursor: null }));
+        found.push(...members.items.map((member) => member.userId));
+        if (members.nextCursor === null) break;
+        after = members.nextCursor;
+      }
+      return found;
+    });
+    /**
+     * Email the other members before the provider forgets them. Keys are per organization and
+     * member, so a resumed deletion sends nothing twice. A failure is logged, never blocking.
+     */
+    const notifyMembers = Effect.fn("AccountDeletion.notifyMembers")(function* (
+      organization: Organization,
+    ) {
+      if (organization.organizationId === null) return;
+      const members = (yield* membersOf(organization.organizationId)).filter(
+        (userId) => userId !== organization.createdBy,
+      );
+      if (members.length === 0) return;
+      const by = yield* identity.user(organization.createdBy).pipe(
+        Effect.map(Guests.personName),
+        Effect.orElseSucceed(() => "The owner"),
+      );
+      yield* notices.organizationDeleted({
+        accountId: organization.id,
+        organization: organization.name,
+        by,
+        members,
+      });
+    });
+    /** One owner-deleted organization from its mark to its tombstone. Every step repeats safely. */
+    const removeOrganization = Effect.fn("AccountDeletion.removeOrganization")(function* (
+      organization: Organization,
+    ) {
+      yield* notifyMembers(organization).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Organization deletion notices not queued", { code: error.code }),
+        ),
+      );
+      yield* deleteOrganization({
+        id: organization.id,
+        organizationId: organization.organizationId,
+      });
     });
     /** Everything after sign-in has ended. Each step is idempotent and safe to repeat. */
     const finish = Effect.fn("AccountDeletion.finish")(function* (userId: P.UserId) {
@@ -291,13 +431,129 @@ export const layer = Layer.effect(
         });
         return { status: "finishing" as const };
       }),
+      organizationPlan: Effect.fn("AccountDeletion.organizationPlan")(
+        function* (actor, evidence, accountId) {
+          const organization = yield* store.organization(accountId);
+          if (organization === null || organization.organizationId === null)
+            return yield* unavailableOrganization();
+          if (organization.requestedAt !== null) {
+            if (organization.createdBy !== actor.userId) return yield* unavailableOrganization();
+            return {
+              accountId,
+              name: organization.name,
+              status: "in_progress" as const,
+              servers: [],
+              otherMembers: M.Count.make(0),
+              guests: M.Count.make(0),
+              pendingInvitations: M.Count.make(0),
+              plan: null,
+              paidThrough: null,
+              freeStart: false,
+              lastOrganization: false,
+              website: evidence.website,
+            };
+          }
+          const organizationId = organization.organizationId;
+          const membership = yield* identity.membership(organizationId, actor.userId);
+          if (membership === null || membership.status !== "active")
+            return yield* unavailableOrganization();
+          if (organization.createdBy !== actor.userId)
+            return yield* new Model.Failure({
+              code: "forbidden",
+              message: "Only the organization's owner can delete it.",
+            });
+          const [facts, members, invitations, memberships] = yield* Effect.all(
+            [
+              store.organizationFacts(accountId, yield* now),
+              identity.members(organizationId, undefined, 100),
+              identity.invitations(organizationId, undefined),
+              identity.memberships(actor.userId, undefined, 100),
+            ],
+            { concurrency: "unbounded" },
+          );
+          const agents = yield* Effect.forEach(
+            facts.servers,
+            (server) => notices.agents(actor, server.id),
+            { concurrency: 5 },
+          );
+          return {
+            accountId,
+            name: organization.name,
+            status: "ready" as const,
+            servers: facts.servers.map((server, index) => ({
+              ...server,
+              agents: agents[index] ?? null,
+            })),
+            otherMembers: M.Count.make(
+              members.items.filter((member) => member.userId !== actor.userId).length,
+            ),
+            guests: facts.guests,
+            pendingInvitations: M.Count.make(
+              invitations.items.filter((invite) => invite.state === "pending").length +
+                facts.serverInvitations,
+            ),
+            plan: facts.plan,
+            paidThrough: facts.paidThrough,
+            freeStart: facts.freeStart,
+            lastOrganization: !memberships.items.some(
+              (member) => member.status === "active" && member.organizationId !== organizationId,
+            ),
+            website: evidence.website,
+          };
+        },
+      ),
+      deleteOrganization: Effect.fn("AccountDeletion.deleteOrganizationByOwner")(
+        function* (actor, evidence, accountId, input) {
+          if (!evidence.website) return yield* organizationWebsite();
+          let organization = yield* store.organization(accountId);
+          if (organization === null || organization.organizationId === null)
+            return yield* unavailableOrganization();
+          if (organization.requestedAt === null) {
+            const membership = yield* identity.membership(
+              organization.organizationId,
+              actor.userId,
+            );
+            if (membership === null || membership.status !== "active")
+              return yield* unavailableOrganization();
+            if (organization.createdBy !== actor.userId)
+              return yield* new Model.Failure({
+                code: "forbidden",
+                message: "Only the organization's owner can delete it.",
+              });
+            if (input.confirmation.trim() !== organization.name)
+              return yield* new Model.Failure({
+                code: "invalid_input",
+                message: "Type the organization's name exactly to confirm deletion.",
+              });
+            yield* store.beginOrganization(accountId, actor.userId, yield* now);
+            organization = yield* store.organization(accountId);
+            if (organization === null) return yield* unfinished();
+            // IDs only: names and addresses stay out of logs.
+            yield* Effect.logInfo("Organization deletion started", { accountId });
+          } else if (organization.createdBy !== actor.userId)
+            return yield* unavailableOrganization();
+          if (organization.completedAt !== null) return { accountId, status: "deleted" as const };
+          const rest = yield* removeOrganization(organization).pipe(Effect.result);
+          if (rest._tag === "Success") return { accountId, status: "deleted" as const };
+          yield* Effect.logWarning("Organization deletion continues in the scheduled sync", {
+            code: rest.failure.code,
+          });
+          return { accountId, status: "finishing" as const };
+        },
+      ),
       resume: Effect.fn("AccountDeletion.resume")(function* () {
         const results = yield* Effect.forEach(
           yield* store.pending(),
           (userId) => advance(userId).pipe(Effect.result),
           { concurrency: 2 },
         );
-        if (results.some((result) => result._tag === "Failure")) return yield* unfinished();
+        const organizations = yield* Effect.forEach(
+          yield* store.deletingOrganizations(),
+          (organization) => removeOrganization(organization).pipe(Effect.result),
+          { concurrency: 2 },
+        );
+        if ([...results, ...organizations].some((result) => result._tag === "Failure"))
+          return yield* unfinished();
       }),
     });
   }),

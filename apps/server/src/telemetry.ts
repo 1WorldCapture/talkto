@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/cloudflare";
 import { Predicate, Schema } from "effect";
 import { ProviderFailure } from "./billing/model.js";
-import { runtimeFlags, stepOf, type Step } from "./failure-log.js";
+import { runtimeFlags, stepOf, type RuntimeFlags, type Step } from "./failure-log.js";
 import { sample } from "@talkto/telemetry/sampling";
 import {
   dataCollection,
@@ -118,10 +118,38 @@ function runtimeKind(error: Error | undefined): string | undefined {
   return undefined;
 }
 
-/** The failure class of an error, or of the provider error kept behind it with `withCause`. */
+/**
+ * The fixed failure class of a provider rejection, for a store's safe failure to carry as its
+ * own `failureKind`. Never the rejection's message.
+ */
+export function rejectionKind(cause: unknown): string | undefined {
+  return Predicate.isError(cause) ? runtimeKind(cause) : undefined;
+}
+
+/** A failure class a safe failure carries itself: one fixed lower-case word. */
+const CarriedKind = Schema.Struct({
+  failureKind: Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9_]{0,40}$/)),
+});
+
+/**
+ * An error and the errors kept behind it with `withCause`, nearest first: a public failure, the
+ * store's safe failure behind it, and the provider rejection behind that.
+ */
+function chain(error: Error | undefined): ReadonlyArray<Error> {
+  const links: Array<Error> = [];
+  for (let link = error; link !== undefined && links.length < 3; link = causes.get(link))
+    links.push(link);
+  return links;
+}
+
+/** The nearest failure class along an error's chain: one carried, or named from the runtime's. */
 function failureKind(error: Error | undefined): string | undefined {
-  const cause = error === undefined ? undefined : causes.get(error);
-  return runtimeKind(error) ?? runtimeKind(cause);
+  for (const link of chain(error)) {
+    const carried = Schema.decodeUnknownOption(CarriedKind)(link);
+    const kind = carried._tag === "Some" ? carried.value.failureKind : runtimeKind(link);
+    if (kind !== undefined) return kind;
+  }
+  return undefined;
 }
 
 /** Cloudflare's runtime flags, each its own tag, and the server-object call step that failed. */
@@ -140,16 +168,17 @@ const runtimeTagNames = [
 const flagTag = (value: boolean) => (value ? "true" : "false");
 
 /**
- * The flags Cloudflare set on an error, or on the provider error kept behind it with `withCause`,
- * which `failure_kind` reports only one of, and the step `atStep` recorded. Booleans and fixed
- * words only, never the message.
+ * The flags Cloudflare set on an error, or on the errors kept behind it with `withCause` (the
+ * nearest wins), which `failure_kind` reports only one of, and the step `atStep` recorded.
+ * Booleans and fixed words only, never the message.
  */
 function runtimeTags(error: Error | undefined): RuntimeTags {
   const tags: RuntimeTags = {};
   if (error === undefined) return tags;
-  const cause = causes.get(error);
-  const { retryable, overloaded, remote } =
-    cause === undefined ? runtimeFlags(error) : { ...runtimeFlags(cause), ...runtimeFlags(error) };
+  const { retryable, overloaded, remote } = chain(error).reduceRight<RuntimeFlags>(
+    (flags, link) => ({ ...flags, ...runtimeFlags(link) }),
+    {},
+  );
   if (retryable !== undefined) tags["talkto.cf_retryable"] = flagTag(retryable);
   if (overloaded !== undefined) tags["talkto.cf_overloaded"] = flagTag(overloaded);
   if (remote !== undefined) tags["talkto.cf_remote"] = flagTag(remote);
@@ -416,6 +445,27 @@ export function watchFallback(cause: unknown) {
       "talkto.operation": "TalkTo.getUpdates",
       ...runtimeTags(Predicate.isError(cause) ? cause : undefined),
       "talkto.step": "watch",
+    },
+  });
+}
+
+/** Thrown nowhere: names the Sentry issue for an agent operation acting as another person's agent. */
+class AgentNotOwned extends Error {
+  override readonly name = "AgentNotOwned";
+}
+
+/**
+ * Report, in watch mode, an agent operation that acted as an agent another person's access
+ * registered: enforce mode refuses it. A warning, since the call went ahead. Tags carry the
+ * operation only, never a participant, person, server or message; the caller limits repeats.
+ */
+export function agentNotOwned(operation: string) {
+  Sentry.captureException(new AgentNotOwned("An agent operation acted as another person's agent"), {
+    level: "warning",
+    fingerprint: ["talkto-agent-not-owned"],
+    tags: {
+      "talkto.code": "agent_not_owned",
+      "talkto.operation": Schema.is(Operation)(operation) ? operation : "unknown",
     },
   });
 }

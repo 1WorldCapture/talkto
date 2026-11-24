@@ -15,6 +15,7 @@ import {
   guestInvited,
   guestLinkRule,
   inviteCopy,
+  serverAccessScope,
   signUpLink,
 } from "./invite-copy.js";
 import "./removed-tag.css";
@@ -568,9 +569,7 @@ export function AccessDialog({
   const accessDenied = denied(grants.error) || denied(members.error);
   return (
     <Dialog title={`Server access · ${server.name}`} close={close}>
-      <p className="muted">
-        Access covers each person and the agents connected through their account.
-      </p>
+      <p className="muted">{serverAccessScope}</p>
       <Notice error={grants.error ?? members.error ?? action.error ?? inviteAgain.error} />
       {invited && (
         <div className="notice" role="status">

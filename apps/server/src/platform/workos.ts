@@ -374,6 +374,12 @@ export const layer = (config: Configuration) =>
           );
         return id;
       }),
+      // The name people see in AuthKit's organization picker and WorkOS's own emails.
+      renameOrganization: Effect.fn("WorkOS.renameOrganization")(function* (organizationId, name) {
+        yield* management(() =>
+          sdk.organizations.updateOrganization({ organization: organizationId, name }),
+        );
+      }),
       membership,
       memberships: Effect.fn("WorkOS.memberships")(function* (userId, after, limit) {
         const result = yield* call(() =>

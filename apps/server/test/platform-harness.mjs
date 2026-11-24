@@ -176,6 +176,8 @@ export async function start(t, options = {}) {
   if (options.serverLimits !== undefined)
     reads.TALKTO_SERVER_LIMITS = JSON.stringify(options.serverLimits);
   if (options.readLimits !== undefined) reads.TALKTO_READ_LIMITS = options.readLimits;
+  // Unset means enforce, as on a local or self-hosted copy; hosted TalkTo sets watch.
+  if (options.agentOwnership !== undefined) reads.TALKTO_AGENT_OWNERSHIP = options.agentOwnership;
   if (options.participantReadsPerMinute !== undefined)
     reads.TALKTO_PARTICIPANT_READS_PER_MINUTE = String(options.participantReadsPerMinute);
   if (options.storageUnpaidBytes !== undefined)
@@ -366,6 +368,8 @@ export async function start(t, options = {}) {
         "0022.sql",
         "0023.sql",
         "0024.sql",
+        "0025.sql",
+        "0026.sql",
       ].map((file) =>
         readFile(new URL(`../src/platform/migrations/${file}`, import.meta.url), "utf8"),
       ),

@@ -77,6 +77,8 @@ export const AccountContext = Schema.Struct({
     createServer: Schema.Boolean,
     manageMembers: Schema.Boolean,
     manageBilling: Schema.Boolean,
+    /** The owner renames the organization, on the website only. */
+    rename: Schema.Boolean,
   }),
 });
 /** Parsed account context. */
@@ -179,6 +181,43 @@ export const Create = Schema.Struct({ name: M.ServerName, requestKey: M.RequestK
 });
 /** Parsed creation request. */
 export interface Create extends Schema.Schema.Type<typeof Create> {}
+/**
+ * Rename an organization or a server, on the website only. The name follows creation's rules. The
+ * request key makes a retry safe: the same key and name return the earlier result unchanged; the
+ * same key with another name is `idempotency_conflict`.
+ */
+export const Rename = Schema.Struct({ name: M.ServerName, requestKey: M.RequestKey }).annotate({
+  parseOptions: { onExcessProperty: "error" },
+});
+/** Parsed rename request. */
+export interface Rename extends Schema.Schema.Type<typeof Rename> {}
+/** The organization after a rename; `changed` is false for a retry or the exact current name. */
+export const RenamedAccount = Schema.Struct({ account: AccountContext, changed: Schema.Boolean });
+/** Parsed organization rename result. */
+export interface RenamedAccount extends Schema.Schema.Type<typeof RenamedAccount> {}
+/** The server after a rename; `changed` is false for a retry or the exact current name. */
+export const RenamedServer = Schema.Struct({ server: ServerContext, changed: Schema.Boolean });
+/** Parsed server rename result. */
+export interface RenamedServer extends Schema.Schema.Type<typeof RenamedServer> {}
+/** Most server renames one listing returns, newest first. */
+export const maxServerRenames = 25;
+/**
+ * One recorded server name change. `renamedBy` is the person's display name, or null when their
+ * profile is gone.
+ */
+export const ServerRename = Schema.Struct({
+  id: Schema.String.check(Schema.isUUID(4)),
+  previousName: M.ServerName,
+  name: M.ServerName,
+  renamedAt: M.Timestamp,
+  renamedBy: Schema.NullOr(Schema.String),
+});
+/** Parsed server rename. */
+export interface ServerRename extends Schema.Schema.Type<typeof ServerRename> {}
+/** A server's recent renames, newest first. */
+export const ServerRenames = Schema.Struct({ items: Schema.Array(ServerRename) });
+/** Parsed server rename listing. */
+export interface ServerRenames extends Schema.Schema.Type<typeof ServerRenames> {}
 /** Exact-name confirmation for irreversible server deletion. */
 export const DeleteServer = Schema.Struct({ confirmation: M.ServerName }).annotate({
   parseOptions: { onExcessProperty: "error" },
@@ -344,6 +383,17 @@ export const Api = HttpApi.make("talkto-platform").add(
         success: response(ServerDetail),
         error: Envelope.failures,
       }),
+      HttpApiEndpoint.post("renameServer", "/v1/accounts/:accountId/servers/:serverId/rename", {
+        params: { accountId: AccountId, serverId: M.ServerId },
+        payload: Rename,
+        success: response(RenamedServer),
+        error: Envelope.failures,
+      }),
+      HttpApiEndpoint.get("serverRenames", "/v1/accounts/:accountId/servers/:serverId/renames", {
+        params: { accountId: AccountId, serverId: M.ServerId },
+        success: response(ServerRenames),
+        error: Envelope.failures,
+      }),
       HttpApiEndpoint.post("deleteServer", "/v1/accounts/:accountId/servers/:serverId/delete", {
         params: { accountId: AccountId, serverId: M.ServerId },
         payload: DeleteServer,
@@ -383,6 +433,12 @@ export const Api = HttpApi.make("talkto-platform").add(
       HttpApiEndpoint.post("createAccount", "/v1/accounts", {
         payload: Create,
         success: response(AccountContext),
+        error: Envelope.failures,
+      }),
+      HttpApiEndpoint.post("renameAccount", "/v1/accounts/:accountId/rename", {
+        params: { accountId: AccountId },
+        payload: Rename,
+        success: response(RenamedAccount),
         error: Envelope.failures,
       }),
       HttpApiEndpoint.get("listMembers", "/v1/accounts/:accountId/members", {

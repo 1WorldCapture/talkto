@@ -59,6 +59,13 @@ export const Payload = Schema.Union([
     inviter: Schema.String,
     expiresAt: M.Timestamp,
   }),
+  /** The owner deleted an organization: to each of its other members, once. */
+  Schema.Struct({
+    kind: Schema.Literal("organization_deleted"),
+    accountId: P.AccountId,
+    organization: Schema.String,
+    by: Schema.String,
+  }),
   /** The invited person accepted: to the person who invited them. */
   Schema.Struct({
     kind: Schema.Literal("server_joined"),

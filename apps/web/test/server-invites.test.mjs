@@ -104,6 +104,7 @@ test("the inviter reads plainly whether an email went out, when links expire and
   );
   for (const text of [
     copy.guestInviteScope,
+    copy.serverAccessScope,
     copy.guestLinksRule,
     copy.guestInvited("a@example.com", true),
     copy.guestInvited("a@example.com", false),
@@ -111,6 +112,26 @@ test("the inviter reads plainly whether an email went out, when links expire and
     ...Object.values(copy.guestPeopleLimit("Free", 4)),
   ])
     plain(text);
+});
+
+test("giving someone a server says they can read all of it, history included", async (t) => {
+  const { copy } = await load(t);
+  assert.equal(
+    copy.serverReadScope,
+    "They can read every TalkTo channel and chat on this server, including earlier messages.",
+  );
+  for (const scope of [copy.guestInviteScope, copy.serverAccessScope]) {
+    assert.ok(scope.includes(copy.serverReadScope), scope);
+    assert.doesNotMatch(scope, /private/i);
+  }
+  // The guest's join page says the same to the guest.
+  assert.equal(
+    copy.joinedReadScope,
+    "You can read every TalkTo channel and chat on this server, including earlier messages.",
+  );
+  // Organization invitations give no server, so they say nothing about reading one.
+  for (const scope of [copy.inviteScope, copy.accessInviteScope])
+    assert.doesNotMatch(scope, /read/i);
 });
 
 test("the people limit names Free only with no paid period or trial where the Free plan exists", async (t) => {

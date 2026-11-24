@@ -14,6 +14,10 @@ import type * as Platform from "../platform/service.js";
 import * as Provisioning from "../platform/provisioning-policy.js";
 import * as Servers from "../platform/servers.js";
 import * as Telemetry from "../telemetry.js";
+import * as EmailHttp from "../email/http.js";
+import * as D from "@talkto/api/dashboard";
+import * as M from "@talkto/api/models";
+import { Schema } from "effect";
 import * as AccountD1 from "./d1.js";
 import * as AccountDeletion from "./service.js";
 
@@ -31,6 +35,35 @@ export const application = (env: Env, identity: Layer.Layer<Platform.Identity>) 
       D1.layer(env.PLATFORM, Provisioning.configuration(env)),
       Servers.layer(env.SERVERS, capabilities(env)),
       identity,
+      Layer.succeed(
+        AccountDeletion.Notices,
+        AccountDeletion.Notices.of({
+          organizationDeleted: (notice) =>
+            EmailHttp.queueOrganizationDeleted(env, notice).pipe(
+              Effect.mapError(
+                () =>
+                  new Model.Failure({
+                    code: "storage_unavailable",
+                    message: "The members' emails could not be queued.",
+                  }),
+              ),
+            ),
+          // The server's own count, under the owner's grant; any failure leaves the count unknown.
+          agents: (actor, serverId) =>
+            Effect.tryPromise(() =>
+              env.SERVERS.getByName(serverId).readSummary(actor.principalKey),
+            ).pipe(
+              Effect.flatMap(
+                Schema.decodeUnknownEffect(Schema.NullOr(Schema.Struct({ data: D.Summary }))),
+              ),
+              Effect.map(
+                (summary): typeof M.Count.Type | null =>
+                  summary?.data.server.participantCount ?? null,
+              ),
+              Effect.orElseSucceed(() => null),
+            ),
+        }),
+      ),
       Layer.succeed(
         AccountDeletion.Subscriptions,
         AccountDeletion.Subscriptions.of({
@@ -69,13 +102,23 @@ const handlers = HttpApiBuilder.group(A.Api, "account", (routes) =>
       deletionPlan: () => respond(service.plan),
       deleteAccount: ({ payload }) =>
         respond((actor, evidence) => service.delete(actor, evidence, payload)),
+      organizationDeletionPlan: ({ params }) =>
+        respond((actor, evidence) => service.organizationPlan(actor, evidence, params.accountId)),
+      deleteOrganization: ({ params, payload }) =>
+        respond((actor, evidence) =>
+          service.deleteOrganization(actor, evidence, params.accountId, payload),
+        ),
     });
   }),
 );
 
 /** Whether a path belongs to this adapter. */
 export const isAccountPath = (path: string) =>
-  path === "/v1/me/deletion" || path === "/v1/me/delete";
+  path === "/v1/me/deletion" ||
+  path === "/v1/me/delete" ||
+  /^\/v1\/accounts\/[^/]+\/(?:deletion|delete)$/.test(path);
+/** Deleting the person's own account ends their session; deleting an organization does not. */
+export const endsSession = (path: string) => path === "/v1/me/delete";
 
 /** Thin authenticated adapter; the website session is checked by the operation itself. */
 export const handle = Effect.fn("AccountHttp.handle")(function* (

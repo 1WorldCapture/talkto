@@ -264,11 +264,15 @@ const handlers = HttpApiBuilder.group(Api, "server", (routes) =>
           reads,
           params.serverId,
           (access) =>
-            wakes.revoke(access, {
-              serverId: params.serverId,
-              participantId: params.participantId,
-              wakeId: params.wakeId,
-            }),
+            wakes.revoke(
+              access,
+              {
+                serverId: params.serverId,
+                participantId: params.participantId,
+                wakeId: params.wakeId,
+              },
+              "person",
+            ),
           { operation: "revokeWake", participantId: params.participantId, kind: "admin" },
         ),
       renameParticipant: ({ params, payload }) =>

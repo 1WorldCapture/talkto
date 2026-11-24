@@ -63,6 +63,56 @@ export const DeletedAccount = Schema.Struct({ status: Schema.Literals(["deleted"
 /** Parsed deletion outcome. */
 export interface DeletedAccount extends Schema.Schema.Type<typeof DeletedAccount> {}
 
+/** A server erased with its organization; `agents` is null when the server did not answer. */
+export const OrganizationServer = Schema.Struct({
+  id: M.ServerId,
+  name: M.ServerName,
+  agents: Schema.NullOr(M.Count),
+});
+/** Parsed server of an organization being deleted. */
+export interface OrganizationServer extends Schema.Schema.Type<typeof OrganizationServer> {}
+/**
+ * What deleting one organization would do, read fresh for its owner. Deletion is immediate and
+ * permanent: every server is erased, members and guests lose access, a paid plan is canceled at
+ * once without a refund, and usage and any free start stay spent. `lastOrganization` is true when
+ * the person belongs to no other organization; their TalkTo account stays either way.
+ */
+export const OrganizationDeletionPlan = Schema.Struct({
+  accountId: P.AccountId,
+  name: M.ServerName,
+  status: Schema.Literals(["ready", "in_progress"]),
+  servers: Schema.Array(OrganizationServer),
+  /** Active members besides the owner, from the first page of up to 100. */
+  otherMembers: M.Count,
+  /** People who can open one server here without being members. */
+  guests: M.Count,
+  pendingInvitations: M.Count,
+  plan: Schema.NullOr(B.Plan),
+  /** End of the paid period covering now; null without one. */
+  paidThrough: Schema.NullOr(M.Timestamp),
+  /** The organization holds the free start or the Free plan, which does not return. */
+  freeStart: Schema.Boolean,
+  lastOrganization: Schema.Boolean,
+  website: Schema.Boolean,
+});
+/** Parsed organization deletion plan. */
+export interface OrganizationDeletionPlan extends Schema.Schema.Type<
+  typeof OrganizationDeletionPlan
+> {}
+/** The organization's current name, typed to confirm deleting it. */
+export const DeleteOrganization = Schema.Struct({
+  confirmation: Schema.String.check(Schema.isMaxLength(400)),
+}).annotate({ parseOptions: { onExcessProperty: "error" } });
+/** Parsed organization deletion confirmation. */
+export interface DeleteOrganization extends Schema.Schema.Type<typeof DeleteOrganization> {}
+/** `finishing`: the organization is gone from every view; erasure completes within minutes. */
+export const DeletedOrganization = Schema.Struct({
+  accountId: P.AccountId,
+  status: Schema.Literals(["deleted", "finishing"]),
+});
+/** Parsed organization deletion outcome. */
+export interface DeletedOrganization extends Schema.Schema.Type<typeof DeletedOrganization> {}
+
 /** The person's own account. Website session only for deletion; no MCP surface. */
 export const Api = HttpApi.make("talkto-account").add(
   HttpApiGroup.make("account")
@@ -74,6 +124,17 @@ export const Api = HttpApi.make("talkto-account").add(
       HttpApiEndpoint.post("deleteAccount", "/v1/me/delete", {
         payload: DeleteAccount,
         success: P.response(DeletedAccount),
+        error: Envelope.failures,
+      }),
+      HttpApiEndpoint.get("organizationDeletionPlan", "/v1/accounts/:accountId/deletion", {
+        params: { accountId: P.AccountId },
+        success: P.response(OrganizationDeletionPlan),
+        error: Envelope.failures,
+      }),
+      HttpApiEndpoint.post("deleteOrganization", "/v1/accounts/:accountId/delete", {
+        params: { accountId: P.AccountId },
+        payload: DeleteOrganization,
+        success: P.response(DeletedOrganization),
         error: Envelope.failures,
       }),
     )

@@ -135,6 +135,15 @@ export class RenameNotAllowed extends Schema.TaggedError<RenameNotAllowed>()("Re
 }) {}
 
 /**
+ * An agent operation named an agent registered through another person's access. Agents act only
+ * as agents their own person registered; TalkTo cannot tell that person's agents apart, so any of
+ * them may act as the others, but never as another person's agents.
+ */
+export class AgentNotOwned extends Schema.TaggedError<AgentNotOwned>()("AgentNotOwned", {
+  message: Schema.String,
+}) {}
+
+/**
  * A person removed this agent from the server on the dashboard. Every agent operation that names
  * its participant ID is refused until a person restores it; its messages stay in history.
  */
@@ -194,6 +203,7 @@ export type Failure =
   | FilesUnavailable
   | NotAnAgent
   | RenameNotAllowed
+  | AgentNotOwned
   | ParticipantRemoved
   | TransferNotFound
   | TransferExpired

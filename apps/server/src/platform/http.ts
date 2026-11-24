@@ -74,6 +74,13 @@ const respond = Effect.fn("PlatformHttp.respond")(function* <A>(
   );
   return { data, meta: context.meta };
 });
+/** Like `respond`, with what the Worker vouches for about the request: a website session or not. */
+const respondWithEvidence = Effect.fn("PlatformHttp.respondWithEvidence")(function* <A>(
+  operation: (actor: Model.Actor, evidence: Model.Evidence) => Effect.Effect<A, Model.Failure>,
+) {
+  const context = yield* RequestContext;
+  return yield* respond((actor) => operation(actor, context.evidence ?? Model.noEvidence));
+});
 const handlers = HttpApiBuilder.group(P.Api, "platform", (routes) =>
   Effect.gen(function* () {
     const service = yield* Platform.Service;
@@ -83,6 +90,16 @@ const handlers = HttpApiBuilder.group(P.Api, "platform", (routes) =>
         respond((actor) => activity.home(actor, params.accountId, query)),
       activity: ({ params, query }) =>
         respond((actor) => activity.feed(actor, params.accountId, query)),
+      renameAccount: ({ params, payload }) =>
+        respondWithEvidence((actor, evidence) =>
+          service.renameAccount(actor, evidence, params.accountId, payload),
+        ),
+      renameServer: ({ params, payload }) =>
+        respondWithEvidence((actor, evidence) =>
+          service.renameServer(actor, evidence, params.accountId, params.serverId, payload),
+        ),
+      serverRenames: ({ params }) =>
+        respond((actor) => service.serverRenames(actor, params.accountId, params.serverId)),
       deleteServer: ({ params, payload }) =>
         respond((actor) => service.deleteServer(actor, params.accountId, params.serverId, payload)),
       managedServer: ({ params }) =>

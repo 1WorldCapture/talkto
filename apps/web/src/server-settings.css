@@ -45,3 +45,17 @@
   display: block;
   line-height: 1.6;
 }
+/* Settings sections stack with the page's usual gap; the current name reads like a heading. */
+.ops-settings-stack {
+  display: grid;
+  gap: 16px;
+}
+.ops-settings-stack > .ops-page-bar {
+  margin-bottom: 0;
+}
+.ops-rename-settings .ops-current-name {
+  display: inline-block;
+  margin-bottom: 4px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}

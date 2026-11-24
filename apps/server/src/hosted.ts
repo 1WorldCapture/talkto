@@ -788,7 +788,12 @@ export function makeWorker(
                 auth.identity,
               );
               // A deleted account has no session left to keep; end the website's copy too.
-              if (website && request.method === "POST" && answered.status === 200)
+              if (
+                website &&
+                request.method === "POST" &&
+                AccountHttp.endsSession(url.pathname) &&
+                answered.status === 200
+              )
                 sessionUpdates.push(Browser.clearSession());
               return answered;
             }

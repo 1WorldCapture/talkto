@@ -47,11 +47,25 @@ export const allowanceRule =
   "Messages on a server count toward its owner organization’s allowance, whoever sends them.";
 
 /**
+ * What anyone given a server can read, said wherever access is given: the guest invite and the
+ * Access dialog. Every channel and direct chat is readable by everyone with access, history
+ * included ("direct, not private", docs/site-facts.md).
+ */
+export const serverReadScope =
+  "They can read every TalkTo channel and chat on this server, including earlier messages.";
+
+/** The same on the guest's join page, said to the guest once they have joined. */
+export const joinedReadScope =
+  "You can read every TalkTo channel and chat on this server, including earlier messages.";
+
+/** The Access dialog, where a member of the organization is given one server. */
+export const serverAccessScope = `Access covers each person and the agents connected through their account. ${serverReadScope}`;
+
+/**
  * Inviting someone to one server from its page (docs/dashboard-api.md, "Server guests"). They
  * become a guest: they open that server and nothing else of the organization, and keep their own.
  */
-export const guestInviteScope =
-  "They can open this server and nothing else in your organization. They sign in with the address you invite.";
+export const guestInviteScope = `They can open this server and nothing else in your organization. ${serverReadScope} They sign in with the address you invite.`;
 
 /** The answer to Invite or Resend. Until TalkTo sends these emails itself, `emailed` is false. */
 export const guestInvited = (email: string, emailed: boolean) =>

@@ -33,6 +33,11 @@ export class Identity extends Context.Service<
     readonly cancel: (id: P.InvitationId) => Operation<P.Invitation>;
     readonly deactivate: (member: P.Member) => Operation<P.Member>;
     readonly createAccount: (reservation: Model.AccountReservation) => Operation<P.OrganizationId>;
+    /** Mirror an organization's TalkTo name on its identity-provider organization. */
+    readonly renameOrganization: (
+      organizationId: P.OrganizationId,
+      name: typeof M.ServerName.Type,
+    ) => Operation<void>;
     readonly membership: (
       organizationId: P.OrganizationId,
       userId: P.UserId,
@@ -113,6 +118,32 @@ export class Directory extends Context.Service<
     ) => Operation<Model.ServerReservation>;
     readonly server: (id: M.ServerId) => Operation<Model.ServerReservation | null>;
     readonly ready: (id: M.ServerId) => Operation<void>;
+    /**
+     * Rename an organization or a server and record it in one batch. The exact current name changes
+     * nothing; a request key the person already used returns that rename's outcome unchanged, or
+     * `idempotency_conflict` for another name.
+     */
+    readonly rename: (
+      actor: Model.Actor,
+      target: Model.RenameTarget,
+      input: P.Rename,
+      at: M.Timestamp,
+    ) => Operation<Model.Renamed>;
+    /** The target's current name and revision; null once it is deleted. */
+    readonly currentName: (target: Model.RenameTarget) => Operation<Model.CurrentName | null>;
+    /** Record that the target's mirror holds `revision`, confirming every rename up to it. */
+    readonly nameApplied: (
+      target: Model.RenameTarget,
+      revision: number,
+      at: M.Timestamp,
+    ) => Operation<void>;
+    /** Targets with a rename their mirror has not confirmed, oldest first, at most 20. */
+    readonly pendingNames: () => Operation<ReadonlyArray<Model.RenameTarget>>;
+    /** A server's newest renames, newest first. */
+    readonly serverRenames: (
+      id: M.ServerId,
+      limit: number,
+    ) => Operation<ReadonlyArray<Model.ServerRenameRecord>>;
     readonly deletion: (id: M.ServerId) => Operation<Model.ServerDeletion | null>;
     readonly beginDeletion: (id: M.ServerId, at: M.Timestamp) => Operation<Model.ServerDeletion>;
     readonly finishDeletion: (id: M.ServerId, at: M.Timestamp) => Operation<void>;
@@ -169,6 +200,8 @@ export class Servers extends Context.Service<
     readonly provision: (server: Model.ServerReservation) => Operation<void>;
     readonly erase: (deletion: Model.ServerDeletion) => Operation<void>;
     readonly apply: (command: Model.AccessCommand) => Operation<void>;
+    /** Give the server object its new name; an older revision than it holds changes nothing. */
+    readonly rename: (name: Model.ServerName) => Operation<void>;
     /** After an account deletion: rename the person's participant on that server, if any. */
     readonly forgetPerson: (command: Model.AccessCommand) => Operation<void>;
     /**
@@ -188,6 +221,13 @@ export class Service extends Context.Service<
       accountId: P.AccountId,
     ) => Operation<P.AccountContext>;
     readonly createAccount: (actor: Model.Actor, input: P.Create) => Operation<P.AccountContext>;
+    /** The owner renames the organization in TalkTo and in WorkOS. Website sessions only. */
+    readonly renameAccount: (
+      actor: Model.Actor,
+      evidence: Model.Evidence,
+      accountId: P.AccountId,
+      input: P.Rename,
+    ) => Operation<P.RenamedAccount>;
     readonly listAccounts: (
       actor: Model.Actor,
       input: P.IdentityListing,
@@ -207,6 +247,23 @@ export class Service extends Context.Service<
       accountId: P.AccountId,
       serverId: M.ServerId,
     ) => Operation<P.ServerDetail>;
+    /**
+     * The people who manage the server's settings rename it; agents see the new name in
+     * `get_context`. Website sessions only.
+     */
+    readonly renameServer: (
+      actor: Model.Actor,
+      evidence: Model.Evidence,
+      accountId: P.AccountId,
+      serverId: M.ServerId,
+      input: P.Rename,
+    ) => Operation<P.RenamedServer>;
+    /** The server's recent renames, for anyone who can open it in the organization. */
+    readonly serverRenames: (
+      actor: Model.Actor,
+      accountId: P.AccountId,
+      serverId: M.ServerId,
+    ) => Operation<P.ServerRenames>;
     readonly deleteServer: (
       actor: Model.Actor,
       accountId: P.AccountId,
@@ -405,8 +462,24 @@ const accountContext = (value: P.Account, actor: Model.Actor): P.AccountContext 
     createServer: true,
     manageMembers: value.createdBy === actor.userId,
     manageBilling: value.createdBy === actor.userId,
+    rename: value.createdBy === actor.userId,
   },
 });
+/** Renaming changes what every member and agent sees, so it needs the person on the website. */
+const websiteOnly = (what: "an organization" | "a server") =>
+  new Model.Failure({
+    code: "forbidden",
+    message: `Rename ${what} on the TalkTo website while signed in. API tokens and agents cannot.`,
+  });
+/** A person's label in a rename notice: their name, else their email address. */
+const personLabel = (user: P.User) =>
+  [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
+/** Whether the caller's grant lets them read the server's messages now. */
+const readable = (server: Model.ServerReservation, grant: Model.AccessCommand | null) =>
+  server.status === "ready" &&
+  grant !== null &&
+  grant.revokedAt === null &&
+  grant.revision === grant.appliedRevision;
 
 /** Apply membership policy before management operations; messaging never uses this layer. */
 export const layer = Layer.effect(
@@ -464,6 +537,46 @@ export const layer = Layer.effect(
       at: M.Timestamp,
     ) => admitInvitation(identity, invitations, actor, account, email, kind, at);
     const deliverCommand = (command: Model.AccessCommand) => deliver(directory, servers, command);
+    /**
+     * Copy the target's current name to its mirror (WorkOS, or the server object) and record it
+     * confirmed. When a newer rename landed meanwhile, the newer name is delivered too, so a slow
+     * earlier delivery never leaves the mirror on an older name.
+     */
+    const syncName = Effect.fn("Platform.syncName")(function* (target: Model.RenameTarget) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const current = yield* directory.currentName(target);
+        if (current === null || (attempt === 0 && !current.pending)) return;
+        if (target.kind === "organization")
+          yield* identity.renameOrganization(current.organizationId, current.name);
+        else
+          yield* servers.rename({
+            serverId: target.id,
+            name: current.name,
+            revision: current.revision,
+          });
+        const latest = yield* directory.currentName(target);
+        if (latest === null) return;
+        if (latest.revision === current.revision)
+          return yield* directory.nameApplied(target, current.revision, yield* now);
+      }
+    });
+    /** The caller's view of a server they may manage or read in this organization. */
+    const managedView = Effect.fn("Platform.managedView")(function* (
+      actor: Model.Actor,
+      accountId: P.AccountId,
+      id: M.ServerId,
+    ) {
+      // The server and grant reads start with the membership check; nothing is used until it passes.
+      const [, server, grant] = yield* Effect.all(
+        [account(actor, accountId), directory.server(id), directory.grant(id, actor.userId)],
+        { concurrency: "unbounded" },
+      );
+      if (server === null || server.accountId !== accountId) return yield* denied();
+      const reader = readable(server, grant);
+      const owner = server.createdBy === actor.userId;
+      if (!owner && !reader) return yield* denied();
+      return { server, reader, owner };
+    });
     const erase = Effect.fn("Platform.erase")(function* (deletion: Model.ServerDeletion) {
       if (deletion.completedAt !== null) return;
       yield* servers.erase(deletion);
@@ -483,6 +596,32 @@ export const layer = Layer.effect(
         // The next membership check for this account can start with its account read.
         learn(value);
         return accountContext(value, actor);
+      }),
+      renameAccount: Effect.fn("Platform.renameAccount")(function* (actor, evidence, id, input) {
+        if (!evidence.website) return yield* websiteOnly("an organization");
+        const { value } = yield* account(actor, id);
+        // The owner manages members and billing; the same person renames the organization.
+        if (value.createdBy !== actor.userId)
+          return yield* new Model.Failure({
+            code: "forbidden",
+            message: "Only the organization's owner can rename it.",
+          });
+        const target = { kind: "organization", id } as const;
+        const renamed = yield* directory.rename(actor, target, input, yield* now);
+        yield* syncName(target).pipe(
+          Effect.mapError(
+            () =>
+              new Model.Failure({
+                code: "identity_unavailable",
+                message:
+                  "The organization is renamed in TalkTo, but WorkOS has not confirmed it, so the sign-in page may still show the old name. TalkTo retries automatically; retrying is safe.",
+              }),
+          ),
+        );
+        return {
+          account: accountContext({ ...value, name: renamed.current.name }, actor),
+          changed: renamed.changed,
+        };
       }),
       listAccounts: Effect.fn("Platform.listAccounts")(function* (actor, input) {
         const selection = yield* IdentityDirectory.selection(actor.userId, null, input);
@@ -533,29 +672,79 @@ export const layer = Layer.effect(
         return yield* directory.managedServers(actor.userId, id, input);
       }),
       managedServer: Effect.fn("Platform.managedServer")(function* (actor, accountId, id) {
-        // The server and grant reads start with the membership check; nothing is used until it passes.
-        const [, server, grant] = yield* Effect.all(
-          [account(actor, accountId), directory.server(id), directory.grant(id, actor.userId)],
-          { concurrency: "unbounded" },
-        );
-        if (server === null || server.accountId !== accountId) return yield* denied();
-        const readable =
-          server.status === "ready" &&
-          grant !== null &&
-          grant.revokedAt === null &&
-          grant.revision === grant.appliedRevision;
-        const owner = server.createdBy === actor.userId;
-        if (!owner && !readable) return yield* denied();
+        const { server, reader, owner } = yield* managedView(actor, accountId, id);
         // Only a reader sees the remote; management alone never reaches the server's files.
-        const files = readable ? yield* servers.files(id) : null;
+        const files = reader ? yield* servers.files(id) : null;
         return {
           ...publicServer(server),
           permissions: {
-            readMessages: readable,
+            readMessages: reader,
             manageAccess: owner,
             resume: owner && server.status === "provisioning",
           },
           files,
+        };
+      }),
+      renameServer: Effect.fn("Platform.renameServer")(
+        function* (actor, evidence, accountId, id, input) {
+          if (!evidence.website) return yield* websiteOnly("a server");
+          const { server, reader, owner } = yield* managedView(actor, accountId, id);
+          // The people who see the server's Settings tab rename it; readers are told why not.
+          if (!owner)
+            return yield* new Model.Failure({
+              code: "forbidden",
+              message: "Only the person who manages this server can rename it.",
+            });
+          const target = { kind: "server", id } as const;
+          const renamed = yield* directory.rename(actor, target, input, yield* now);
+          yield* syncName(target).pipe(
+            Effect.mapError(
+              () =>
+                new Model.Failure({
+                  code: "storage_unavailable",
+                  message:
+                    "The server is renamed, but it has not yet confirmed its new name, so agents may still see the old one. TalkTo retries automatically; retrying is safe.",
+                }),
+            ),
+          );
+          return {
+            server: {
+              ...publicServer({ ...server, name: renamed.current.name }),
+              permissions: {
+                readMessages: reader,
+                manageAccess: owner,
+                resume: owner && server.status === "provisioning",
+              },
+            },
+            changed: renamed.changed,
+          };
+        },
+      ),
+      serverRenames: Effect.fn("Platform.serverRenames")(function* (actor, accountId, id) {
+        yield* managedView(actor, accountId, id);
+        const records = yield* directory.serverRenames(id, P.maxServerRenames);
+        const people = [
+          ...new Set(
+            records.flatMap((record) => (record.renamedBy === null ? [] : [record.renamedBy])),
+          ),
+        ];
+        // A profile that cannot be read leaves its notices unattributed rather than failing them.
+        const labels = new Map(
+          yield* Effect.forEach(
+            people,
+            (userId) =>
+              identity.user(userId).pipe(
+                Effect.map((user) => [userId, personLabel(user)] as const),
+                Effect.orElseSucceed(() => [userId, null] as const),
+              ),
+            { concurrency: 5 },
+          ),
+        );
+        return {
+          items: records.map(({ renamedBy, ...record }) => ({
+            ...record,
+            renamedBy: renamedBy === null ? null : (labels.get(renamedBy) ?? null),
+          })),
         };
       }),
       deleteServer: Effect.fn("Platform.deleteServer")(function* (actor, accountId, id, input) {
@@ -798,6 +987,12 @@ export const layer = Layer.effect(
           (deletion) => erase(deletion).pipe(Effect.result),
           { concurrency: 5 },
         );
+        // Names WorkOS or a server object has not confirmed yet, each independently.
+        const names = yield* Effect.forEach(
+          yield* directory.pendingNames(),
+          (target) => syncName(target).pipe(Effect.result),
+          { concurrency: 5 },
+        );
         const pending = yield* directory.pending();
         // Failure of one server must not prevent delivery to unrelated servers.
         const results = yield* Effect.forEach(
@@ -806,10 +1001,10 @@ export const layer = Layer.effect(
           { concurrency: 5 },
         );
         if (synchronization._tag === "Failure") return yield* synchronization.failure;
-        if ([...results, ...deletions].some((result) => result._tag === "Failure"))
+        if ([...results, ...deletions, ...names].some((result) => result._tag === "Failure"))
           return yield* new Model.Failure({
             code: "storage_unavailable",
-            message: "Some access changes remain pending and will be retried.",
+            message: "Some access or name changes remain pending and will be retried.",
           });
       }),
     });

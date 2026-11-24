@@ -49,20 +49,30 @@ export interface Interface {
     participantId: M.ParticipantId,
     input: W.Register,
   ) => Outcome<W.Wake, E.InvalidInput | Selected>;
+  /**
+   * Delete one or all of an agent's wakes. `agent` is the agent's own MCP tool, which acts as that
+   * agent and so only for the caller's own person's agents; `person` is the human HTTP API, where
+   * anyone with access to the server manages any agent's wakes, like adding them.
+   */
   readonly revoke: (
     access: AccessContext,
     input: A.RevokeWake,
-  ) => Outcome<W.Revoked, E.ParticipantNotFound | E.NotAnAgent | E.ParticipantRemoved>;
+    actor: "agent" | "person",
+  ) => Outcome<
+    W.Revoked,
+    E.ParticipantNotFound | E.NotAnAgent | E.AgentNotOwned | E.ParticipantRemoved
+  >;
   readonly list: (
     access: AccessContext,
     input: A.ListWakes,
   ) => Outcome<W.List, E.ParticipantNotFound | E.NotAnAgent | E.ParticipantRemoved>;
+  /** An MCP client subscribes to events for one of its own person's agents. */
   readonly subscribe: (
     access: AccessContext,
     input: Subscribe,
   ) => Effect.Effect<
     McpEvents.Subscribed,
-    Base | E.InvalidInput | Selected | CallbackFailed | TargetLimit
+    Base | E.InvalidInput | Selected | E.AgentNotOwned | CallbackFailed | TargetLimit
   >;
   readonly unsubscribe: (
     access: AccessContext,
@@ -193,6 +203,8 @@ export const layer = Layer.effect(
   Wakes,
   Effect.gen(function* () {
     const persistence = yield* Store.Persistence;
+    // Captured here so every transaction checks agent ownership in the deployment's mode.
+    const ownership = yield* Actors.AgentOwnership;
     const store = yield* Targets.WakeStore;
     const sealer = yield* Crypto.WakeSealer;
     const transport = yield* Transport.WakeTransport;
@@ -205,20 +217,25 @@ export const layer = Layer.effect(
       operation: string,
       body: (tx: Store.Session) => Effect.Effect<A, F>,
     ) =>
-      persistence.transaction(operation, (tx) =>
-        Effect.gen(function* () {
-          const serverId = yield* tx.serverIdentity();
-          const grant = yield* tx.grant(access.grantId);
-          if (
-            serverId !== access.serverId ||
-            grant === null ||
-            grant.principalKey !== access.principalKey ||
-            grant.revokedAt !== null
-          )
-            return yield* new E.ServerAccessDenied({ message: "The server is unavailable." });
-          return yield* body(tx);
-        }),
-      );
+      persistence
+        .transaction(operation, (tx) =>
+          Effect.gen(function* () {
+            const serverId = yield* tx.serverIdentity();
+            const grant = yield* tx.grant(access.grantId);
+            if (
+              serverId !== access.serverId ||
+              grant === null ||
+              grant.principalKey !== access.principalKey ||
+              grant.revokedAt !== null
+            )
+              return yield* new E.ServerAccessDenied({ message: "The server is unavailable." });
+            return yield* body(tx);
+          }),
+        )
+        .pipe(
+          Effect.provideService(Actors.AgentOwnership, ownership),
+          Effect.provideService(Actors.Operation, operation),
+        );
     // Wakes act for an agent; a person's participant is never one.
     const participant = (tx: Store.Session, id: M.ParticipantId) =>
       Actors.requireAgent(tx, id).pipe(Effect.asVoid);
@@ -458,9 +475,12 @@ export const layer = Layer.effect(
         if (stored === null) return yield* Effect.die("Stored wake is missing");
         return empty<W.Wake>(view(stored));
       }),
-      revoke: Effect.fn("Wakes.revoke")(function* (access, input) {
+      revoke: Effect.fn("Wakes.revoke")(function* (access, input, actor) {
         return yield* run(access, "wakes.revoke", (tx) =>
-          participant(tx, input.participantId).pipe(
+          (actor === "agent"
+            ? Actors.requireOwnAgent(tx, access, input.participantId).pipe(Effect.asVoid)
+            : participant(tx, input.participantId)
+          ).pipe(
             Effect.andThen(store.remove(input.participantId, input.wakeId ?? null)),
             Effect.map((revoked) => empty<W.Revoked>({ revoked })),
           ),
@@ -506,6 +526,7 @@ export const layer = Layer.effect(
         const id = W.WakeId.make(`sub_${identity.slice(0, 32)}`);
         yield* run(access, "wakes.subscribe.check", (tx) =>
           Effect.gen(function* () {
+            yield* Actors.requireOwnAgent(tx, access, args.participantId);
             yield* Updates.checkSelection(tx, args.participantId, selection);
             if ((yield* store.byId(id)) !== null) return;
             if (
@@ -536,6 +557,7 @@ export const layer = Layer.effect(
         const refreshBefore = at + McpEvents.ttl(input.ttlMs);
         const previous = yield* run(access, "wakes.subscribe", (tx) =>
           Effect.gen(function* () {
+            yield* Actors.requireOwnAgent(tx, access, args.participantId);
             yield* Updates.checkSelection(tx, args.participantId, selection);
             const head = yield* tx.updatesHead();
             const existing = yield* store.byId(id);

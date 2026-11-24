@@ -44,6 +44,13 @@ export const layer = (namespace: Env["SERVERS"], capabilities: ReadonlySet<Capab
         });
         if (!result.ok) return yield* unavailable();
       }),
+      rename: Effect.fn("Servers.rename")(function* (name) {
+        const result = yield* Effect.tryPromise({
+          try: () => namespace.getByName(name.serverId).renameServer(name),
+          catch: unavailable,
+        });
+        if (!result.ok) return yield* unavailable();
+      }),
       forgetPerson: Effect.fn("Servers.forgetPerson")(function* (command) {
         const result = yield* Effect.tryPromise({
           try: () => namespace.getByName(command.serverId).forgetPerson(command),

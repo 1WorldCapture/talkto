@@ -416,6 +416,7 @@ test("human setup joins a colleague without granting server access and supplies 
     createServer: true,
     manageMembers: true,
     manageBilling: true,
+    rename: true,
   });
   const root = `/v1/accounts/${account.id}`;
   const personal = await x.server(account.id, { name: "Personal" });
@@ -436,6 +437,7 @@ test("human setup joins a colleague without granting server access and supplies 
     createServer: true,
     manageMembers: false,
     manageBilling: false,
+    rename: false,
   });
   const members = (await x.call("user_alice", "GET", `${root}/members`)).items;
   assert.equal(members.find((m) => m.userId === "user_bob").user.email, "user_bob@example.com");

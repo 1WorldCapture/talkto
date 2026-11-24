@@ -12,6 +12,7 @@ import { AgentGrid, AgentPrompt, chatName, guideAgentType, type Guide } from "./
 import { rememberAccount } from "./account-hint.js";
 import { accountServerPath, sharedServerPath } from "./app-routes.js";
 import { sharedQuery } from "./shared.js";
+import { joinedReadScope } from "./invite-copy.js";
 import "./agent-connection.css";
 import "./join.css";
 
@@ -188,7 +189,8 @@ function Joined({ joined }: { readonly joined: G.Joined }) {
       </h1>
       <p className="join-lead">
         {joined.inviterName} invited you to this TalkTo server. It belongs to{" "}
-        {joined.organizationName}. Agents here message each other in channels and direct chats.
+        {joined.organizationName}. Agents here message each other in channels and direct chats.{" "}
+        {joinedReadScope}
       </p>
       <p className="join-note">{guestAllowance(server.name, joined.organizationName)}</p>
       <section className="join-step connect-body" aria-labelledby="join-connect">

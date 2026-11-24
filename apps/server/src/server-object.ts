@@ -19,6 +19,7 @@ import * as Envelope from "@talkto/api/envelope";
 import * as M from "@talkto/api/models";
 import * as O from "@talkto/api/onboarding";
 import * as Access from "./access.js";
+import * as Actors from "./actors.js";
 import * as Persons from "./people.js";
 import * as Configuration from "./configuration.js";
 import * as Http from "./http.js";
@@ -107,6 +108,8 @@ export class TalkToServer extends DurableObject<Env> {
   /** Readers asking get_updates from one checkpoint while messages wait (stuck-readers.ts). */
   private readonly stuckReaders = new StuckReaders();
   private meteringReady = false;
+  /** `TALKTO_AGENT_OWNERSHIP`, settled at startup before any request. */
+  private agentOwnership: Actors.OwnershipMode = "enforce";
   private meterInitialization: Promise<void> | null = null;
   /** Waiting get_updates calls' hibernatable watches; sends wake them, erase ends them. */
   protected readonly watches: Signal.Watches;
@@ -133,6 +136,10 @@ export class TalkToServer extends DurableObject<Env> {
         refused: (access, call) => this.reads.refused(access, call),
       }),
     );
+    const ownership = Layer.succeed(
+      Actors.AgentOwnership,
+      Actors.AgentOwnership.of({ mode: () => this.agentOwnership }),
+    );
     const schedule = Layer.succeed(
       WakeSchedule.WakeSchedule,
       WakeSchedule.WakeSchedule.of({
@@ -150,9 +157,11 @@ export class TalkToServer extends DurableObject<Env> {
       Layer.provide(Layer.succeed(WakeSettings.WakeSettings, this.wakeSettings)),
       Layer.provide(reads),
       Layer.provide(identifiers),
+      Layer.provide(ownership),
     );
     const application = TalkTo.layer.pipe(
       Layer.provide(Sqlite.layer(ctx.storage)),
+      Layer.provide(ownership),
       Layer.provide(
         Layer.succeed(
           Metering.Meter,
@@ -249,6 +258,7 @@ export class TalkToServer extends DurableObject<Env> {
             } else this.meteringReady = true;
             this.shareCost = MeterConfig.shareCost(settings);
             const origin = yield* Configuration.readOrigin(env);
+            this.agentOwnership = yield* Configuration.readAgentOwnership(env);
             this.files = yield* this.configureFiles(env);
             this.transfers = FileBindings.configureTransfers(env);
             const readSettings = yield* Reads.read(env).pipe(
@@ -700,6 +710,22 @@ export class TalkToServer extends DurableObject<Env> {
     return this.operation(
       () => this.applyCommand(input),
       () => ({ ok: false }),
+    );
+  }
+  /** Take a new name from the platform directory (Platform.Servers.rename); stale ones are ignored. */
+  async renameServer(input: Platform.ServerName) {
+    return this.operation(
+      async () => {
+        if (Result.isFailure(await this.ready)) return { ok: false };
+        return run(
+          Schema.decodeUnknownEffect(Platform.ServerName)(input).pipe(
+            Effect.flatMap((change) => Sqlite.renameServer(this.ctx.storage, change)),
+            Effect.match({ onFailure: () => ({ ok: false }), onSuccess: () => ({ ok: true }) }),
+          ),
+        );
+      },
+      () => ({ ok: false }),
+      true,
     );
   }
   /**

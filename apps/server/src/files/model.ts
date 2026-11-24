@@ -46,12 +46,17 @@ export class FileStoreUnavailable extends Schema.TaggedError<FileStoreUnavailabl
   "FileStoreUnavailable",
   { message: Schema.String },
 ) {}
-/** The configured file store rejected or could not complete an operation. Never carries a token. */
+/**
+ * The configured file store rejected or could not complete an operation. Never carries a token.
+ * `failureKind`, when the provider classifies its rejection, is a fixed word like
+ * `connection_lost` or `r2_10001`: never the rejection's message, a key or a URL.
+ */
 export class FileStoreFailure extends Schema.TaggedError<FileStoreFailure>()("FileStoreFailure", {
   message: Schema.String,
   operation: Schema.String,
   provider: Schema.String,
   code: Schema.NullOr(Schema.String),
+  failureKind: Schema.optionalKey(Schema.String),
 }) {}
 export type Failure = FileStoreUnavailable | FileStoreFailure;
 /** What a provider claims about a repository: typed as strings, not yet known to be a remote. */
