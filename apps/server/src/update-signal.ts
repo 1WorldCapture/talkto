@@ -106,16 +106,45 @@ export const Page = Schema.Struct({
     checkpoint: M.Cursor,
     nextCursor: Schema.NullOr(M.Cursor),
     renames: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+    tasks: Schema.optionalKey(Schema.Array(Schema.Unknown)),
   }),
 });
-/** Where a page ends, and whether it is empty: no messages, renames or continuation. */
+/** Where a page ends, and whether it is empty: no messages, renames, task events or continuation. */
 export const summary = (page: typeof Page.Type) => ({
   checkpoint: page.data.checkpoint,
   empty:
     page.data.messages.length === 0 &&
     (page.data.renames?.length ?? 0) === 0 &&
+    (page.data.tasks?.length ?? 0) === 0 &&
     page.data.nextCursor === null,
 });
+
+/**
+ * An empty claim for next (`claimed: false`): a held claim waits on it like an empty page, and
+ * claims again when its watch says `recheck`.
+ */
+export const EmptyClaim = Schema.Struct({
+  data: Schema.Struct({ claimed: Schema.Literal(false) }),
+});
+/**
+ * The watch a waiting claim holds: the claimer's task events (a ready task it is told about, or
+ * one assigned to it), with its own direct chats as every selection needs a source.
+ */
+export const claimWatch = (participantId: M.ParticipantId): Watch => ({
+  participantId,
+  selection: { channelIds: [], directChats: "own", tasks: "mine" },
+});
+/** An agent reply or HTTP body a held call keeps waiting on: an empty page or an empty claim. */
+const Holdable = Schema.Union([Page, EmptyClaim]);
+const decodeHoldable = Schema.decodeUnknownOption(Holdable);
+const decodeHoldableJson = Schema.decodeUnknownOption(Schema.fromJsonString(Holdable));
+const isEmptyClaim = Schema.is(EmptyClaim);
+const held = (reply: Option.Option<typeof Holdable.Type>) =>
+  Option.isSome(reply) && (isEmptyClaim(reply.value) || summary(reply.value).empty);
+/** Whether an agent reply is an empty page or an empty claim. */
+export const holdable = (reply: A.UncheckedReply) => held(decodeHoldable(reply));
+/** `holdable` for an HTTP body. */
+export const holdableJson = (text: string) => held(decodeHoldableJson(text));
 
 /** True when the message would appear in a read with this watch's selection. */
 export const matches = (watch: Watch, arrival: Arrival) =>
@@ -124,6 +153,23 @@ export const matches = (watch: Watch, arrival: Arrival) =>
     (watch.selection.directChats === "own" &&
       (arrival.directParticipantIds.includes(watch.participantId) ||
         arrival.mentionedIds.includes(watch.participantId))));
+
+/**
+ * What committed task events tell waiting readers: who has a recipient row (or a thread message
+ * delivered to them). Readers following every task (`tasks: "all"`) wake for any event.
+ */
+export interface TaskArrival {
+  readonly recipientIds: ReadonlyArray<M.ParticipantId>;
+  /** False when only thread messages arrived, which `tasks: "all"` does not add. */
+  readonly events: boolean;
+}
+/** True when the task change would appear in a read with this watch's selection. */
+export const matchesTasks = (watch: Watch, arrival: TaskArrival) => {
+  const tasks = watch.selection.tasks ?? "mine";
+  if (tasks === "none") return false;
+  if (tasks === "all" && arrival.events) return true;
+  return arrival.recipientIds.includes(watch.participantId);
+};
 
 /** What each hibernatable socket remembers across hibernation (at most 16 KiB). */
 const Attachment = Schema.Struct({
@@ -224,6 +270,15 @@ export class Watches {
       if (attachment === null || matches(attachment.watch, arrival)) send(socket, recheckFrame);
     }
   }
+  /** Wake every watch the committed task change would appear in. */
+  notifyTasks(arrival: TaskArrival) {
+    for (const entry of this.reading) if (matchesTasks(entry.watch, arrival)) entry.woken = true;
+    for (const socket of this.sockets.getWebSockets(watchTag)) {
+      const attachment = this.attachment(socket);
+      if (attachment === null || matchesTasks(attachment.watch, arrival))
+        send(socket, recheckFrame);
+    }
+  }
   /** Make every watch read again under current access, e.g. after a grant changes. */
   recheckAll() {
     for (const entry of this.reading) entry.woken = true;
@@ -270,6 +325,8 @@ export class UpdateSignal extends Context.Service<
   UpdateSignal,
   {
     readonly notify: (arrival: Arrival) => Effect.Effect<void>;
+    /** Wake the waits a committed task change would answer. */
+    readonly notifyTasks: (arrival: TaskArrival) => Effect.Effect<void>;
     /** Wake every wait, for a change every reader receives, such as a participant's rename. */
     readonly notifyAll: () => Effect.Effect<void>;
   }
@@ -279,5 +336,6 @@ export class UpdateSignal extends Context.Service<
 export const fromWatches = (watches: Watches) =>
   UpdateSignal.of({
     notify: (arrival) => Effect.sync(() => watches.notify(arrival)),
+    notifyTasks: (arrival) => Effect.sync(() => watches.notifyTasks(arrival)),
     notifyAll: () => Effect.sync(() => watches.recheckAll()),
   });

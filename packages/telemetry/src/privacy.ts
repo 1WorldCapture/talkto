@@ -91,6 +91,8 @@ const segments = new Set([
   "shared",
   "join",
   "accept",
+  "board",
+  "tasks",
 ]);
 
 /** Keep route structure; omit query strings, fragments, identifiers and arbitrary path text. */

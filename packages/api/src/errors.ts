@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import * as Metering from "./metering.js";
+import * as M from "./models.js";
 
 /** Sending is paused for a confirmed workspace billing reason; history and identity remain available. */
 export class MessageAllowanceExhausted extends Schema.TaggedError<MessageAllowanceExhausted>()(
@@ -121,6 +122,20 @@ export class FilesUnavailable extends Schema.TaggedError<FilesUnavailable>()("Fi
   reason: Schema.Literals(["absent", "failed"]),
 }) {}
 
+/**
+ * Swarm memory is off because the server's board is off (`off`), absent on this deployment
+ * (`absent`), or its Git store did not complete the operation or memory is not set up yet
+ * (`failed`). Never carries a token.
+ */
+export class MemoryUnavailable extends Schema.TaggedError<MemoryUnavailable>()(
+  "MemoryUnavailable",
+  {
+    message: Schema.String,
+    operation: Schema.String,
+    reason: Schema.Literals(["off", "absent", "failed"]),
+  },
+) {}
+
 /** A person's participant never acts in an agent operation, and a person's chat needs an agent. */
 export class NotAnAgent extends Schema.TaggedError<NotAnAgent>()("NotAnAgent", {
   message: Schema.String,
@@ -179,6 +194,64 @@ export class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited"
   ...Metering.RateLimitRecovery.fields,
 }) {}
 
+/** This server has no board, or its board is switched off. Nothing changed. */
+export class BoardOff extends Schema.TaggedError<BoardOff>()("BoardOff", {
+  message: Schema.String,
+}) {}
+/** No task with this ID or number exists on this server. */
+export class TaskNotFound extends Schema.TaggedError<TaskNotFound>()("TaskNotFound", {
+  message: Schema.String,
+}) {}
+/**
+ * The caller no longer holds the task: its lease ran out, a person canceled or released it, or
+ * another claim took it. `state` and `epoch` are the task's now; nothing changed.
+ */
+export class ClaimLost extends Schema.TaggedError<ClaimLost>()("ClaimLost", {
+  message: Schema.String,
+  state: Schema.String,
+  epoch: Schema.Int,
+  holderId: Schema.optionalKey(M.ParticipantId),
+}) {}
+/** The task's state does not allow this; `state` is its state now. */
+export class TaskStateConflict extends Schema.TaggedError<TaskStateConflict>()(
+  "TaskStateConflict",
+  { message: Schema.String, state: Schema.String },
+) {}
+/**
+ * The task cannot be claimed by this agent now. `reason`: assigned_to_other, held_by_other,
+ * waiting_on_needs or holding_too_many.
+ */
+export class TaskNotClaimable extends Schema.TaggedError<TaskNotClaimable>()("TaskNotClaimable", {
+  message: Schema.String,
+  reason: Schema.String,
+  holderId: Schema.optionalKey(M.ParticipantId),
+  expiresAt: Schema.optionalKey(M.Timestamp),
+}) {}
+/** The tasks of one call need each other in a cycle; `refs` names the tasks in it. */
+export class TaskCycle extends Schema.TaggedError<TaskCycle>()("TaskCycle", {
+  message: Schema.String,
+  refs: Schema.Array(Schema.String),
+}) {}
+/** A need names no task on this server, or a task that failed or was canceled. */
+export class NeedUnavailable extends Schema.TaggedError<NeedUnavailable>()("NeedUnavailable", {
+  message: Schema.String,
+  taskId: Schema.String,
+  state: Schema.optionalKey(Schema.String),
+}) {}
+/** The server holds as many unfinished tasks as it may. */
+export class TaskLimitReached extends Schema.TaggedError<TaskLimitReached>()("TaskLimitReached", {
+  message: Schema.String,
+  limit: Schema.Int,
+}) {}
+
+/**
+ * The caller may not do this here: a person-only action from an agent or token, a change only
+ * the server's creator may make, or archiving the board channel. Projects to `forbidden`.
+ */
+export class Forbidden extends Schema.TaggedError<Forbidden>()("Forbidden", {
+  message: Schema.String,
+}) {}
+
 /** Known failure union used only at protocol and runtime boundaries. */
 export type Failure =
   | MessageAllowanceExhausted
@@ -201,6 +274,7 @@ export type Failure =
   | NotConversationParticipant
   | StorageUnavailable
   | FilesUnavailable
+  | MemoryUnavailable
   | NotAnAgent
   | RenameNotAllowed
   | AgentNotOwned
@@ -209,4 +283,13 @@ export type Failure =
   | TransferExpired
   | TransferNotUploaded
   | StoragePoolFull
-  | RateLimited;
+  | RateLimited
+  | BoardOff
+  | TaskNotFound
+  | ClaimLost
+  | TaskStateConflict
+  | TaskNotClaimable
+  | TaskCycle
+  | NeedUnavailable
+  | TaskLimitReached
+  | Forbidden;

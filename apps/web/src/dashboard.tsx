@@ -37,7 +37,12 @@ import {
 import { SessionGate, useHuman, useServices } from "./session.js";
 import { Activity, type InitialFeed } from "./activity.js";
 import { readPreferences } from "./message-preferences.js";
-import { homeQuery, managedServerQuery, starterQuery } from "./dashboard-queries.js";
+import {
+  homeQuery,
+  managedServerQuery,
+  memberServerQuery,
+  starterQuery,
+} from "./dashboard-queries.js";
 import { ActivityTimeline } from "./activity-timeline.js";
 import { formatActivityTime } from "./activity-time.js";
 import {
@@ -65,12 +70,15 @@ import { RemovalNotices, RemoveAgentDialog, RemovedTag, RestoreAgent } from "./a
 import { formatCount } from "./format.js";
 import { AccountDeleted, AccountDeletedPanel, AccountSettings } from "./account.js";
 import { SignedInComputers } from "./sign-ins.js";
+import { ApiKeys } from "./api-keys.js";
 import { FeedbackDialog } from "./feedback.js";
 import type * as G from "@talkto/api/guests";
-import { dashboardRoute, entryTarget, sharedServerPath } from "./app-routes.js";
+import { dashboardRoute, entryTarget, memberServerPath, sharedServerPath } from "./app-routes.js";
 import { JoinPage } from "./join.js";
 import { SharedWithYou, useShared } from "./shared.js";
 import { SharedServerView, useServerPath } from "./server-path.js";
+import { Board, TaskPage } from "./board.js";
+import { parseTaskNumber } from "./board-model.js";
 
 /** Authenticated Cards dashboard; every route remounts its local inspection state by scope. */
 export function Dashboard() {
@@ -158,16 +166,19 @@ function DashboardShell() {
           id={route.accountId}
           view={route.view ?? (search.billing ? "billing" : "home")}
           serverId={route.serverId}
+          task={route.task}
           chooseAccount={() => setDialog("accounts")}
         />
       ) : route.kind === "join" ? (
         <JoinPage invitationId={route.invitationId} />
       ) : route.kind === "shared" ? (
-        <SharedServerPage key={route.serverId} serverId={route.serverId} />
+        <SharedServerPage key={route.serverId} serverId={route.serverId} task={route.task} />
       ) : route.kind === "account-settings" ? (
         <AccountSettings />
       ) : route.kind === "sign-ins" ? (
         <SignedInComputers />
+      ) : route.kind === "api-keys" ? (
+        <ApiKeys />
       ) : route.kind === "entry" ? (
         <OrganizationEntry create={() => setDialog("create-account")} />
       ) : (
@@ -385,11 +396,14 @@ function AccountPage({
   id,
   view,
   serverId,
+  task,
   chooseAccount,
 }: {
   readonly id: P.AccountId;
   readonly view: string;
   readonly serverId?: string | undefined;
+  /** A Board task page's last part (`T-14`). */
+  readonly task?: string | undefined;
   readonly chooseAccount: () => void;
 }) {
   const { api, queries } = useServices();
@@ -473,7 +487,7 @@ function AccountPage({
       ) : view === "settings" && account.permissions.rename ? (
         <OrganizationSettings account={account} />
       ) : view === "servers" && serverId ? (
-        <ServerPage key={serverId} accountId={id} rawId={serverId} />
+        <ServerPage key={serverId} accountId={id} rawId={serverId} task={task} />
       ) : view === "servers" ? (
         <ServerDirectory account={account} create={() => setCreating(true)} />
       ) : view === "activity" ? (
@@ -897,40 +911,61 @@ function useScrollingTabs(tab: string) {
 function ServerPage({
   accountId,
   rawId,
+  task,
 }: {
   readonly accountId: P.AccountId;
   readonly rawId: string;
+  readonly task?: string | undefined;
 }) {
   const parsed = Schema.decodeUnknownOption(M.ServerId)(rawId);
   if (Option.isNone(parsed)) return <p className="ops-empty">Server unavailable.</p>;
-  return <ServerDetail accountId={accountId} id={parsed.value} />;
+  return <ServerDetail accountId={accountId} id={parsed.value} task={task} />;
 }
 
 /**
  * A server shared with the person as a guest, at /app/shared/<serverId>: the server view without
  * the organization's bar, Access, Settings or Billing, from the guest's own listing.
  */
-function SharedServerPage({ serverId }: { readonly serverId: M.ServerId | null }) {
+function SharedServerPage({
+  serverId,
+  task,
+}: {
+  readonly serverId: M.ServerId | null;
+  readonly task?: string | undefined;
+}) {
+  const { api } = useServices();
+  const user = useHuman();
+  const search = useSearch({ strict: false });
   const shared = useShared();
   const server =
     serverId === null || denied(shared.error)
       ? undefined
       : shared.data?.data.servers.find((item) => item.id === serverId);
+  // Not shared with them: a member of the server's organization opens it there instead.
+  const member = useQuery({
+    ...memberServerQuery(api, user.id, serverId),
+    enabled: !shared.isPending && server === undefined,
+  });
+  const memberPath = memberServerPath(denied(member.error) ? null : (member.data ?? null), task);
   if (server)
     return (
       <SharedServerView value>
-        <ServerDetail accountId={server.accountId} id={server.id} shared={server} />
+        <ServerDetail accountId={server.accountId} id={server.id} shared={server} task={task} />
       </SharedServerView>
     );
+  if (memberPath !== null)
+    return <Navigate to="/app/$" params={{ _splat: memberPath }} search={search} replace />;
   return (
     <>
       <Notice error={shared.error} retry={() => void shared.refetch()} />
-      {shared.isPending ? (
+      {!denied(member.error) && <Notice error={member.error} retry={() => void member.refetch()} />}
+      {shared.isPending || (serverId !== null && member.isPending) ? (
         <p className="ops-empty" role="status">
           Loading server…
         </p>
       ) : (
-        !shared.isError && (
+        !shared.isError &&
+        (member.error === null || denied(member.error)) && (
           <p className="ops-empty">
             This server isn’t shared with you, or your access was removed.{" "}
             <AppLink path="organizations">Your organizations →</AppLink>
@@ -945,9 +980,12 @@ function ServerDetail({
   accountId,
   id,
   shared,
+  task,
 }: {
   readonly accountId: P.AccountId;
   readonly id: M.ServerId;
+  /** A Board task page's last part (`T-14`): the page opens that task. */
+  readonly task?: string | undefined;
   /** Set for a guest's shared server: its context comes from GET /v1/shared, not the organization. */
   readonly shared?: G.SharedServer | undefined;
 }) {
@@ -980,9 +1018,12 @@ function ServerDetail({
     enabled: server?.status === "ready" && server.permissions.readMessages,
   });
   const selected = denied(conversation.error) ? undefined : conversation.data?.data;
-  const tab = search.channel
-    ? conversationTab(selected?.kind, search.tab)
-    : (search.tab ?? "activity");
+  const tab =
+    task !== undefined
+      ? "board"
+      : search.channel
+        ? conversationTab(selected?.kind, search.tab)
+        : (search.tab ?? "activity");
   const tabs = useScrollingTabs(tab);
   const path = useServerPath(accountId, id);
   // Git share chips link the Files view only where the server still offers Git sharing.
@@ -1032,11 +1073,14 @@ function ServerDetail({
           <nav className="ops-tabs" aria-label="Server navigation" ref={tabs}>
             {server.status === "ready" &&
               server.permissions.readMessages &&
-              ["activity", "channels", "directs", "agents", "files"].map((name) => (
-                <AppLink key={name} path={path} search={{ tab: name }} current={name === tab}>
-                  {name === "directs" ? "Direct chats" : name[0]?.toUpperCase() + name.slice(1)}
-                </AppLink>
-              ))}
+              // The Board comes right after the first tab, on swarm servers only (spec 9.2).
+              ["activity", "board", "channels", "directs", "agents", "files"]
+                .filter((name) => name !== "board" || server.board === true || tab === "board")
+                .map((name) => (
+                  <AppLink key={name} path={path} search={{ tab: name }} current={name === tab}>
+                    {name === "directs" ? "Direct chats" : name[0]?.toUpperCase() + name.slice(1)}
+                  </AppLink>
+                ))}
             {server.permissions.manageAccess && (
               <AppLink path={path} search={{ tab: "settings" }} current={tab === "settings"}>
                 Settings
@@ -1055,6 +1099,15 @@ function ServerDetail({
                 >
                   <FeedRoute accountId={accountId} server={server} files={files} />
                 </ConversationSelection>
+              ) : task !== undefined ? (
+                <TaskPage
+                  key={task}
+                  accountId={accountId}
+                  server={server}
+                  number={parseTaskNumber(task)}
+                />
+              ) : tab === "board" ? (
+                <Board accountId={accountId} server={server} />
               ) : tab === "directs" ? (
                 <DirectChats serverId={id} accountId={accountId} />
               ) : tab === "files" ? (

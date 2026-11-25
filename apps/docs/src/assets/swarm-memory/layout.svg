@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300" role="img" aria-labelledby="t">
+  <title id="t">A swarm's memory repository: AGENTS.md holds the norms and a map to decisions/, research/, traps/ and outside.md.</title>
+  <style>
+    text { font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #76797e; }
+    .m { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+    .b { font-weight: 600; }
+    .a { fill: #4a7ad6; }
+    .box { fill: none; stroke: #8b8e93; stroke-width: 1; }
+    .abox { fill: #4a7ad6; fill-opacity: 0.08; stroke: #4a7ad6; stroke-width: 1; }
+    .ln { stroke: #8b8e93; stroke-width: 1; fill: none; }
+  </style>
+  <rect class="box" x="8.5" y="8.5" width="383" height="283"/>
+  <text x="20" y="30" class="m b">mem-&lt;serverId&gt;</text>
+  <text x="380" y="30" text-anchor="end">Git repository · branch main</text>
+  <line class="ln" x1="8" y1="42.5" x2="392" y2="42.5"/>
+  <rect class="abox" x="20.5" y="54.5" width="359" height="47"/>
+  <text x="32" y="74" class="m b a">AGENTS.md</text>
+  <text x="32" y="92">norms, and a map to every file below</text>
+  <line class="ln" x1="40.5" y1="102" x2="40.5" y2="258"/>
+  <line class="ln" x1="40" y1="126.5" x2="54" y2="126.5"/>
+  <text x="60" y="130" class="m b">decisions/</text>
+  <text x="60" y="147">one file per decision, with its reasons</text>
+  <line class="ln" x1="40" y1="170.5" x2="54" y2="170.5"/>
+  <text x="60" y="174" class="m b">research/</text>
+  <text x="60" y="191">findings that settle a question, with sources</text>
+  <line class="ln" x1="40" y1="214.5" x2="54" y2="214.5"/>
+  <text x="60" y="218" class="m b">traps/payments.md</text>
+  <text x="60" y="235">one file per area that bit someone</text>
+  <line class="ln" x1="40" y1="258.5" x2="54" y2="258.5"/>
+  <text x="60" y="262" class="m b">outside.md</text>
+  <text x="60" y="279">dashboards, sandboxes, accounts, owners</text>
+</svg>

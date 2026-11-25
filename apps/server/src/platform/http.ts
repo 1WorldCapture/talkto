@@ -10,6 +10,7 @@ import * as Activity from "./activity.js";
 import * as InvitationPolicy from "./invitation-policy.js";
 import { trace } from "@talkto/telemetry/effect";
 import * as Telemetry from "../telemetry.js";
+import { present } from "../present.js";
 
 /** Verified identity and request metadata supplied by the Worker. */
 export class RequestContext extends Context.Service<
@@ -21,6 +22,8 @@ export class RequestContext extends Context.Service<
     readonly evidence?: Model.Evidence;
     /** Set on a self-hosted copy that signs people in with Cloudflare Access or Better Auth. */
     readonly signIn?: "cloudflare-access" | "better-auth";
+    /** Set where the deployment offers task boards (`TALKTO_BOARD=on`). */
+    readonly boards?: boolean;
   }
 >()("@talkto/platform/RequestContext") {}
 /** An exhausted invitation budget: 429 with the retry time; the Worker adds Retry-After. */
@@ -36,9 +39,25 @@ const invitationLimited = (error: Model.InvitationLimited, meta: Envelope.Meta) 
   },
   meta,
 });
+/** Too many renames of one organization or server: 429 rate_limited; the Worker adds Retry-After. */
+const renameLimited = (error: Model.RenameLimited, meta: Envelope.Meta) => ({
+  error: {
+    code: "rate_limited" as const,
+    message: error.message,
+    retryable: true as const,
+    action: "retry_after" as const,
+    retryAfterSeconds: error.retryAfterSeconds,
+    scope: error.scope,
+  },
+  meta,
+});
 /** Translate application failures to shared public errors. */
-export const failure = (error: Model.Failure | Model.InvitationLimited, meta: Envelope.Meta) => {
+export const failure = (
+  error: Model.Failure | Model.InvitationLimited | Model.RenameLimited,
+  meta: Envelope.Meta,
+) => {
   if (error._tag === "InvitationLimited") return invitationLimited(error, meta);
+  if (error._tag === "RenameLimited") return renameLimited(error, meta);
   Telemetry.failure(error.code, meta.requestId, error);
   const make = <const C extends Envelope.SimpleFailureCode>(code: C) =>
     Envelope.makeFailure(code, error.message, meta);
@@ -55,6 +74,8 @@ export const failure = (error: Model.Failure | Model.InvitationLimited, meta: En
       return make("starter_unavailable");
     case "server_limit_reached":
       return make("server_limit_reached");
+    case "api_key_limit_reached":
+      return make("api_key_limit_reached");
     case "not_found":
       return make("not_found");
     case "idempotency_conflict":
@@ -66,7 +87,9 @@ export const failure = (error: Model.Failure | Model.InvitationLimited, meta: En
   }
 };
 const respond = Effect.fn("PlatformHttp.respond")(function* <A>(
-  operation: (actor: Model.Actor) => Effect.Effect<A, Model.Failure | Model.InvitationLimited>,
+  operation: (
+    actor: Model.Actor,
+  ) => Effect.Effect<A, Model.Failure | Model.InvitationLimited | Model.RenameLimited>,
 ) {
   const context = yield* RequestContext;
   const data = yield* operation(context.actor).pipe(
@@ -76,7 +99,10 @@ const respond = Effect.fn("PlatformHttp.respond")(function* <A>(
 });
 /** Like `respond`, with what the Worker vouches for about the request: a website session or not. */
 const respondWithEvidence = Effect.fn("PlatformHttp.respondWithEvidence")(function* <A>(
-  operation: (actor: Model.Actor, evidence: Model.Evidence) => Effect.Effect<A, Model.Failure>,
+  operation: (
+    actor: Model.Actor,
+    evidence: Model.Evidence,
+  ) => Effect.Effect<A, Model.Failure | Model.RenameLimited>,
 ) {
   const context = yield* RequestContext;
   return yield* respond((actor) => operation(actor, context.evidence ?? Model.noEvidence));
@@ -115,10 +141,12 @@ const handlers = HttpApiBuilder.group(P.Api, "platform", (routes) =>
                 return {
                   user,
                   permissions: { createAccount: true as const },
-                  connection:
-                    context.signIn === undefined
-                      ? { mcpUrl, instructionsUrl }
-                      : { mcpUrl, instructionsUrl, signIn: context.signIn },
+                  connection: {
+                    mcpUrl,
+                    instructionsUrl,
+                    ...present("signIn", context.signIn),
+                    ...present("boards", context.boards === true ? (true as const) : null),
+                  },
                 };
               }),
             ),
@@ -142,7 +170,11 @@ const handlers = HttpApiBuilder.group(P.Api, "platform", (routes) =>
       cancelInvitation: ({ params }) =>
         respond((actor) => service.cancelInvitation(actor, params.accountId, params.invitationId)),
       removeMember: ({ params }) =>
-        respond((actor) => service.removeMember(actor, params.accountId, params.userId)),
+        respondWithEvidence((actor, evidence) =>
+          Model.refuseApiKey(evidence, "remove members from an organization").pipe(
+            Effect.andThen(service.removeMember(actor, params.accountId, params.userId)),
+          ),
+        ),
       createServer: ({ params, payload }) =>
         respond((actor) => service.createServer(actor, params.accountId, payload)),
       discoverServers: ({ query }) =>

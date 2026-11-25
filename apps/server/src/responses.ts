@@ -3,6 +3,7 @@ import { DateTime, Predicate, SchemaIssue } from "effect";
 import * as Envelope from "@talkto/api/envelope";
 import * as M from "@talkto/api/models";
 import * as Telemetry from "./telemetry.js";
+import { present } from "./present.js";
 
 /** Report timestamp fields without exposing caller data or a whole schema failure. */
 export function timestampError(issue: SchemaIssue.Issue): string | undefined {
@@ -135,7 +136,59 @@ export const projectFailure = (error: Errors.Failure, meta: Envelope.Meta) => {
     case "NotAnAgent":
     case "RenameNotAllowed":
     case "AgentNotOwned":
+    case "Forbidden":
       return failure("forbidden");
+    case "BoardOff":
+      return failure("board_off");
+    case "TaskNotFound":
+      return failure("task_not_found");
+    case "ClaimLost":
+      return {
+        meta,
+        error: {
+          code: "claim_lost" as const,
+          message: error.message,
+          state: error.state,
+          epoch: error.epoch,
+          ...present("holderId", error.holderId),
+        },
+      };
+    case "TaskStateConflict":
+      return {
+        meta,
+        error: { code: "task_state_conflict" as const, message: error.message, state: error.state },
+      };
+    case "TaskNotClaimable":
+      return {
+        meta,
+        error: {
+          code: "task_not_claimable" as const,
+          message: error.message,
+          reason: error.reason,
+          ...present("holderId", error.holderId),
+          ...present("expiresAt", error.expiresAt),
+        },
+      };
+    case "TaskCycle":
+      return {
+        meta,
+        error: { code: "task_cycle" as const, message: error.message, refs: error.refs },
+      };
+    case "NeedUnavailable":
+      return {
+        meta,
+        error: {
+          code: "need_unavailable" as const,
+          message: error.message,
+          taskId: error.taskId,
+          ...present("state", error.state),
+        },
+      };
+    case "TaskLimitReached":
+      return {
+        meta,
+        error: { code: "task_limit_reached" as const, message: error.message, limit: error.limit },
+      };
     case "ParticipantRemoved":
       return failure("participant_removed");
     case "StorageUnavailable":
@@ -146,6 +199,11 @@ export const projectFailure = (error: Errors.Failure, meta: Envelope.Meta) => {
       if (error.reason === "failed")
         Telemetry.failure("files_unavailable", meta.requestId, error, "files");
       return failure("files_unavailable");
+    case "MemoryUnavailable":
+      // Memory off or absent is the server's or deployment's choice; only a failed store call is reported.
+      if (error.reason === "failed")
+        Telemetry.failure("memory_unavailable", meta.requestId, error, "memory");
+      return failure("memory_unavailable");
     case "TransferNotFound":
       return failure("transfer_not_found");
     case "TransferExpired":

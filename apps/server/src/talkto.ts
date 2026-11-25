@@ -9,6 +9,8 @@ import type * as Agent from "@talkto/api/agent";
 import type { AccessContext } from "./access.js";
 import * as Store from "./persistence.js";
 import * as Metering from "./metering/model.js";
+import * as BoardDomain from "./board/domain.js";
+import * as BoardModel from "./board/model.js";
 import * as Navigation from "./navigation.js";
 import * as ActivitySearch from "./platform/activity-search.js";
 import * as Updates from "./updates.js";
@@ -200,6 +202,7 @@ export interface Interface {
     | E.WrongConversationKind
     | E.ProtectedGeneral
     | E.RevisionConflict
+    | E.Forbidden
   >;
   readonly openDirectConversation: (
     access: AccessContext,
@@ -612,7 +615,7 @@ const renameParticipant = Effect.fn("TalkTo.renameParticipant")(function* (
   const current = yield* participant(tx, target.id);
   return empty<R.Result>({ participant: current, rename, changed: true });
 });
-const describeMessages = Effect.fn("TalkTo.describeMessages")(function* <A>(
+export const describeMessages = Effect.fn("TalkTo.describeMessages")(function* <A>(
   tx: Store.Session,
   data: A,
   messages: ReadonlyArray<M.Message>,
@@ -699,7 +702,7 @@ const pairDirect = Effect.fn("TalkTo.pairDirect")(function* (
  * Create the signed-in person's participant on this server and bind it to their principal. The
  * name comes from the verified sign-in, made unique on the server like any participant name.
  */
-const addPerson = Effect.fn("TalkTo.addPerson")(function* (
+export const addPerson = Effect.fn("TalkTo.addPerson")(function* (
   tx: Store.Session,
   access: AccessContext,
   profile: PersonProfile,
@@ -783,7 +786,7 @@ const withinPersonLimits = Effect.fn("TalkTo.withinPersonLimits")(function* (
  * The participants a channel message @mentions by current name (names are unique ignoring case), in
  * the order written, without the sender, at most `M.maxMentions`. Unknown names mention nobody.
  */
-const mentioned = Effect.fn("TalkTo.mentioned")(function* (
+export const mentioned = Effect.fn("TalkTo.mentioned")(function* (
   tx: Store.Session,
   body: string,
   senderId: M.ParticipantId,
@@ -806,7 +809,7 @@ const mentioned = Effect.fn("TalkTo.mentioned")(function* (
  * creating agent and its body states only the facts, marked by `notice`. It is never metered, and it
  * exists only when the channel is new, so a create_channel retry never repeats it.
  */
-const channelNotice = Effect.fn("TalkTo.channelNotice")(function* (
+export const channelNotice = Effect.fn("TalkTo.channelNotice")(function* (
   tx: Store.Session,
   access: AccessContext,
   channel: M.Channel,
@@ -923,7 +926,7 @@ const append = Effect.fn("TalkTo.append")(function* (
   return yield* describeMessages(tx, { item, created: true }, [item]);
 });
 /** Who a committed message can wake: its conversation, sender, and a direct chat's two members. */
-const arrival = (outcome: M.Outcome<M.Created<M.Message>>): WakeStore.Arrival => {
+export const arrival = (outcome: M.Outcome<M.Created<M.Message>>): WakeStore.Arrival => {
   const item = outcome.data.item;
   const target = outcome.included.conversations.find((entry) => entry.id === item.conversationId);
   return {
@@ -967,6 +970,35 @@ const transferMissing = () =>
   new E.TransferNotFound({ message: "No transfer with this ID has been sent on this server." });
 const transferExpired = () =>
   new E.TransferExpired({ message: "This transfer has expired. Ask the sender to send it again." });
+/**
+ * Check that a transfer not offered yet has its objects in the store at the declared sizes, as
+ * `complete_transfer` and a task result both require. TalkTo checks sizes only; the receiver's
+ * download procedure checks the hash. An object at the wrong size is removed so the sender can
+ * upload again, because each link writes its object only once.
+ */
+export const verifyUpload = Effect.fn("TalkTo.verifyUpload")(function* (
+  transfers: Transfers.TransferStore["Service"],
+  serverId: M.ServerId,
+  record: Transfers.TransferRecord,
+) {
+  const expected = [
+    { key: Transfers.payloadKey(serverId, record.id), bytes: record.bytes },
+    ...(record.manifestBytes === null
+      ? []
+      : [{ key: Transfers.manifestKey(serverId, record.id), bytes: record.manifestBytes }]),
+  ];
+  for (const object of expected) {
+    const size = yield* transfers.size(object.key).pipe(Effect.mapError(filesFailure));
+    if (size === object.bytes) continue;
+    if (size !== null) yield* transfers.remove([object.key]).pipe(Effect.mapError(filesFailure));
+    return yield* new E.TransferNotUploaded({
+      message:
+        size === null
+          ? "The upload has not arrived. Run the upload procedure, then complete again."
+          : "The upload does not match the declared size and was removed. Prepare again with the correct size.",
+    });
+  }
+});
 /** A completed offer, or the failure a fetch or status read reports for anything else. */
 const deliveredTransfer = Effect.fn("TalkTo.deliveredTransfer")(function* (
   tx: Store.Session,
@@ -1127,8 +1159,12 @@ export const layer = Layer.effect(
             yield* Actors.requireOwnAgent(tx, opened.access, stored.participantId);
             yield* Updates.checkSelection(tx, stored.participantId, stored.selection);
             // `since` only moves forward from where the link started; an unknown ID is ignored.
-            const after = since === null ? null : yield* tx.message(since);
-            const boundary = Math.max(stored.boundary, after?.sequence ?? 0);
+            // A cursor names a message or, for task readers, a task event.
+            const after =
+              since === null
+                ? null
+                : ((yield* tx.message(since))?.sequence ?? (yield* tx.board.event(since))?.seq);
+            const boundary = Math.max(stored.boundary, after ?? 0);
             const tally = yield* tx.signalTally({
               ...stored.selection,
               participantId: stored.participantId,
@@ -1400,6 +1436,7 @@ export const layer = Layer.effect(
         function* (access, profile, agentId, action) {
           const personId = M.ParticipantId.make(yield* ids.uuid());
           const at = yield* now;
+          const board = BoardDomain.outbox();
           const result = yield* run(access, "setAgentRemoved", (tx) =>
             Effect.gen(function* () {
               // Refuse a person before creating the caller's participant for nothing.
@@ -1411,16 +1448,29 @@ export const layer = Layer.effect(
                 (yield* addPerson(tx, access, profile, personId, at));
               yield* tx.setRemoved({ participantId: target.id, action, byId: person.id, at });
               if (action === "removed") {
-                // Its links and wakes end now; restoring does not bring them back.
+                // Its links and wakes end now; restoring does not bring them back. So do its
+                // claims, assignments and interest on the board (the change wakes every wait).
                 yield* tx.removeSignals(target.id, null);
                 yield* wakeTargets.remove(target.id, null);
+                yield* BoardDomain.removeAgent(
+                  tx,
+                  board,
+                  ids,
+                  target.id,
+                  person.id,
+                  BoardModel.millis(at),
+                );
               }
               const current = yield* participant(tx, target.id);
               return empty<Removals.Result>({ participant: current, changed: true });
             }),
           );
-          // A waiting get_updates for the removed agent reads again and ends with its refusal.
+          // A waiting get_updates for the removed agent reads again and ends with its refusal; so
+          // does every other wait, which covers the board's events (the agent told about a released
+          // task among them). Wakes and the alarm still need the board's outbox.
           if (result.data.changed) yield* signal.notifyAll();
+          if (board.wakes.size > 0) yield* wakes.notifyParticipants([...board.wakes]);
+          if (board.armAt !== null) yield* wakes.arm(board.armAt);
           return result;
         },
       ),
@@ -1593,6 +1643,7 @@ export const layer = Layer.effect(
               });
             if (item.isGeneral && input.archived)
               return yield* new E.ProtectedGeneral({ message: "General always remains active." });
+            if (input.archived) yield* BoardDomain.refuseArchive(tx, item.id);
             if (item.revision !== input.expectedRevision)
               return yield* new E.RevisionConflict({
                 message: "Read the channel's current revision before retrying this change.",
@@ -2154,29 +2205,7 @@ export const layer = Layer.effect(
         // the sender can upload again, because each link writes its object only once.
         if (record.messageId === null) {
           if (at > record.expiresAt) return yield* transferExpired();
-          const expected = [
-            { key: Transfers.payloadKey(access.serverId, record.id), bytes: record.bytes },
-            ...(record.manifestBytes === null
-              ? []
-              : [
-                  {
-                    key: Transfers.manifestKey(access.serverId, record.id),
-                    bytes: record.manifestBytes,
-                  },
-                ]),
-          ];
-          for (const object of expected) {
-            const size = yield* transfers.size(object.key).pipe(Effect.mapError(filesFailure));
-            if (size === object.bytes) continue;
-            if (size !== null)
-              yield* transfers.remove([object.key]).pipe(Effect.mapError(filesFailure));
-            return yield* new E.TransferNotUploaded({
-              message:
-                size === null
-                  ? "The upload has not arrived. Run the upload procedure, then complete again."
-                  : "The upload does not match the declared size and was removed. Prepare again with the correct size.",
-            });
-          }
+          yield* verifyUpload(transfers, access.serverId, record);
         }
         return yield* Metering.withCapacity(
           meter,

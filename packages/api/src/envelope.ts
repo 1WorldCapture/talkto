@@ -72,6 +72,7 @@ export const NotFound = failure(404, [
   "message_not_found",
   "transfer_not_found",
   "not_found",
+  "task_not_found",
 ]);
 /** An idempotency or lifecycle conflict that the caller can resolve. */
 export const Conflict = failure(409, [
@@ -86,6 +87,8 @@ export const Conflict = failure(409, [
   "starter_unavailable",
   "server_limit_reached",
   "account_deletion_blocked",
+  "board_off",
+  "api_key_limit_reached",
 ]);
 /** The organization's stored-file pool is full; space frees as older transfers expire. */
 export const StoragePoolFull = Schema.Struct({
@@ -96,6 +99,46 @@ export const StoragePoolFull = Schema.Struct({
   }),
   meta: Meta,
 }).annotate({ httpApiStatus: 409, identifier: "StoragePoolFull" });
+/** A structured task-board failure: the code, its message and the fields that explain it. */
+const taskFailure = <const C extends string, F extends Schema.Struct.Fields>(
+  status: number,
+  code: C,
+  identifier: string,
+  fields: F,
+) =>
+  Schema.Struct({
+    error: Schema.Struct({ code: Schema.Literal(code), message: Schema.String, ...fields }),
+    meta: Meta,
+  }).annotate({ httpApiStatus: status, identifier });
+/** The caller no longer holds the task; nothing changed. Stop working on it. */
+export const ClaimLost = taskFailure(409, "claim_lost", "ClaimLost", {
+  state: Schema.String,
+  epoch: Schema.Int,
+  holderId: Schema.optionalKey(M.ParticipantId),
+});
+/** The task's state does not allow this action. */
+export const TaskStateConflict = taskFailure(409, "task_state_conflict", "TaskStateConflict", {
+  state: Schema.String,
+});
+/** This agent cannot claim the task now, and why. */
+export const TaskNotClaimable = taskFailure(409, "task_not_claimable", "TaskNotClaimable", {
+  reason: Schema.String,
+  holderId: Schema.optionalKey(M.ParticipantId),
+  expiresAt: Schema.optionalKey(M.Timestamp),
+});
+/** Tasks of one call need each other in a cycle. */
+export const TaskCycle = taskFailure(400, "task_cycle", "TaskCycle", {
+  refs: Schema.Array(Schema.String),
+});
+/** A need names an unknown task, or one that failed or was canceled. */
+export const NeedUnavailable = taskFailure(409, "need_unavailable", "NeedUnavailable", {
+  taskId: Schema.String,
+  state: Schema.optionalKey(Schema.String),
+});
+/** The server holds as many unfinished tasks as it may. */
+export const TaskLimitReached = taskFailure(409, "task_limit_reached", "TaskLimitReached", {
+  limit: Schema.Int,
+});
 /** Reads or polls arrived faster than the configured limit; HTTP also sends Retry-After. */
 export const RateLimited = Schema.Struct({
   error: Schema.Struct({
@@ -153,6 +196,7 @@ export const Unavailable = failure(503, [
   "identity_unavailable",
   "billing_unavailable",
   "files_unavailable",
+  "memory_unavailable",
 ]);
 /** All public protocol failure variants, each with its HTTP status annotation. */
 export const failures = [
@@ -164,6 +208,12 @@ export const failures = [
   NotFound,
   Conflict,
   StoragePoolFull,
+  ClaimLost,
+  TaskStateConflict,
+  TaskNotClaimable,
+  TaskCycle,
+  NeedUnavailable,
+  TaskLimitReached,
   RateLimited,
   InvitationLimited,
   FeedbackLimited,
@@ -177,8 +227,14 @@ export const Failure = Schema.Union(failures);
 export type Failure = typeof Failure.Type;
 /** Stable public error code. */
 export type FailureCode = Failure["error"]["code"];
-/** Errors without structured sending-recovery fields. */
-export type SimpleFailureCode = Exclude<Failure["error"], { readonly retryable: boolean }>["code"];
+/** The code of an error with no fields beyond its code and message. */
+type Simple<E> = E extends { readonly code: infer C; readonly message: string }
+  ? [Exclude<keyof E, "code" | "message">] extends [never]
+    ? C
+    : never
+  : never;
+/** Errors without structured fields (recovery, task state). */
+export type SimpleFailureCode = Simple<Failure["error"]>;
 /** Construct a public failure without exposing implementation errors. */
 export const makeFailure = <const C extends SimpleFailureCode>(
   code: C,

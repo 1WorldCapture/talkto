@@ -15,13 +15,21 @@ export type DashboardRoute =
       readonly accountId: P.AccountId;
       readonly view: string | undefined;
       readonly serverId: string | undefined;
+      /** A Board task page (`…/servers/<id>/board/T-14`): its last part, unparsed. */
+      readonly task: string | undefined;
     }
   /** An invitation's join page; `invitationId` is null when the link is not one. */
   | { readonly kind: "join"; readonly invitationId: G.InvitationId | null }
   /** A server shared with the person as a guest; `serverId` is null when the path is not one. */
-  | { readonly kind: "shared"; readonly serverId: M.ServerId | null }
+  | {
+      readonly kind: "shared";
+      readonly serverId: M.ServerId | null;
+      /** A Board task page (`shared/<id>/board/T-14`): its last part, unparsed. */
+      readonly task: string | undefined;
+    }
   | { readonly kind: "account-settings" }
   | { readonly kind: "sign-ins" }
+  | { readonly kind: "api-keys" }
   | { readonly kind: "entry" }
   | { readonly kind: "organizations" };
 
@@ -38,17 +46,29 @@ export function dashboardRoute(pathname: string): DashboardRoute {
       kind: "join",
       invitationId: segments.length === 3 ? decode(G.InvitationId, segments[2]) : null,
     };
-  if (segments[1] === "shared")
+  if (segments[1] === "shared") {
+    const task = segments.length === 5 && segments[3] === "board" ? segments[4] : undefined;
     return {
       kind: "shared",
-      serverId: segments.length === 3 ? decode(M.ServerId, segments[2]) : null,
+      serverId:
+        segments.length === 3 || task !== undefined ? decode(M.ServerId, segments[2]) : null,
+      task,
     };
+  }
   const accountId = decode(P.AccountId, segments[2]);
   if (accountId !== null)
-    return { kind: "account", accountId, view: segments[3], serverId: segments[4] };
+    return {
+      kind: "account",
+      accountId,
+      view: segments[3],
+      serverId: segments[4],
+      task: segments[5] === "board" ? segments[6] : undefined,
+    };
   if (segments[1] === "account" && segments.length === 2) return { kind: "account-settings" };
   if (segments[1] === "account" && segments[2] === "sign-ins" && segments.length === 3)
     return { kind: "sign-ins" };
+  if (segments[1] === "account" && segments[2] === "api-keys" && segments.length === 3)
+    return { kind: "api-keys" };
   if (segments.length === 1) return { kind: "entry" };
   return { kind: "organizations" };
 }
@@ -58,6 +78,21 @@ export const sharedServerPath = (serverId: M.ServerId) => `shared/${serverId}`;
 /** The /app path of an organization's server. */
 export const accountServerPath = (accountId: P.AccountId, serverId: M.ServerId) =>
   `accounts/${accountId}/servers/${serverId}`;
+
+/**
+ * Where a /app/shared/<serverId> link sends someone the server is not shared with but who reaches
+ * it as a member of its organization: the same page under the organization's route. A task's
+ * `url` is a shared path because it goes to agents, whose person may be a guest or a member; this
+ * opens it for members too. Null when the person does not reach the server as a member.
+ */
+export function memberServerPath(
+  server: { readonly id: M.ServerId; readonly accountId: P.AccountId } | null,
+  task: string | undefined,
+): string | null {
+  if (server === null) return null;
+  const path = accountServerPath(server.accountId, server.id);
+  return task === undefined ? path : `${path}/board/${task}`;
+}
 
 /** Where /app sends a person. */
 export type Entry =

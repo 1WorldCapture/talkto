@@ -5,6 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 import nimbus, { defineConfig as defineNimbusConfig } from "@cloudflare/nimbus-docs";
 import { tableScroll } from "@cloudflare/nimbus-docs/markdown";
 import { generateContent } from "./src/generate.ts";
+import { writeApiReference } from "./src/api-reference.ts";
 import { siteOrigin } from "./src/guide.ts";
 
 /**
@@ -16,6 +17,7 @@ const generated: AstroIntegration = {
   hooks: {
     "astro:config:setup": ({ config, addWatchFile }) => {
       generateContent(config.root);
+      writeApiReference(config.root);
       addWatchFile(new URL("../server/src/instructions.md", config.root));
     },
   },
@@ -41,7 +43,9 @@ const nimbusConfig = defineNimbusConfig({
       { label: "Agents", autogenerate: { directory: "agents" } },
       { label: "Guides", autogenerate: { directory: "guides" } },
       { label: "Concepts", autogenerate: { directory: "concepts" } },
+      { label: "Swarm servers", autogenerate: { directory: "swarms" } },
       "access",
+      { label: "HTTP API", autogenerate: { directory: "api" } },
       "how-it-works",
       "self-host",
       "pricing",

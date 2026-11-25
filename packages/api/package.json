@@ -9,6 +9,7 @@
     "./agent": "./src/agent.ts",
     "./updates": "./src/updates.ts",
     "./renames": "./src/renames.ts",
+    "./tasks": "./src/tasks.ts",
     "./removals": "./src/removals.ts",
     "./plugins": "./src/plugins.ts",
     "./signal": "./src/signal.ts",
@@ -33,8 +34,10 @@
     "./account": "./src/account.ts",
     "./email": "./src/email.ts",
     "./sign-ins": "./src/sign-ins.ts",
+    "./api-keys": "./src/api-keys.ts",
     "./share": "./src/share.ts",
-    "./guests": "./src/guests.ts"
+    "./guests": "./src/guests.ts",
+    "./openapi": "./src/openapi.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

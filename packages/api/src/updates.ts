@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import * as M from "./models.js";
 import * as R from "./renames.js";
 import * as P from "./plugins.js";
+import * as T from "./tasks.js";
 
 /** Stable MCP tool name for the incoming-message feed. */
 export const toolName = "get_updates";
@@ -28,7 +29,18 @@ export const ChannelIds = Schema.Array(M.ConversationId).check(
 export const RequiredChannelIds = ChannelIds.check(
   Schema.isMinLength(1, { expected: 'at least one channel ID when directChats is "none"' }),
 );
-const scope = { channelIds: ChannelIds, directChats: Schema.Literals(["own", "none"]) };
+/**
+ * Which task events a watch delivers in `tasks` (swarm servers): `mine` (the default; events and
+ * thread messages for tasks you own, are assigned or hold), `all` (every event on the board) or
+ * `none`. Task events never count as a source on their own: a watch still needs a channel or
+ * direct chats.
+ */
+const tasks = { tasks: Schema.optionalKey(T.TasksSelection) };
+const scope = {
+  channelIds: ChannelIds,
+  directChats: Schema.Literals(["own", "none"]),
+  ...tasks,
+};
 /** Frozen selection carried by every checkpoint; at least one source is required. */
 export const Selection = Schema.Struct(scope).check(
   Schema.makeFilter((value) => value.channelIds.length > 0 || value.directChats === "own"),
@@ -86,6 +98,7 @@ const start = {
   ...common,
   mode: Schema.Literal("start"),
   startAt: Schema.Literals(["now", "beginning"]),
+  ...tasks,
 };
 /** Start a watch, poll a checkpoint, or continue its fixed snapshot. */
 export const Input = Schema.Union([
@@ -118,6 +131,13 @@ export const Page = Schema.Struct({
    * covers messages and renames, so saved checkpoints keep working and nothing is repeated.
    */
   renames: Schema.optionalKey(Schema.Array(R.Rename).check(Schema.isMaxLength(R.maxNotices))),
+  /**
+   * Task events on a swarm server's board since the checkpoint, as the watch's `tasks` selection
+   * chooses them. Present only when there is at least one. They share the checkpoint's sequence.
+   */
+  tasks: Schema.optionalKey(
+    Schema.Array(T.TaskEvent).check(Schema.isMaxLength(T.maxEventsPerPage)),
+  ),
   /**
    * The newest published version of the plugin named in the call's `plugin` field. Present only
    * when the call named a plugin this server knows; the plugin compares it with its own version.

@@ -14,7 +14,14 @@ export const snapshotDirectory = fileURLToPath(
 );
 
 /** Platform harness options that turn on every optional capability, so every tool is listed. */
-export const everyTool = { transfers: true, files: true, wakeKey: true, signalKey: true };
+export const everyTool = {
+  transfers: true,
+  files: true,
+  wakeKey: true,
+  signalKey: true,
+  board: true,
+  memory: true,
+};
 
 /**
  * A JSON.stringify replacer that writes object keys in sorted order at every depth, so snapshot

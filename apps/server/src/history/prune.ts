@@ -22,9 +22,10 @@ export interface Batch {
 }
 
 /**
- * The oldest messages created before `cutoff`, at most `limit`. Two kinds stay: each
- * conversation's newest message, which the conversation's preview and counters point to, and a
- * message whose file transfer has not expired yet. Reads at most `limit` rows plus one per kept
+ * The oldest messages created before `cutoff`, at most `limit`. Three kinds stay: each
+ * conversation's newest message, which the conversation's preview and counters point to, a
+ * message whose file transfer has not expired yet, and a task's brief, question or result while
+ * the task is kept (`removeTasks`). Reads at most `limit` rows plus one per kept
  * message on the creation-time index; the caller spaces passes out once nothing is left.
  */
 export const select = (
@@ -49,6 +50,9 @@ export const select = (
         `SELECT m.seq, m.id, m.created_at AS createdAt FROM messages m INDEXED BY messages_created_at_seq
          WHERE m.created_at<? AND NOT EXISTS
            (SELECT 1 FROM file_transfers t WHERE t.message_id=m.id AND t.expires_at>?)
+         AND NOT EXISTS (SELECT 1 FROM tasks k WHERE k.brief_message_id=m.id)
+         AND NOT EXISTS (SELECT 1 FROM tasks k WHERE k.outcome_message_id=m.id)
+         AND NOT EXISTS (SELECT 1 FROM tasks k WHERE k.block_message_id=m.id)
          ORDER BY m.created_at, m.seq LIMIT ?`,
         cutoff,
         now,
@@ -96,6 +100,9 @@ export const remove = (
       "message_mentions",
       "message_notices",
       "message_shares",
+      // A task's other thread messages (notes) go like any message; their thread rows first.
+      "task_message_recipients",
+      "task_messages",
     ])
       storage.sql.exec(
         `DELETE FROM ${table} WHERE seq IN (SELECT value FROM json_each(?))`,
@@ -133,3 +140,90 @@ export const size = (storage: DurableObjectStorage) =>
   Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ bytes: M.Count })))(
     storage.sql.exec("SELECT bytes FROM history_size WHERE singleton=1").toArray(),
   )[0]?.bytes ?? 0;
+
+/** Finished tasks one prune transaction removes at most. */
+export const taskBatchSize = 100;
+const decodeIds = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ id: Schema.String })));
+const decodeRange = Schema.decodeUnknownSync(
+  Schema.Struct({ seq: Schema.NullOr(M.Count), at: Schema.NullOr(M.Count) }),
+);
+/**
+ * Remove tasks that finished before `cutoff`, at most `limit`, with everything stored beside them,
+ * except a failed or canceled task that an unfinished task still needs (its cascade is not done),
+ * children first (board.sql's foreign keys), in one transaction. Their briefs and results then
+ * leave with the next message batch. Unfinished tasks always stay, whatever their age. The newest
+ * removed event raises `history_retention`'s pruned range, as a removed message does (spec 2.5);
+ * the updates head does not fall with it (it is the sequence's high-water mark). Returns how many
+ * tasks it removed.
+ */
+export const removeTasks = (
+  storage: DurableObjectStorage,
+  cutoff: number,
+  limit: number,
+  applied: Model.Policy,
+) => {
+  const selected = decodeIds(
+    storage.sql
+      .exec(
+        `SELECT t.id FROM tasks t WHERE t.finished_at IS NOT NULL AND t.finished_at<?
+         AND (t.state='completed' OR NOT EXISTS (SELECT 1 FROM task_needs n JOIN tasks d ON d.id=n.task_id
+           WHERE n.need_id=t.id AND d.state IN ('waiting','ready','claimed','blocked')))
+         ORDER BY t.finished_at LIMIT ?`,
+        cutoff,
+        limit,
+      )
+      .toArray(),
+  ).map((row) => row.id);
+  if (selected.length === 0) return 0;
+  const ids = JSON.stringify(selected);
+  storage.transactionSync(() => {
+    const within = "(SELECT value FROM json_each(?))";
+    const range = decodeRange(
+      storage.sql
+        .exec(
+          `SELECT MAX(seq) AS seq, MAX(created_at) AS at FROM task_events WHERE task_id IN ${within}`,
+          ids,
+        )
+        .one(),
+    );
+    if (range.seq !== null && range.at !== null && applied.plan !== null && applied.days !== null)
+      storage.sql.exec(
+        `UPDATE history_retention SET pruned_through_seq=MAX(COALESCE(pruned_through_seq,0),?),
+         pruned_through_at=MAX(COALESCE(pruned_through_at,0),?), plan=?, days=?, archived=?
+         WHERE singleton=1`,
+        range.seq,
+        range.at,
+        applied.plan,
+        applied.days,
+        applied.archive ? 1 : 0,
+      );
+    storage.sql.exec(
+      `DELETE FROM task_event_recipients WHERE seq IN (SELECT seq FROM task_events WHERE task_id IN ${within})`,
+      ids,
+    );
+    storage.sql.exec(`DELETE FROM task_events WHERE task_id IN ${within}`, ids);
+    storage.sql.exec(
+      `DELETE FROM task_message_recipients WHERE seq IN (SELECT seq FROM task_messages WHERE task_id IN ${within})`,
+      ids,
+    );
+    storage.sql.exec(`DELETE FROM task_messages WHERE task_id IN ${within}`, ids);
+    // The removed tasks' own needs, and the edges to them from tasks that stay (the foreign key
+    // needs both gone). A task that stays loses only an edge to a completed need, which no longer
+    // counts, or to a failed or canceled one whose dependents all finished: the selection keeps a
+    // failed or canceled task while any task needing it is unfinished, so its cascade still finds it.
+    storage.sql.exec(
+      `DELETE FROM task_needs WHERE task_id IN ${within} OR need_id IN ${within}`,
+      ids,
+      ids,
+    );
+    storage.sql.exec(`DELETE FROM task_labels WHERE task_id IN ${within}`, ids);
+    storage.sql.exec(`DELETE FROM task_holders WHERE task_id IN ${within}`, ids);
+    storage.sql.exec(`DELETE FROM task_finishers WHERE task_id IN ${within}`, ids);
+    storage.sql.exec(`DELETE FROM task_requests WHERE task_id IN ${within}`, ids);
+    storage.sql.exec(`DELETE FROM tasks WHERE id IN ${within}`, ids);
+    storage.sql.exec(
+      "DELETE FROM task_batches WHERE finished_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.batch_id=task_batches.id)",
+    );
+  });
+  return selected.length;
+};

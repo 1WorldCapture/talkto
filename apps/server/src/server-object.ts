@@ -11,6 +11,7 @@ import {
   Result,
   Schedule,
   Schema,
+  Semaphore,
 } from "effect";
 import * as A from "@talkto/api/agent";
 import * as P from "@talkto/api/platform";
@@ -18,6 +19,7 @@ import * as Agent from "./agent.js";
 import * as Envelope from "@talkto/api/envelope";
 import * as M from "@talkto/api/models";
 import * as O from "@talkto/api/onboarding";
+import { freeClaimCap } from "@talkto/api/pricing";
 import * as Access from "./access.js";
 import * as Actors from "./actors.js";
 import * as Persons from "./people.js";
@@ -43,6 +45,7 @@ import { capabilities } from "./capabilities.js";
 import * as Pool from "./files/pool.js";
 import * as Reads from "./reads.js";
 import * as BudgetClient from "./budgets/client.js";
+import * as BudgetModel from "./budgets/model.js";
 import * as Entitlements from "./account-entitlements.js";
 import * as Telemetry from "./telemetry.js";
 import * as Signals from "./signals.js";
@@ -55,6 +58,11 @@ import * as WakeTransport from "./wakes/transport.js";
 import * as WakeSettings from "./wakes/settings.js";
 import * as WakePolicy from "./wakes/policy.js";
 import * as Wakes from "./wakes/service.js";
+import * as Board from "./board/service.js";
+import * as BoardSettings from "./board/settings.js";
+import * as Memory from "./memory/service.js";
+import * as MemoryModel from "./memory/model.js";
+import * as MemoryBindings from "./memory/bindings.js";
 import * as McpEvents from "./wakes/mcp-events.js";
 import * as History from "./history/model.js";
 import * as Prune from "./history/prune.js";
@@ -63,9 +71,6 @@ import * as Archive from "./history/archive.js";
 const hourMillis = 3_600_000;
 /** One archived message per line, in the shape every message reader returns. */
 const encodeArchived = Schema.encodeSync(Schema.fromJsonString(M.Message));
-
-/** What deciding to hold an HTTP page needs from its body. */
-const decodeJsonPage = Schema.decodeUnknownOption(Schema.fromJsonString(Signal.Page));
 
 /** The server ID a failed request named, only when it parses as one; logs never carry path text. */
 const loggedServerId = (request: Request) =>
@@ -82,6 +87,10 @@ export class TalkToServer extends DurableObject<Env> {
   private shareCost = Metering.singleUnit;
   private files = Files.unavailable;
   private transfers = Transfers.unavailable;
+  /** Swarm memory's Git store, chosen at composition: Artifacts, or none (memory/bindings.ts). */
+  private memoryStore: MemoryModel.Repositories["Service"] = MemoryModel.unavailable;
+  /** One memory head check, provision or sweep at a time on this object. */
+  private readonly memoryLock = Semaphore.makeUnsafe(1);
   private reads = Reads.unmeasured;
   private owner: Reads.Owner | null = null;
   /** Undefined until decided; null where nothing is budgeted. */
@@ -134,6 +143,10 @@ export class TalkToServer extends DurableObject<Env> {
         admit: (access, read) => this.reads.admit(access, read),
         admin: (access, call) => this.reads.admin(access, call),
         refused: (access, call) => this.reads.refused(access, call),
+        task: (access, call) => this.reads.task(access, call),
+        taskUsage: () => this.reads.taskUsage(),
+        memoryCommits: (units) => this.reads.memoryCommits(units),
+        memoryUsage: () => this.reads.memoryUsage(),
       }),
     );
     const ownership = Layer.succeed(
@@ -144,6 +157,7 @@ export class TalkToServer extends DurableObject<Env> {
       WakeSchedule.WakeSchedule,
       WakeSchedule.WakeSchedule.of({
         notify: (arrival) => Effect.promise(() => this.scheduleWake(arrival)),
+        notifyParticipants: (ids) => Effect.promise(() => this.scheduleParticipants(ids)),
         arm: (at) => Effect.promise(() => this.armWake(at)),
       }),
     );
@@ -159,26 +173,64 @@ export class TalkToServer extends DurableObject<Env> {
       Layer.provide(identifiers),
       Layer.provide(ownership),
     );
+    const meter = Layer.succeed(
+      Metering.Meter,
+      Metering.Meter.of({
+        consume: (id, units, kind) => this.meter.consume(id, units, kind),
+        refill: (units) =>
+          Effect.tryPromise({
+            try: () => this.configureMeter(),
+            catch: () => Metering.unavailable("ownership"),
+          }).pipe(Effect.flatMap(() => this.meter.refill(units))),
+      }),
+    );
+    const updateSignal = Layer.succeed(Signal.UpdateSignal, Signal.fromWatches(this.watches));
+    // Initialization reads the environment before any request, so both are settled by first use.
+    const shareCost = Layer.succeed(
+      Metering.ShareCost,
+      Metering.ShareCost.of({ units: () => this.shareCost }),
+    );
+    const transferStore = Layer.succeed(
+      Transfers.TransferStore,
+      Transfers.TransferStore.of({
+        uploadUrl: (key, bytes) => this.transfers.uploadUrl(key, bytes),
+        downloadUrl: (key, options) => this.transfers.downloadUrl(key, options),
+        size: (key) => this.transfers.size(key),
+        remove: (keys) => this.transfers.remove(keys),
+        removePrefix: (prefix) => this.transfers.removePrefix(prefix),
+      }),
+    );
+    // Swarm memory shares the server's storage, meter, watches and budgets (memory/service.ts).
+    this.memoryStore = this.configureMemory(env);
+    const memory = Memory.layer.pipe(
+      Layer.provide(Sqlite.layer(ctx.storage)),
+      Layer.provide(ownership),
+      Layer.provide(meter),
+      Layer.provide(updateSignal),
+      Layer.provide(reads),
+      Layer.provide(identifiers),
+      Layer.provide(Layer.succeed(MemoryModel.Repositories, this.memoryStore)),
+      Layer.provide(Layer.succeed(Memory.Deployment, this.memoryDeployment(env))),
+    );
+    // The task board shares the server's storage, meter, watches, wakes and transfer store
+    // (board/service.ts): a result's files are transfers offered in the task's thread.
+    const board = Board.layer.pipe(
+      Layer.provide(memory),
+      Layer.provide(Sqlite.layer(ctx.storage)),
+      Layer.provide(ownership),
+      Layer.provide(meter),
+      Layer.provide(shareCost),
+      Layer.provide(transferStore),
+      Layer.provide(updateSignal),
+      Layer.provide(schedule),
+      Layer.provide(identifiers),
+      Layer.provide(Layer.succeed(Board.Deployment, this.boardDeployment(env))),
+    );
     const application = TalkTo.layer.pipe(
       Layer.provide(Sqlite.layer(ctx.storage)),
       Layer.provide(ownership),
-      Layer.provide(
-        Layer.succeed(
-          Metering.Meter,
-          Metering.Meter.of({
-            consume: (id, units, kind) => this.meter.consume(id, units, kind),
-            refill: (units) =>
-              Effect.tryPromise({
-                try: () => this.configureMeter(),
-                catch: () => Metering.unavailable("ownership"),
-              }).pipe(Effect.flatMap(() => this.meter.refill(units))),
-          }),
-        ),
-      ),
-      // Initialization reads the environment before any request, so both are settled by first use.
-      Layer.provide(
-        Layer.succeed(Metering.ShareCost, Metering.ShareCost.of({ units: () => this.shareCost })),
-      ),
+      Layer.provide(meter),
+      Layer.provide(shareCost),
       Layer.provide(
         Layer.succeed(
           Files.FileStore,
@@ -190,7 +242,7 @@ export class TalkToServer extends DurableObject<Env> {
           }),
         ),
       ),
-      Layer.provide(Layer.succeed(Signal.UpdateSignal, Signal.fromWatches(this.watches))),
+      Layer.provide(updateSignal),
       Layer.provide(
         Layer.succeed(
           Signals.SignalSecrets,
@@ -198,18 +250,7 @@ export class TalkToServer extends DurableObject<Env> {
         ),
       ),
       Layer.provide(schedule),
-      Layer.provide(
-        Layer.succeed(
-          Transfers.TransferStore,
-          Transfers.TransferStore.of({
-            uploadUrl: (key, bytes) => this.transfers.uploadUrl(key, bytes),
-            downloadUrl: (key, options) => this.transfers.downloadUrl(key, options),
-            size: (key) => this.transfers.size(key),
-            remove: (keys) => this.transfers.remove(keys),
-            removePrefix: (prefix) => this.transfers.removePrefix(prefix),
-          }),
-        ),
-      ),
+      Layer.provide(transferStore),
       Layer.provide(
         Layer.succeed(
           Pool.StoragePool,
@@ -235,6 +276,8 @@ export class TalkToServer extends DurableObject<Env> {
       Layer.provide(identifiers),
       Layer.merge(reads),
       Layer.merge(wakes),
+      Layer.merge(board),
+      Layer.merge(memory),
     );
     this.application = application;
     this.web = Http.makeHandler(application);
@@ -275,6 +318,7 @@ export class TalkToServer extends DurableObject<Env> {
               organizationLimit: env.ORGANIZATION_READS,
               owner: () => Effect.promise(() => this.knownOwner()),
               budget: () => Effect.promise(() => this.budget()),
+              usage: () => Effect.promise(() => this.budgetUsage()),
               now: Effect.suspend(() => this.limiterTime()),
             });
             // Only the explicit local entry point supplies a bootstrap configuration.
@@ -351,6 +395,24 @@ export class TalkToServer extends DurableObject<Env> {
     );
     return this.budgets;
   }
+  /**
+   * The organization's budgets this month, asked of its quota object (one call); null where
+   * nothing is budgeted or the quota object cannot answer, so a reply never fails for it.
+   */
+  private async budgetUsage(): Promise<BudgetModel.Usage | null> {
+    if ((await this.budget()) === null) return null;
+    const owner = Schema.decodeUnknownOption(
+      Schema.Struct({ accountId: P.AccountId, serverId: M.ServerId }),
+    )(await this.ctx.storage.get("metering-owner"));
+    if (owner._tag === "None") return null;
+    try {
+      return Schema.decodeUnknownSync(BudgetModel.Usage)(
+        await this.env.QUOTAS.getByName(owner.value.accountId).budgetUsage(),
+      );
+    } catch {
+      return null;
+    }
+  }
   /** The owning account, recorded at provisioning; older servers backfill it once from D1. */
   private async meteringOwner() {
     const stored = await this.ctx.storage.get("metering-owner");
@@ -396,6 +458,81 @@ export class TalkToServer extends DurableObject<Env> {
   /** Choose the file store from the environment; verification subclasses substitute a recording fake. */
   protected configureFiles(env: Env) {
     return FileBindings.configure(env);
+  }
+  /**
+   * Choose memory's Git store from the environment, at construction; verification subclasses
+   * substitute a fake repository store.
+   */
+  protected configureMemory(env: Env): MemoryModel.Repositories["Service"] {
+    return MemoryBindings.configure(env);
+  }
+  /** What the deployment decides about swarm memory, and this object's levers for it. */
+  private memoryDeployment(env: Env): Memory.Deployment["Service"] {
+    if (!BoardSettings.memorySwitchFromEnv(env) || !this.memoryStore.available)
+      return Memory.absent(this.memoryLock);
+    return Memory.Deployment.of({
+      offered: true,
+      lock: this.memoryLock,
+      source: (serverId, principalKey) =>
+        "SERVERS" in env
+          ? Effect.tryPromise(() =>
+              env.SERVERS.getByName(serverId).memorySource({ principalKey }),
+            ).pipe(Effect.orElseSucceed(() => null))
+          : Effect.succeed(null),
+      arm: (at) => Effect.promise(() => this.armWake(at)),
+      creator: this.creator(env),
+    });
+  }
+  /**
+   * Another server asks for this server's memory repository, to fork it for a person: answered
+   * only when that person holds a live grant here and memory was set up. Never a token.
+   */
+  async memorySource(input: { readonly principalKey: string }): Promise<string | null> {
+    return this.operation(
+      async () => {
+        if (Result.isFailure(await this.ready)) return null;
+        const principal = Schema.decodeUnknownOption(Access.PrincipalKey)(input.principalKey);
+        if (Option.isNone(principal)) return null;
+        const access = await run(
+          this.resolveAccess(principal.value).pipe(Effect.orElseSucceed(() => null)),
+        );
+        if (access === null) return null;
+        const row = this.ctx.storage.sql
+          .exec("SELECT name FROM memory_repository WHERE singleton=1 AND seeded=1")
+          .toArray()[0];
+        return Option.getOrNull(Schema.decodeUnknownOption(Schema.String)(row?.["name"]));
+      },
+      () => null,
+    );
+  }
+  /** Delete the server's memory repository when one was ever created; a failing store keeps the deletion pending. */
+  private async eraseMemory() {
+    const row = this.ctx.storage.sql
+      .exec("SELECT name FROM memory_repository WHERE singleton=1")
+      .toArray()[0];
+    const name = Option.getOrNull(Schema.decodeUnknownOption(Schema.String)(row?.["name"]));
+    if (name === null) return;
+    const removed = await run(
+      this.memoryStore.remove(name).pipe(
+        Effect.retry({
+          while: (error) => error._tag === "MemoryStoreFailure",
+          times: 2,
+          schedule: Schedule.exponential("250 millis"),
+        }),
+        Effect.catchTag("MemoryStoreUnavailable", () =>
+          Effect.sync(() =>
+            console.warn(
+              "TalkTo server deletion found no memory store; repository left to cleanup",
+              {
+                repository: name,
+              },
+            ),
+          ),
+        ),
+        Effect.exit,
+      ),
+    );
+    if (Exit.isFailure(removed)) throw new Error("The memory repository could not be deleted yet");
   }
   /** The caller's current grant on this server; null where it has none or there is no server. */
   private resolveAccess(principal: Access.PrincipalKey) {
@@ -461,6 +598,7 @@ export class TalkToServer extends DurableObject<Env> {
       );
       await this.eraseActivity(serverId);
       await this.eraseRepository(serverId);
+      await this.eraseMemory();
       await this.eraseTransfers(serverId);
       await this.eraseArchive(serverId);
       // The objects are gone, so the organization pool stops counting this server's transfers.
@@ -575,7 +713,7 @@ export class TalkToServer extends DurableObject<Env> {
             try: () =>
               this.env.PLATFORM.withSession("first-primary")
                 .prepare(
-                  "SELECT id FROM servers WHERE id=? AND account_id=? AND deletion_requested_at IS NULL",
+                  "SELECT id, admission_kind AS admissionKind FROM servers WHERE id=? AND account_id=? AND deletion_requested_at IS NULL",
                 )
                 .bind(server.id, server.accountId)
                 .first(),
@@ -590,6 +728,20 @@ export class TalkToServer extends DurableObject<Env> {
               code: "not_found",
               message: "Server unavailable.",
             });
+          // A swarm server created without a paid plan (Free, the trial, no plan) starts with
+          // Free's claim cap; paid plans and owner pilots start with none. The reservation's own
+          // row says which (`admission_kind`), so this costs no other query.
+          const admission = Schema.decodeUnknownOption(
+            Schema.Struct({ admissionKind: Schema.Literals(["paid", "unpaid"]) }),
+          )(current);
+          const claimCap =
+            server.board === true &&
+            BoardSettings.freeClaimCapFromEnv(this.env) &&
+            admission._tag === "Some" &&
+            admission.value.admissionKind === "unpaid" &&
+            !Entitlements.covers(Pool.limits(this.env).unlimitedAccounts, server.accountId)
+              ? freeClaimCap
+              : null;
           yield* Sqlite.initialize(this.ctx.storage, {
             serverId: server.id,
             name: server.name,
@@ -597,6 +749,8 @@ export class TalkToServer extends DurableObject<Env> {
             grantId: null,
             principalKey: null,
             now: server.createdAt,
+            board: server.board === true,
+            claimCap,
           });
           this.initialized = true;
           const existing = yield* Effect.promise(() =>
@@ -755,6 +909,14 @@ export class TalkToServer extends DurableObject<Env> {
         Effect.tap(() => Effect.sync(() => this.watches.recheckAll())),
         // Tokens follow their grant: any delivery may have revoked one, including an older grant of the same principal.
         Effect.flatMap(() => this.revokeFileTokens()),
+        // Memory's Git tokens follow their grant and participant too (memory/service.ts).
+        Effect.flatMap((pending) =>
+          Memory.Memory.pipe(
+            Effect.flatMap((memory) => memory.sweep()),
+            Effect.provide(this.application),
+            Effect.map((owed) => pending + owed),
+          ),
+        ),
         // A token the store could not revoke is retried by the flush pass; keep a wake for it.
         Effect.flatMap((pending) =>
           pending > 0 ? Effect.promise(() => this.scheduleWork(60000)) : Effect.void,
@@ -874,7 +1036,10 @@ export class TalkToServer extends DurableObject<Env> {
     const pendingRevocations = revocations.status === "fulfilled" ? revocations.value : 0;
     // After projection, so a removed message was already exported. It never fails the pass.
     const pruneBacklog = await this.pruneHistory();
-    const nextWake = await this.nextWake();
+    // Wakes and leases share the one alarm: a lease must end on time even when nothing else is due.
+    const wake = await this.nextWake();
+    const lease = await this.nextLease();
+    const nextWake = wake === null ? lease : lease === null ? wake : Math.min(wake, lease);
     // A held block needs one pass, at its hold's end; a close or recovery still owed retries soon.
     const due = this.usageDue();
     const holdLeft = due === null ? null : Date.parse(due) - Date.parse(this.meteringTime());
@@ -882,7 +1047,7 @@ export class TalkToServer extends DurableObject<Env> {
       holdLeft === null || holdLeft <= 0
         ? null
         : DateTime.toEpochMillis(DateTime.nowUnsafe()) + holdLeft;
-    return this.ctx.storage.transaction(async (transaction) => {
+    const settled = await this.ctx.storage.transaction(async (transaction) => {
       const { head } = Schema.decodeUnknownSync(Schema.Struct({ head: M.Count }))(
         this.ctx.storage.sql.exec("SELECT COALESCE(MAX(seq),0) AS head FROM messages").one(),
       );
@@ -910,6 +1075,12 @@ export class TalkToServer extends DurableObject<Env> {
       }
       return { caughtUp };
     });
+    // A claim that committed after the lease was read above armed the alarm, and the
+    // transaction may have moved or deleted it since: read the leases again and keep the alarm
+    // no later than the next one. A claim after this read arms the alarm itself.
+    const leaseAfter = await this.nextLease();
+    if (leaseAfter !== null) await this.armWake(leaseAfter);
+    return settled;
   }
   /** The Factory history archive, or null without a bucket; verification subclasses may substitute one. */
   protected historyArchive(): Archive.ArchiveStore["Service"] | null {
@@ -1009,12 +1180,16 @@ export class TalkToServer extends DurableObject<Env> {
     const shedding = cap !== null && Prune.size(this.ctx.storage) > cap;
     const over = () => shedding && Prune.size(this.ctx.storage) > cap * History.capHeadroom;
     for (let pass = 0; pass < Prune.batchesPerPass; pass++) {
+      // Finished tasks leave with their window too, so their briefs and results can follow.
+      const tasks = Prune.removeTasks(this.ctx.storage, cutoff, Prune.taskBatchSize, applied);
       let batch = Prune.select(this.ctx.storage, cutoff, now, Prune.batchSize);
       let capped = false;
       if (batch === null && over()) {
+        Prune.removeTasks(this.ctx.storage, now, Prune.taskBatchSize, applied);
         batch = Prune.select(this.ctx.storage, now, now, Prune.batchSize);
         capped = true;
       }
+      if (batch === null && tasks === Prune.taskBatchSize) return { backlog: true, archiveUsed };
       if (batch === null) return { backlog: false, archiveUsed };
       if (applied.archive && archive !== null) {
         const messages = await run(
@@ -1096,8 +1271,81 @@ export class TalkToServer extends DurableObject<Env> {
   }
   /** Alarm retries preserve quota closure independently of projection success. */
   override async alarm() {
+    await this.expireLeases();
     await this.deliverWakes();
     if ("PLATFORM" in this.env) await this.projectActivity();
+  }
+  /**
+   * The board's share of the alarm: leases that ran out return their tasks (or fail them), a long
+   * cascade continues, and the alarm stays set for the next lease. Never throws.
+   */
+  private async expireLeases() {
+    await this.operation(
+      async () => {
+        const next = await run(
+          Board.Board.pipe(
+            Effect.flatMap((board) => board.tick()),
+            Effect.provide(this.application),
+            Effect.orElseSucceed(() => DateTime.toEpochMillis(DateTime.nowUnsafe()) + 60_000),
+            Effect.catchDefect(() =>
+              Effect.succeed(DateTime.toEpochMillis(DateTime.nowUnsafe()) + 60_000),
+            ),
+          ),
+        );
+        if (next !== null) await this.armWake(next);
+      },
+      () => undefined,
+    );
+  }
+  /** When the board next needs the alarm: the earliest lease end. Never throws. */
+  private nextLease() {
+    return run(
+      Board.Board.pipe(
+        Effect.flatMap((board) => board.nextDue()),
+        Effect.provide(this.application),
+        Effect.orElseSucceed(() => null),
+        Effect.catchDefect(() => Effect.succeed(null)),
+      ),
+    );
+  }
+  /** The server's creator, as the platform records it; null without a platform or on a failure. */
+  private creator(env: Env): () => Effect.Effect<Access.PrincipalKey | null> {
+    if (!("PLATFORM" in env)) return () => Effect.succeed(null);
+    return () =>
+      Effect.tryPromise(async () => {
+        const id = Schema.decodeUnknownOption(M.ServerId)(
+          this.ctx.storage.sql.exec("SELECT id FROM server").toArray()[0]?.["id"],
+        );
+        if (id._tag === "None") return null;
+        const row = await env.PLATFORM.withSession("first-primary")
+          .prepare("SELECT created_by FROM servers WHERE id=? AND deletion_requested_at IS NULL")
+          .bind(id.value)
+          .first<{ created_by: string }>();
+        return row === null ? null : Platform.actor(P.UserId.make(row.created_by)).principalKey;
+      }).pipe(Effect.orElseSucceed(() => null));
+  }
+  /** `TALKTO_BOARD` and the platform's copy of each server's switch (D1 `servers.board`). */
+  private boardDeployment(env: Env): Board.Deployment["Service"] {
+    const enabled = BoardSettings.fromEnv(env);
+    const transfers = capabilities(env).has("transfers");
+    if (!("PLATFORM" in env)) return Board.standalone(enabled, { transfers });
+    const serverId = () =>
+      Schema.decodeUnknownOption(M.ServerId)(
+        this.ctx.storage.sql.exec("SELECT id FROM server").toArray()[0]?.["id"],
+      );
+    return Board.Deployment.of({
+      enabled,
+      creator: this.creator(env),
+      record: (on) =>
+        Effect.tryPromise(async () => {
+          const id = serverId();
+          if (id._tag === "None") return;
+          await env.PLATFORM.prepare("UPDATE servers SET board=? WHERE id=?")
+            .bind(on ? 1 : 0, id.value)
+            .run();
+        }).pipe(Effect.orElseSucceed(() => undefined)),
+      transfers,
+    });
   }
   /** Outbound wake requests; verification subclasses may substitute their own. */
   protected wakeTransport() {
@@ -1110,6 +1358,23 @@ export class TalkToServer extends DurableObject<Env> {
       this.wakeStore
         .markDue(arrival, DateTime.toEpochMillis(DateTime.nowUnsafe()), WakePolicy.debounceMs)
         // The send has already committed; a wake problem must never fail it.
+        .pipe(
+          Effect.orElseSucceed(() => null),
+          Effect.catchDefect(() => Effect.succeed(null)),
+        ),
+    );
+    if (due !== null) await this.armWake(due);
+  }
+  /** After a task change commits: mark the woken participants' targets due and arm the alarm. */
+  private async scheduleParticipants(ids: ReadonlyArray<M.ParticipantId>) {
+    if (!this.wakeSettings.events || ids.length === 0) return;
+    const due = await run(
+      this.wakeStore
+        .markParticipantsDue(
+          ids,
+          DateTime.toEpochMillis(DateTime.nowUnsafe()),
+          WakePolicy.debounceMs,
+        )
         .pipe(
           Effect.orElseSucceed(() => null),
           Effect.catchDefect(() => Effect.succeed(null)),
@@ -1617,13 +1882,9 @@ export class TalkToServer extends DurableObject<Env> {
   ): Promise<{ readonly reply: Response; readonly page: string | null }> {
     if (read.kind === "agent") {
       const reply = await this.agent(principal, organization, read.command, read.meta, false);
-      const page = Schema.decodeUnknownOption(Signal.Page)(reply);
       return {
         reply: Response.json(reply),
-        page:
-          Option.isSome(page) && Signal.summary(page.value).empty
-            ? Schema.encodeSync(Signal.AgentPage)(reply)
-            : null,
+        page: Signal.holdable(reply) ? Schema.encodeSync(Signal.AgentPage)(reply) : null,
       };
     }
     const headers = new Headers(read.headers);
@@ -1632,8 +1893,6 @@ export class TalkToServer extends DurableObject<Env> {
       new Request(read.url, { method: "POST", headers, body: read.body }),
     );
     const body = await response.text();
-    const page =
-      response.status === 200 ? decodeJsonPage(body) : Option.none<typeof Signal.Page.Type>();
     return {
       reply: new Response(body, {
         status: response.status,
@@ -1641,15 +1900,25 @@ export class TalkToServer extends DurableObject<Env> {
         headers: response.headers,
       }),
       page:
-        Option.isSome(page) && Signal.summary(page.value).empty
+        response.status === 200 && Signal.holdableJson(body)
           ? Schema.encodeSync(Signal.HttpPage)({ headers: [...response.headers], body })
           : null,
     };
   }
   /** Workers never write to a watch; a stray frame changes nothing. */
   override webSocketMessage() {}
-  /** A Worker closed its watch at its deadline or answer; the runtime completes the close. */
-  override webSocketClose() {}
+  /**
+   * A Worker closed its watch at its deadline or answer. The runtime does not answer a
+   * hibernatable socket's close, so answer it here: otherwise the Worker's end stays half-closed
+   * until Cloudflare cancels it ("waitUntil() tasks did not complete … cancelled").
+   */
+  override webSocketClose(socket: WebSocket) {
+    try {
+      socket.close(1000, "done");
+    } catch {
+      // Already closed.
+    }
+  }
   /** A broken watch ends with its Worker's deadline or final read. */
   override webSocketError() {}
   /** Translate an already-authenticated internal request to the shared HTTP adapter. */
@@ -1708,9 +1977,11 @@ export class TalkToServer extends DurableObject<Env> {
       return Responses.failure(401, "unauthenticated", "Authenticated access is required.", meta);
     // Only the hosted Worker sets this, after verifying the website's session cookie; it removes
     // any copy a caller sent. It travels with x-talkto-principal, never with a local credential.
-    const website =
-      Result.isSuccess(principal) &&
-      request.headers.get(Access.websiteHeader) === Access.websiteSession;
+    const authenticatedBy = Result.isSuccess(principal)
+      ? request.headers.get(Access.websiteHeader)
+      : null;
+    const website = authenticatedBy === Access.websiteSession;
+    const apiKey = authenticatedBy === Access.apiKeySession;
     // Likewise set only by the hosted Worker, from the verified WorkOS profile. Local access has no
     // profile, so a person there gets the generic name.
     const person = {
@@ -1727,6 +1998,7 @@ export class TalkToServer extends DurableObject<Env> {
             access,
             meta,
             website,
+            apiKey,
             person,
             // Every ingress removes a caller's copy; only a Worker holding a wait sets it.
             reread: request.headers.get(Signal.rereadHeader) === "1",

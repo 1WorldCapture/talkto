@@ -77,7 +77,15 @@
     // File transfers: on once the TALKTO_R2_ACCESS_KEY_ID and TALKTO_R2_SECRET_ACCESS_KEY secrets exist.
     "TALKTO_R2_ACCOUNT_ID": "__CLOUDFLARE_ACCOUNT_ID__",
     "TALKTO_R2_BUCKET": "__NAME__-transfers",
+    // Swarm servers and their task board. Anything but "on" turns them off.
+    "TALKTO_BOARD": "on",
+    // Swarm memory: uncomment this and the MEMORY_ARTIFACTS binding below. Artifacts makes the
+    // namespace itself and needs no secret; Cloudflare bills its storage and operations. Without
+    // both, swarm servers work with no memory.
+    // "TALKTO_MEMORY": "on",
   },
+  // Swarm memory's Git repositories on Cloudflare Artifacts, one per swarm server (mem-<serverId>).
+  // "artifacts": [{ "binding": "MEMORY_ARTIFACTS", "namespace": "__NAME__" }],
   "durable_objects": {
     "bindings": [
       { "name": "SERVERS", "class_name": "TalkToServer" },

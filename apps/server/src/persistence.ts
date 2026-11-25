@@ -13,6 +13,8 @@ import type * as R from "@talkto/api/renames";
 import type * as Removals from "@talkto/api/removals";
 import type * as P from "@talkto/api/plugins";
 import type * as History from "./history/model.js";
+import type { BoardStore } from "./board/store.js";
+import type { MemoryStore } from "./memory/store.js";
 
 type Read<A> = Effect.Effect<A, E.StorageUnavailable>;
 /** Creation metadata used for scoped idempotency; not exposed to agents. */
@@ -91,13 +93,21 @@ export interface RemovalChange {
   readonly byId: M.ParticipantId;
   readonly at: M.Timestamp;
 }
-/** The newest incoming messages after a boundary, newest first, and how many are urgent. */
+/**
+ * The newest incoming items after a boundary, newest first, and how many are urgent. Items are
+ * messages and, for task readers, task events: both are UUIDs, so a signal link's `cursor` names
+ * either.
+ */
 export interface SignalTally {
   readonly newest: ReadonlyArray<M.MessageId>;
   readonly urgent: number;
 }
 /** Cohesive persistence capabilities available only inside one synchronous transaction. */
 export interface Session {
+  /** The task board's tables (migrations/board.sql). */
+  readonly board: BoardStore;
+  /** Swarm memory's ledger (migrations/memory-repository.sql). */
+  readonly memory: MemoryStore;
   readonly updatesHead: () => Read<{
     readonly generation: U.Generation;
     readonly sequence: number;

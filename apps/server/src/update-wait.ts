@@ -1,6 +1,7 @@
 import { Clock, Effect, Option, Schema } from "effect";
 import * as A from "@talkto/api/agent";
 import * as M from "@talkto/api/models";
+import * as T from "@talkto/api/tasks";
 import * as U from "@talkto/api/updates";
 import type * as P from "@talkto/api/platform";
 import type * as Access from "./access.js";
@@ -10,7 +11,9 @@ import * as Updates from "./updates.js";
 import * as Signal from "./update-signal.js";
 
 /**
- * The Worker half of a waiting get_updates call (see update-signal.ts). The Worker that received
+ * The Worker half of a waiting get_updates call (see update-signal.ts), and of a claim_task for
+ * next that waits for work: the same watch, deadline and re-reads, where an empty claim stands for
+ * an empty page and each re-read claims again. The Worker that received
  * the call asks the server object, in one request, to register a hibernatable watch and read
  * once; when nothing matched it waits on the watch until the call's deadline, reading again
  * whenever the object says `recheck`. Workers are billed for CPU, not for waiting, so a held call
@@ -36,12 +39,22 @@ export interface Authority {
 }
 /** How one wait on a watch ended. */
 type Outcome = "recheck" | "end" | "closed" | "timeout";
-/** Whether a read answered with a page, and whether that page can be held for more. */
-interface Read<R> {
-  readonly reply: R;
-  /** Null when the read failed: a failure answers at once, as it always did. */
-  readonly page: { readonly checkpoint: M.Cursor; readonly empty: boolean } | null;
+/** Where a held read ended, and whether it found nothing yet. */
+interface Held {
+  readonly empty: boolean;
 }
+/** Where a get_updates page ends, so a re-read continues from it. */
+interface PageEnd extends Held {
+  readonly checkpoint: M.Cursor;
+}
+/** Whether a read answered with a page, and whether that page can be held for more. */
+interface Read<R, P extends Held> {
+  readonly reply: R;
+  /** Null when the read failed (or claimed): a failure answers at once, as it always did. */
+  readonly page: P | null;
+}
+/** A held claim's empty answer: nothing to continue from, the same claim runs again. */
+const emptyClaim: Held = { empty: true };
 
 /** The private URL of a server object's watch route; the host is never resolved. */
 const watchUrl = `https://server.talkto.internal${Signal.watchPath}`;
@@ -184,13 +197,21 @@ const open = (server: Server, authority: Authority, watch: Signal.Watch, first: 
     }),
   );
 /** How one kind of call sends its first read with its watch, and reads the answers. */
-interface First<R> {
+interface First<R, P extends Held> {
   /** The first read, as the first-read header carries it. */
   readonly request: () => string;
   /** The reply when the first read answered at once. */
   readonly answered: (response: Response) => Effect.Effect<R>;
   /** The empty page an opened watch holds. */
-  readonly held: (page: string) => Effect.Effect<Read<R>>;
+  readonly held: (page: string) => Effect.Effect<Read<R, P>>;
+}
+/** What one held call waits on, for how long, and what it reads again. */
+interface Plan<I, P extends Held> {
+  /** The watch, or null to read once: no wait, or a token whose selection does not parse. */
+  readonly watch: Signal.Watch | null;
+  readonly waitMillis: number;
+  /** The input a re-read sends after an empty `page`. */
+  readonly again: (page: P) => I;
 }
 
 /** Where a re-read continues: the checkpoint already read, never "start at now" again. */
@@ -212,21 +233,21 @@ const continuation = (input: U.Input, checkpoint: M.Cursor): U.Input => {
  * failing, that call counts two reads. An object Cloudflare reports overloaded still fails the
  * call, so polling never adds load to it.
  */
-const hold = Effect.fn("UpdateWait.hold")(function* <R>(
+const hold = Effect.fn("UpdateWait.hold")(function* <I, R, P extends Held>(
   connect: () => Server,
   authority: Authority,
-  input: U.Input,
-  first: First<R>,
-  read: (server: Server, input: U.Input, reread: boolean) => Effect.Effect<Read<R>>,
+  input: I,
+  plan: Plan<I, P>,
+  first: First<R, P>,
+  read: (server: Server, input: I, reread: boolean) => Effect.Effect<Read<R, P>>,
 ) {
   let server = connect();
-  const waitMillis = (input.waitSeconds ?? 0) * 1000;
-  const selection = waitMillis === 0 ? null : yield* Updates.selectionOf(input);
-  if (selection === null) return (yield* read(server, input, false)).reply;
-  const deadline = (yield* Clock.currentTimeMillis) + waitMillis;
+  const watch = plan.waitMillis === 0 ? null : plan.watch;
+  if (watch === null) return (yield* read(server, input, false)).reply;
+  const deadline = (yield* Clock.currentTimeMillis) + plan.waitMillis;
   return yield* Effect.acquireUseRelease(
     // The watch is registered before the first read: a send that commits after that read wakes it.
-    open(server, authority, { participantId: input.participantId, selection }, first.request).pipe(
+    open(server, authority, watch, first.request).pipe(
       Effect.catchDefect((defect) =>
         runtimeFlags(defect).overloaded === true
           ? Effect.die(defect)
@@ -254,7 +275,7 @@ const hold = Effect.fn("UpdateWait.hold")(function* <R>(
           // A watch the runtime dropped (a deploy, a reset) gets one last read, then answers. A
           // reset breaks this stub for every later call, so that read goes through a new one.
           if (outcome === "closed") server = connect();
-          step = yield* read(server, continuation(input, step.page.checkpoint), true);
+          step = yield* read(server, plan.again(step.page), true);
           if (outcome === "closed") return step.reply;
         }
       }),
@@ -262,10 +283,35 @@ const hold = Effect.fn("UpdateWait.hold")(function* <R>(
   );
 });
 
+/** The plan of a get_updates call: its own selection, continued from each page's checkpoint. */
+const updatesPlan = (input: U.Input): Effect.Effect<Plan<U.Input, PageEnd>> =>
+  Effect.gen(function* () {
+    const waitMillis = (input.waitSeconds ?? 0) * 1000;
+    const selection = waitMillis === 0 ? null : yield* Updates.selectionOf(input);
+    return {
+      watch: selection === null ? null : { participantId: input.participantId, selection },
+      waitMillis,
+      again: (page) => continuation(input, page.checkpoint),
+    };
+  });
+/** The plan of a claim for next that waits: the claimer's watch, and the same claim again. */
+const claimPlan = <I>(
+  participantId: M.ParticipantId,
+  waitSeconds: number,
+  input: I,
+): Plan<I, Held> => ({
+  watch: Signal.claimWatch(participantId),
+  waitMillis: waitSeconds * 1000,
+  again: () => input,
+});
+/** The wait a claim asks for: only a claim for next waits. */
+const claimWait = (body: T.ClaimTaskBody) => ("next" in body ? (body.next.waitSeconds ?? 0) : 0);
+
 /**
- * Invoke a tool on a server object. A get_updates call with waitSeconds is held here, in the
- * Worker; every other call, and every read, is one private RPC. A failed call rejects as before.
- * The reply is not decoded here: the MCP boundary checks it against the tool's contract once.
+ * Invoke a tool on a server object. A get_updates call with waitSeconds, or a claim_task for next
+ * with next.waitSeconds, is held here, in the Worker; every other call, and every read, is one
+ * private RPC. A failed call rejects as before. The reply is not decoded here: the MCP boundary
+ * checks it against the tool's contract once.
  */
 export const invokeAgent = (
   connect: () => Server,
@@ -288,51 +334,88 @@ export const invokeAgent = (
       Effect.flatMap(Schema.decodeUnknownEffect(A.UncheckedReply)),
       Effect.orDie,
     );
+  const answered = (response: Response) =>
+    Effect.promise(() => response.text()).pipe(
+      at("first_read"),
+      Effect.flatMap(Schema.decodeUnknownEffect(Signal.AgentReply)),
+      Effect.orDie,
+    );
+  const request = () => Schema.encodeSync(Signal.FirstRead)({ kind: "agent", command, meta });
+  if (command.tool === T.claimToolName && claimWait(command.input) > 0) {
+    // An empty claim is held; a claim, or any failure, answers at once.
+    const toRead = (reply: A.UncheckedReply): Read<A.UncheckedReply, Held> => ({
+      reply,
+      page: Option.isSome(decodeEmptyClaim(reply)) ? emptyClaim : null,
+    });
+    return hold(
+      connect,
+      authority,
+      command,
+      claimPlan(command.input.participantId, claimWait(command.input), command),
+      {
+        request,
+        answered,
+        held: (page) =>
+          Schema.decodeUnknownEffect(Signal.AgentPage)(page).pipe(Effect.orDie, Effect.map(toRead)),
+      },
+      (server, current, reread) => call(server, current, reread).pipe(Effect.map(toRead)),
+    );
+  }
   if (command.tool !== U.toolName || (command.input.waitSeconds ?? 0) === 0)
     return call(connect(), command, false);
   const { serverId, ...input } = command.input;
   // Holding needs only where the page ends; a failure or any other reply answers at once.
-  const toRead = (reply: A.UncheckedReply): Read<A.UncheckedReply> => {
+  const toRead = (reply: A.UncheckedReply): Read<A.UncheckedReply, PageEnd> => {
     const page = decodePage(reply);
     return { reply, page: Option.isSome(page) ? Signal.summary(page.value) : null };
   };
-  const first: First<A.UncheckedReply> = {
-    request: () => Schema.encodeSync(Signal.FirstRead)({ kind: "agent", command, meta }),
-    answered: (response) =>
-      Effect.promise(() => response.text()).pipe(
-        at("first_read"),
-        Effect.flatMap(Schema.decodeUnknownEffect(Signal.AgentReply)),
-        Effect.orDie,
-      ),
+  const first: First<A.UncheckedReply, PageEnd> = {
+    request,
+    answered,
     held: (page) =>
       Schema.decodeUnknownEffect(Signal.AgentPage)(page).pipe(Effect.orDie, Effect.map(toRead)),
   };
-  return hold(connect, authority, input, first, (server, current, reread) =>
-    call(server, { tool: U.toolName, input: { ...current, serverId } }, reread).pipe(
-      Effect.map(toRead),
+  return updatesPlan(input).pipe(
+    Effect.flatMap((plan) =>
+      hold(connect, authority, input, plan, first, (server, current, reread) =>
+        call(server, { tool: U.toolName, input: { ...current, serverId } }, reread).pipe(
+          Effect.map(toRead),
+        ),
+      ),
     ),
   );
 };
 /** Where an MCP page ends; the reply itself is checked once, at the MCP boundary. */
 const decodePage = Schema.decodeUnknownOption(Signal.Page);
+const decodeEmptyClaim = Schema.decodeUnknownOption(Signal.EmptyClaim);
 
 const updatesPath = /^\/v1\/servers\/[^/]+\/updates$/;
+const claimPath = /^\/v1\/servers\/[^/]+\/participants\/([^/]+)\/tasks\/claim$/;
 const decodeInput = Schema.decodeUnknownOption(Schema.fromJsonString(U.Input));
+const decodeClaim = Schema.decodeUnknownOption(Schema.fromJsonString(T.ClaimTaskBody));
+const decodeParticipant = Schema.decodeUnknownOption(M.ParticipantId);
 /** Only what deciding to hold needs; the body itself passes through unchanged. */
 const decodeJsonPage = Schema.decodeUnknownOption(Schema.fromJsonString(Signal.Page));
+const decodeJsonClaim = Schema.decodeUnknownOption(Schema.fromJsonString(Signal.EmptyClaim));
 /** An HTTP read's reply, and its page when it answered with one. */
-const httpRead = (text: string, init: ResponseInit): Read<Response> => {
+const httpRead = (text: string, init: ResponseInit): Read<Response, PageEnd> => {
   const page = init.status === 200 ? decodeJsonPage(text) : Option.none();
   return {
     reply: new Response(text, init),
     page: Option.isSome(page) ? Signal.summary(page.value) : null,
   };
 };
+/** An HTTP claim's reply, held when it claimed nothing. */
+const httpClaim = (text: string, init: ResponseInit): Read<Response, Held> => ({
+  reply: new Response(text, init),
+  page: init.status === 200 && Option.isSome(decodeJsonClaim(text)) ? emptyClaim : null,
+});
 
 /**
- * Forward an authenticated HTTP request to its server object. `POST …/updates` with waitSeconds
- * is held here like the MCP tool; anything else, including a body the API would refuse, goes
- * straight through. `request` carries the Worker's authority headers and `payload` its body.
+ * Forward an authenticated HTTP request to its server object. `POST …/updates` with waitSeconds,
+ * and `POST …/tasks/claim` for next with next.waitSeconds, are held here like the MCP tools;
+ * anything else, including a body the API would refuse, goes straight through. `request` carries
+ * the Worker's authority headers and `payload` its body.
  */
 export const forward = (
   connect: () => Server,
@@ -341,16 +424,34 @@ export const forward = (
   payload: Uint8Array | null,
 ): Effect.Effect<Response> => {
   const once = Effect.promise(() => connect().fetch(request));
-  if (
-    request.method !== "POST" ||
-    payload === null ||
-    !updatesPath.test(new URL(request.url).pathname)
-  )
-    return once;
+  if (request.method !== "POST" || payload === null) return once;
+  const pathname = new URL(request.url).pathname;
+  const claimed = claimPath.exec(pathname);
+  if (!updatesPath.test(pathname) && claimed === null) return once;
   const text = new TextDecoder().decode(payload);
-  const input = decodeInput(text);
-  if (Option.isNone(input) || (input.value.waitSeconds ?? 0) === 0) return once;
-  const first: First<Response> = {
+  /** One read on `server`: the body given (the caller's own on the first read), and its reply. */
+  const send = <P extends Held>(
+    server: Server,
+    body: string | Uint8Array,
+    reread: boolean,
+    parse: (text: string, init: ResponseInit) => Read<Response, P>,
+  ) => {
+    const headers = new Headers(request.headers);
+    if (reread) headers.set(Signal.rereadHeader, "1");
+    return Effect.promise(async () => {
+      const response = await server.fetch(
+        new Request(request.url, { method: "POST", headers, body }),
+      );
+      return parse(await response.text(), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    });
+  };
+  const first = <P extends Held>(
+    parse: (text: string, init: ResponseInit) => Read<Response, P>,
+  ): First<Response, P> => ({
     // The first read sends the caller's body unchanged; the server object reads once either way.
     request: () =>
       Schema.encodeSync(Signal.FirstRead)({
@@ -372,22 +473,31 @@ export const forward = (
     held: (page) =>
       Schema.decodeUnknownEffect(Signal.HttpPage)(page).pipe(
         Effect.orDie,
-        Effect.map((held) => httpRead(held.body, { status: 200, headers: held.headers })),
+        Effect.map((held) => parse(held.body, { status: 200, headers: held.headers })),
       ),
-  };
-  return hold(connect, authority, input.value, first, (server, current, reread) => {
-    const headers = new Headers(request.headers);
-    if (reread) headers.set(Signal.rereadHeader, "1");
-    const body = reread ? JSON.stringify(current) : payload;
-    return Effect.promise(async () => {
-      const response = await server.fetch(
-        new Request(request.url, { method: "POST", headers, body }),
-      );
-      return httpRead(await response.text(), {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-      });
-    });
   });
+  if (claimed !== null) {
+    const body = decodeClaim(text);
+    const participantId = decodeParticipant(claimed[1]);
+    if (Option.isNone(body) || Option.isNone(participantId) || claimWait(body.value) === 0)
+      return once;
+    // Each re-read sends the same claim: an empty claim is not recorded, so its key claims later.
+    return hold(
+      connect,
+      authority,
+      text,
+      claimPlan(participantId.value, claimWait(body.value), text),
+      first(httpClaim),
+      (server, current, reread) => send(server, reread ? current : payload, reread, httpClaim),
+    );
+  }
+  const input = decodeInput(text);
+  if (Option.isNone(input) || (input.value.waitSeconds ?? 0) === 0) return once;
+  return updatesPlan(input.value).pipe(
+    Effect.flatMap((plan) =>
+      hold(connect, authority, input.value, plan, first(httpRead), (server, current, reread) =>
+        send(server, reread ? JSON.stringify(current) : payload, reread, httpRead),
+      ),
+    ),
+  );
 };

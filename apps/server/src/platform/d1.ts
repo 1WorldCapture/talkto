@@ -1,4 +1,4 @@
-import { Effect, Layer, Schema, Encoding, Result } from "effect";
+import { Effect, Layer, Option, Schema, SchemaGetter, Encoding, Result } from "effect";
 import * as B from "@talkto/api/billing";
 import * as P from "@talkto/api/platform";
 import * as M from "@talkto/api/models";
@@ -13,7 +13,20 @@ import * as GuestsD1 from "../guests/d1.js";
 const accountColumns =
   "id, organization_id AS organizationId, name, created_by AS createdBy, created_at AS createdAt";
 const serverColumns =
-  "s.id, s.account_id AS accountId, s.name, s.created_by AS createdBy, s.created_at AS createdAt, s.status";
+  "s.id, s.account_id AS accountId, s.name, s.created_by AS createdBy, s.created_at AS createdAt, s.status, s.board";
+/** D1 keeps `servers.board` as 0 or 1 (migration 0027); a server shows `board: true` only when 1. */
+const boardColumn = Schema.Literals([0, 1]).pipe(
+  Schema.decodeTo(Schema.optionalKey(Schema.Literal(true)), {
+    decode: SchemaGetter.transformOptional<true, 0 | 1>(
+      Option.flatMap((n) => (n === 1 ? Option.some<true>(true) : Option.none())),
+    ),
+    encode: SchemaGetter.transformOptional<0 | 1, true>((board) =>
+      Option.some(Option.isSome(board) ? 1 : 0),
+    ),
+  }),
+);
+const serverRow = Schema.Struct({ ...P.Server.fields, board: boardColumn });
+const reservationRow = Schema.Struct({ ...Model.ServerReservation.fields, board: boardColumn });
 const grantColumns =
   "id, server_id AS serverId, user_id AS userId, membership_id AS membershipId, principal_key AS principalKey, created_at AS createdAt, revoked_at AS revokedAt, revision, applied_revision AS appliedRevision";
 const readableServer =
@@ -153,7 +166,7 @@ export const layer = (
     });
     const server = (id: M.ServerId) =>
       one(
-        Model.ServerReservation,
+        reservationRow,
         sql(
           `SELECT ${serverColumns}, a.organization_id AS organizationId, s.request_key AS requestKey, s.general_id AS generalId FROM servers s JOIN accounts a ON a.id=s.account_id WHERE s.id=? AND s.deletion_requested_at IS NULL`,
           [id],
@@ -369,7 +382,7 @@ export const layer = (
           query = cursor.success.query;
         }
         const rows = yield* all(
-          Schema.Struct({ ...P.Server.fields, readable: Schema.Int }),
+          Schema.Struct({ ...serverRow.fields, readable: Schema.Int }),
           sql(
             `SELECT ${serverColumns}, CASE WHEN ${readableServer} THEN 1 ELSE 0 END AS readable
           FROM servers s LEFT JOIN server_access g ON g.server_id=s.id AND g.user_id=? LEFT JOIN memberships m ON m.id=g.membership_id
@@ -407,8 +420,8 @@ export const layer = (
                 sql(
                   `WITH unlimited AS (SELECT value AS id FROM json_each(?)),
         paid AS (SELECT 1 FROM billing_periods WHERE account_id=? AND start<=? AND end>?)
-        INSERT INTO servers(id,account_id,name,created_by,request_key,general_id,created_at,status,admission_kind)
-        SELECT ?,?,?,?,?,?,?,'provisioning',CASE WHEN EXISTS(SELECT 1 FROM paid) THEN 'paid' ELSE 'unpaid' END
+        INSERT INTO servers(id,account_id,name,created_by,request_key,general_id,created_at,status,admission_kind,board)
+        SELECT ?,?,?,?,?,?,?,'provisioning',CASE WHEN EXISTS(SELECT 1 FROM paid) THEN 'paid' ELSE 'unpaid' END,?
         WHERE EXISTS(SELECT 1 FROM memberships WHERE id=? AND status='active')
         AND (? IN (SELECT id FROM unlimited) OR (
         (SELECT COUNT(*) FROM servers WHERE account_id=? AND deletion_requested_at IS NULL)<?
@@ -438,6 +451,7 @@ export const layer = (
                     input.requestKey,
                     crypto.randomUUID(),
                     at,
+                    policy.success.boards && input.board === true ? 1 : 0,
                     member.id,
                     account.id,
                     account.id,
@@ -462,7 +476,7 @@ export const layer = (
               ];
           const found = yield* writeThenFind(
             Schema.Struct({
-              ...Model.ServerReservation.fields,
+              ...reservationRow.fields,
               deleted: Schema.Int,
               createdName: M.ServerName,
             }),
@@ -523,12 +537,14 @@ export const layer = (
             id,
           ]),
         ]),
-      rename: Effect.fn("Directory.rename")(function* (actor, target, input, at) {
+      rename: Effect.fn("Directory.rename")(function* (actor, target, input, at, limit) {
         const { table, live } = renameTables[target.kind];
         const id = crypto.randomUUID();
         const key = [target.kind, target.id, actor.userId, input.requestKey] as const;
         // One transaction: the record is written only for a new key and a different name (a
-        // case-only change counts), the name follows only that record, and the read reports both.
+        // case-only change counts) while the target has had fewer than `limit.max` renames since
+        // `limit.since`, so parallel renames cannot pass the limit together. The name follows only
+        // that record, and the read reports both.
         const row = yield* writeThenFind(
           Schema.Struct({
             ...CurrentRow.fields,
@@ -539,6 +555,7 @@ export const layer = (
             sql(
               `INSERT INTO directory_renames(id,kind,target_id,previous_name,name,renamed_by,request_key,renamed_at)
               SELECT ?,?,t.id,t.name,?,?,?,? FROM ${table} t WHERE t.id=? AND ${live} AND t.name<>?
+              AND (SELECT COUNT(*) FROM directory_renames r WHERE r.kind=? AND r.target_id=t.id AND r.renamed_at>?)<?
               ON CONFLICT(kind,target_id,renamed_by,request_key) DO NOTHING`,
               [
                 id,
@@ -549,6 +566,9 @@ export const layer = (
                 at,
                 target.id,
                 input.name,
+                target.kind,
+                limit.since,
+                limit.max,
               ],
             ),
             sql(
@@ -566,10 +586,23 @@ export const layer = (
         );
         if (row === null) return yield* missing();
         const { recordedId, recordedName, ...value } = row;
-        // No record: the name was already exactly this, and nothing changed.
-        if (recordedId === null) return { changed: false, current: current(value) };
+        const now = current(value);
+        // No record: the name was already exactly this, and nothing changed; or another name was
+        // refused by the limit.
+        if (recordedId === null)
+          return now.name === input.name ? { changed: false, current: now } : "limited";
         if (recordedName !== input.name) return yield* conflict();
-        return { changed: recordedId === id, current: current(value) };
+        return { changed: recordedId === id, current: now };
+      }),
+      renamesSince: Effect.fn("Directory.renamesSince")(function* (target, since) {
+        const row = yield* one(
+          Schema.Struct({ count: Schema.Number, earliest: Schema.NullOr(M.Timestamp) }),
+          sql(
+            "SELECT COUNT(*) AS count, MIN(renamed_at) AS earliest FROM directory_renames WHERE kind=? AND target_id=? AND renamed_at>?",
+            [target.kind, target.id, since],
+          ),
+        );
+        return row ?? { count: 0, earliest: null };
       }),
       currentName: Effect.fn("Directory.currentName")(function* (target) {
         const row = yield* one(CurrentRow, currentStatement(target));
@@ -643,7 +676,7 @@ export const layer = (
         ),
       discover: Effect.fn("Directory.discover")(function* (userId, after) {
         const items = yield* all(
-          P.Server,
+          serverRow,
           sql(
             `SELECT ${serverColumns} FROM servers s JOIN server_access g ON g.server_id=s.id
         JOIN memberships m ON m.id=g.membership_id WHERE g.user_id=? AND g.revoked_at IS NULL AND g.applied_revision=g.revision
@@ -752,6 +785,13 @@ export const layer = (
             updates.push(
               sql(
                 "UPDATE server_access SET revoked_at=MAX(created_at,?),revision=revision+1 WHERE user_id=? AND revoked_at IS NULL",
+                [event.at, event.userId],
+              ),
+            );
+            // Their API keys stop too (epoch milliseconds in api_keys).
+            updates.push(
+              sql(
+                "UPDATE api_keys SET revoked_at=CAST(unixepoch(?,'subsec')*1000 AS INTEGER) WHERE user_id=? AND revoked_at IS NULL",
                 [event.at, event.userId],
               ),
             );

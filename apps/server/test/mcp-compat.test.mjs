@@ -62,7 +62,8 @@ const contracts = (current) => {
 
 /** One server and two agents over one MCP connection, every reply checked against every contract. */
 const session = async (x, credential, accountId, check, version) => {
-  const server = await x.server(accountId, { name: `Compat ${version}` });
+  // A swarm server, so every existing tool's reply is checked with the board's additions in it.
+  const server = await x.server(accountId, { name: `Compat ${version}`, board: true });
   /** `error` names the error code the call must answer with; a step defaults to that code. */
   const call = async (tool, args, { error = null, step = error ?? "reply" } = {}) => {
     const response = await x.raw(
@@ -187,6 +188,62 @@ const agentFlow = async (x, credential, accountId, check, version) => {
     at({ participantId: ben, name: "Ben-release", requestKey: randomUUID() }),
   );
 
+  // The task board: the lead's tasks, a worker's claim and note, an empty claim, and both reads.
+  // Ana owns the tasks, so her next poll carries task events and Ben's note with its thread.
+  await call(
+    "create_tasks",
+    at({
+      participantId: ana,
+      requestKey: randomUUID(),
+      tasks: [
+        {
+          ref: "notes",
+          title: "Draft the release notes",
+          brief: "Draft the notes, @Ben.",
+          labels: ["role=writer"],
+        },
+        {
+          title: "Publish the release",
+          brief: "Publish once the notes are done.",
+          needs: [{ ref: "notes" }],
+          assigneeId: ben,
+          priority: "high",
+        },
+      ],
+    }),
+  );
+  // Swarm memory has no switch: create_tasks above set it up, so claims carry its root map.
+  const claimed = await call(
+    "claim_task",
+    at({ participantId: ben, requestKey: randomUUID(), next: { labels: ["role=writer"] } }),
+  );
+  const lease = {
+    taskId: claimed.data.task.id,
+    leaseToken: claimed.data.lease.token,
+    epoch: claimed.data.lease.epoch,
+  };
+  await call(
+    "update_task",
+    at({
+      participantId: ben,
+      requestKey: randomUUID(),
+      ...lease,
+      action: "progress",
+      note: "Half of the notes are drafted.",
+    }),
+    { step: "progress with a note" },
+  );
+  await call(
+    "claim_task",
+    at({ participantId: ana, requestKey: randomUUID(), next: { labels: ["role=reviewer"] } }),
+    { step: "nothing ready" },
+  );
+  await call("read_tasks", at({ participantId: ana, mode: "list" }), { step: "list" });
+  await call("read_tasks", at({ participantId: ana, mode: "task", task: { number: 1 } }), {
+    step: "one task",
+  });
+  await call("get_context", at({ participant: { id: ben } }), { step: "context with board" });
+
   // Messages, the channel announcement's notice, the rename notice, and plugin-reporting senders.
   await call(
     "get_updates",
@@ -211,6 +268,80 @@ const agentFlow = async (x, credential, accountId, check, version) => {
         step: "continue",
       },
     );
+
+  await call(
+    "update_task",
+    at({
+      participantId: ben,
+      requestKey: randomUUID(),
+      ...lease,
+      action: "complete",
+      summary: "Notes drafted",
+      details: "The notes are in docs/release.md.",
+    }),
+    { step: "complete" },
+  );
+  await call(
+    "update_task",
+    at({ participantId: ben, requestKey: randomUUID(), ...lease, action: "progress" }),
+    { error: "claim_lost" },
+  );
+  // Swarm memory: the next claim carries the root map, a file is read, and Git access is granted.
+  const next = await call(
+    "claim_task",
+    at({ participantId: ben, requestKey: randomUUID(), next: {} }),
+    { step: "claim with memory" },
+  );
+  assert.match(next.data.memory.root, /^# Swarm memory/, JSON.stringify(next.data));
+  await call("read_memory", at({ participantId: ana }), { step: "memory listing" });
+  await call("read_memory", at({ participantId: ana, path: "AGENTS.md" }), {
+    step: "memory file",
+  });
+  await call("get_memory_access", at({ participantId: ana }), { step: "read access" });
+  await call(
+    "get_memory_access",
+    at({
+      participantId: ben,
+      write: {
+        taskId: next.data.task.id,
+        leaseToken: next.data.lease.token,
+        epoch: next.data.lease.epoch,
+      },
+    }),
+    { step: "write access" },
+  );
+  await call("get_memory_access", at({ participantId: ana, write: { ...lease } }), {
+    error: "claim_lost",
+  });
+  await call(
+    "update_task",
+    at({
+      participantId: ben,
+      requestKey: randomUUID(),
+      taskId: next.data.task.id,
+      leaseToken: next.data.lease.token,
+      epoch: next.data.lease.epoch,
+      action: "progress",
+    }),
+    { step: "progress while memory is open" },
+  );
+  await call(
+    "create_tasks",
+    at({
+      participantId: ana,
+      requestKey: randomUUID(),
+      tasks: [{ ref: "loop", title: "Loop", brief: "Needs itself.", needs: [{ ref: "loop" }] }],
+    }),
+    { error: "task_cycle" },
+  );
+  await call("read_tasks", at({ participantId: ana, mode: "task", task: { number: 99 } }), {
+    error: "task_not_found",
+  });
+  // The thread lives in the board channel: its messages carry their task.
+  const board = await call("get_context", at({}), { step: "server with board" });
+  await call("read_messages", at({ mode: "history", conversationId: board.data.board.channelId }), {
+    step: "board channel history",
+  });
 
   await call("read_messages", at({ mode: "history", conversationId: general }), {
     step: "history",
@@ -265,6 +396,85 @@ const agentFlow = async (x, credential, accountId, check, version) => {
   await call("read_transfer", at({ transferId }), { step: "before fetch" });
   await call("fetch_transfer", at({ participantId: ben, transferId }));
   await call("read_transfer", at({ transferId }), { step: "after fetch" });
+
+  // A task result (docs/swarm-task-results-scope.md): a file TalkTo offers in the thread, and
+  // typed links, on the update_task reply, the task, the list and the completed event.
+  const results = await call(
+    "get_updates",
+    at({
+      participantId: ana,
+      mode: "start",
+      startAt: "now",
+      channelIds: [general],
+      directChats: "own",
+      tasks: "all",
+    }),
+    { step: "start before a result" },
+  );
+  const handoff = await call(
+    "create_tasks",
+    at({
+      participantId: ana,
+      requestKey: randomUUID(),
+      tasks: [{ title: "Hand over the fix", brief: "Send a bundle.", assigneeId: ben }],
+    }),
+    { step: "create for a result" },
+  );
+  const held = await call(
+    "claim_task",
+    at({ participantId: ben, requestKey: randomUUID(), taskId: handoff.data.tasks[0].id }),
+    { step: "claim for a result" },
+  );
+  const bundle = await call(
+    "prepare_transfer",
+    at({
+      participantId: ben,
+      requestKey: randomUUID(),
+      name: "t3.bundle",
+      kind: "file",
+      bytes: 16,
+      sha256: sha,
+    }),
+    { step: "prepare a result file" },
+  );
+  const bundleKey = `r30/${server.id}/${bundle.data.transferId}/payload`;
+  assert.equal(
+    (await x.control(`transfer-object?key=${encodeURIComponent(bundleKey)}&bytes=16`)).status,
+    200,
+  );
+  await call(
+    "update_task",
+    at({
+      participantId: ben,
+      requestKey: randomUUID(),
+      taskId: held.data.task.id,
+      leaseToken: held.data.lease.token,
+      epoch: held.data.lease.epoch,
+      action: "complete",
+      summary: "Fix handed over as a bundle",
+      details: "Fetch the bundle and verify it.",
+      transferIds: [bundle.data.transferId],
+      links: [
+        { kind: "commit", role: "base", sha: commit },
+        { kind: "commit", role: "head", sha: "1".repeat(40) },
+        { kind: "branch", name: "task-3", url: "https://github.com/acme/app/tree/task-3" },
+        { kind: "pr", url: "https://github.com/acme/app/pull/3", label: "#3" },
+        { kind: "url", url: "https://ci.example.com/run/3", label: "CI run" },
+      ],
+    }),
+    { step: "complete with files and links" },
+  );
+  await call("read_tasks", at({ participantId: ana, mode: "task", task: { number: 3 } }), {
+    step: "a task with a result",
+  });
+  await call("read_tasks", at({ participantId: ana, mode: "list" }), {
+    step: "list with a result",
+  });
+  await call(
+    "get_updates",
+    at({ participantId: ana, mode: "poll", checkpoint: results.data.checkpoint }),
+    { step: "a completed event with files and links" },
+  );
 
   await call("get_files_access", at({ participantId: ana, scope: "write" }));
   await call(
@@ -338,6 +548,8 @@ test(
     const account = await x.account();
     const credential = await x.mcpToken(account.organizationId);
     const current = await outputSchemas(x.raw, credential);
+    // This build lists swarm memory's tools, so their replies are checked against its own schema.
+    assert.ok(current.read_memory && current.get_memory_access, "memory tools are listed");
     const { sources, failures, check } = contracts(current);
     assert.ok(sources.length >= 2, "at least one committed snapshot in contracts/mcp-output/");
     const covered = new Set();

@@ -6,7 +6,7 @@ import * as E from "@talkto/api/errors";
 import * as TalkTo from "./talkto.js";
 import type { AccessContext } from "./access.js";
 import * as Responses from "./responses.js";
-import instructions from "./instructions.md";
+import { agentGuide } from "./guide.js";
 import { renderDocumentation } from "@talkto/api/documentation";
 import * as U from "@talkto/api/updates";
 import * as Monitoring from "./monitoring.js";
@@ -18,6 +18,9 @@ import * as Wakes from "./wakes/service.js";
 import * as Actors from "./actors.js";
 import * as R from "@talkto/api/renames";
 import * as Capabilities from "./capabilities.js";
+import * as T from "@talkto/api/tasks";
+import * as Board from "./board/service.js";
+import { present } from "./present.js";
 
 const invalid = (message: string) => new E.InvalidInput({ message });
 const merge = (...values: ReadonlyArray<M.Included>): M.Included => ({
@@ -70,6 +73,10 @@ const context = Effect.fn("Agent.context")(function* (
   if (self?.removedAt !== undefined) return yield* Actors.removed(self);
   if (input.directChats === "own" && self === null)
     return yield* invalid("Select your participant by ID or exact name for your own chats.");
+  // Present only on a server whose board was ever switched on, so other replies keep their shape.
+  // Read first: it sets swarm memory up when it is not yet, and the lists below then show its
+  // channel and the channel's notice in General.
+  const boardContext = yield* (yield* Board.Board).context(access, self?.id ?? null);
   const participants = yield* directory((limit) => service.listParticipants(access, { limit }));
   const channels = yield* directory((limit) =>
     service.listChannels(access, { state: "all", limit }),
@@ -88,6 +95,12 @@ const context = Effect.fn("Agent.context")(function* (
               limit,
             }),
           );
+  // The month's task operations: one quota call, made only on a board server.
+  const taskOperations = boardContext === null ? null : yield* (yield* Reads.Reads).taskUsage();
+  const board =
+    boardContext === null
+      ? null
+      : { ...boardContext, ...present("taskOperations", taskOperations) };
   const data: A.Context = {
     server: server.data,
     self,
@@ -96,6 +109,7 @@ const context = Effect.fn("Agent.context")(function* (
     directChats: directs?.data ?? null,
     general: { conversation: general.data, ...messages.data },
     capabilities: [...capabilities],
+    ...present("board", board),
   };
   // Primary directories already contain most profiles. Only include missing references once.
   const all = merge(
@@ -217,11 +231,11 @@ export const execute = Effect.fn("Agent.execute")(function* (
   metadata: A.Meta,
   capabilities: ReadonlySet<A.Capability>,
   /**
-   * A get_updates read a Worker makes after a watch woke a waiting call. The call that started the
-   * wait was admitted as one read, however often a wake makes it read again.
+   * A get_updates read (or a claim for next) a Worker makes after a watch woke a waiting call. The
+   * call that started the wait was admitted once, however often a wake makes it read again.
    */
   reread = false,
-): Effect.fn.Return<A.Reply, E.Failure, TalkTo.Service | Reads.Reads | Wakes.Wakes> {
+): Effect.fn.Return<A.Reply, E.Failure, TalkTo.Service | Reads.Reads | Wakes.Wakes | Board.Board> {
   const service = yield* TalkTo.Service;
   let meta: A.Meta = { ...metadata, serverId: access.serverId };
   const inputServer = command.input.serverId;
@@ -235,6 +249,9 @@ export const execute = Effect.fn("Agent.execute")(function* (
   if (read !== null && !(reread && command.tool === U.toolName)) yield* reads.admit(access, read);
   const admin = Reads.classifyAdmin(command);
   if (admin !== null) yield* reads.admin(access, admin);
+  const task = Reads.classifyTask(command);
+  if (task !== null && !(reread && command.tool === T.claimToolName))
+    yield* reads.task(access, task);
   /** A send refused for its own reasons counts as one admin call (docs/plan-limits.md). */
   const counted = <A, F extends { readonly _tag: string }, R>(
     send: Effect.Effect<A, F, R>,
@@ -294,7 +311,7 @@ export const execute = Effect.fn("Agent.execute")(function* (
         meta = {
           ...meta,
           instructionSheet: renderDocumentation(
-            instructions,
+            agentGuide((yield* Board.Board).memory),
             new URL(meta.instructions.url).origin,
           ),
         };
@@ -566,6 +583,53 @@ export const execute = Effect.fn("Agent.execute")(function* (
       return { ...(yield* (yield* Wakes.Wakes).revoke(access, command.input, "agent")), meta };
     case W.listToolName:
       return { ...(yield* (yield* Wakes.Wakes).list(access, command.input)), meta };
+    case T.createToolName:
+    case T.claimToolName:
+    case T.updateToolName:
+    case T.readToolName:
+      return { ...(yield* tasks(access, command, new URL(meta.instructions.url).origin)), meta };
+    case T.readMemoryToolName: {
+      const { serverId: _server, ...input } = command.input;
+      return { ...(yield* (yield* Board.Board).readMemory(access, input)), meta };
+    }
+    case T.memoryAccessToolName: {
+      const { serverId: _server, ...input } = command.input;
+      return { ...(yield* (yield* Board.Board).memoryAccess(access, input)), meta };
+    }
+  }
+});
+/** The task-board tools: thin calls into the board service, shared with the HTTP routes. */
+const tasks = Effect.fn("Agent.tasks")(function* (
+  access: AccessContext,
+  command: Extract<
+    A.Command,
+    {
+      readonly tool:
+        | typeof T.createToolName
+        | typeof T.claimToolName
+        | typeof T.updateToolName
+        | typeof T.readToolName;
+    }
+  >,
+  origin: string,
+): Effect.fn.Return<
+  | M.Outcome<T.CreatedTasks>
+  | M.Outcome<T.ClaimResult>
+  | M.Outcome<T.UpdatedTask>
+  | M.Outcome<T.ReadTasksData>,
+  E.Failure,
+  Board.Board
+> {
+  const board = yield* Board.Board;
+  switch (command.tool) {
+    case T.createToolName:
+      return yield* board.createTasks(access, command.input, origin);
+    case T.claimToolName:
+      return yield* board.claimTask(access, command.input, origin);
+    case T.updateToolName:
+      return yield* board.updateTask(access, command.input, origin);
+    case T.readToolName:
+      return yield* board.readTasks(access, command.input, origin);
   }
 });
 /** Project expected failures into the same model-visible envelope as successful operations. */

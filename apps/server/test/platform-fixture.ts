@@ -16,6 +16,8 @@ import * as Platform from "../src/platform/service.js";
 import * as WorkOS from "../src/platform/workos.js";
 import * as Browser from "../src/browser-auth.js";
 import { TalkToServer } from "../src/server-object.js";
+import * as Prune from "../src/history/prune.js";
+import * as MemoryFake from "./memory-fake.js";
 import * as LocalMeter from "../src/metering/local.js";
 import * as MeterConfig from "../src/metering/configuration.js";
 import * as Activity from "../src/platform/activity.js";
@@ -42,6 +44,40 @@ const FilesControl = Schema.Struct({
   recordedRemote: Schema.optionalKey(Schema.String),
   /** Attach a Git share reference to an existing message, as `share_file` did before retirement. */
   shareMessageId: Schema.optionalKey(Schema.String),
+});
+
+/** What a test asks of swarm memory's fake repository (memory-fake.ts). */
+const MemoryGit = Schema.Struct({
+  action: Schema.Literals([
+    "commit",
+    "force",
+    "delete-main",
+    "branch",
+    "inspect",
+    "levers",
+    "drop",
+  ]),
+  files: Schema.optionalKey(Schema.Record(Schema.String, Schema.NullOr(Schema.String))),
+  message: Schema.optionalKey(Schema.String),
+  branch: Schema.optionalKey(Schema.String),
+  parent: Schema.optionalKey(Schema.String),
+  failPushes: Schema.optionalKey(Schema.Int),
+  failHeads: Schema.optionalKey(Schema.Int),
+  failRemovals: Schema.optionalKey(Schema.Int),
+  hash: Schema.optionalKey(Schema.String),
+});
+const MemoryControl = Schema.Struct({
+  action: Schema.Literals([
+    "inspect",
+    "git",
+    "expire-tokens",
+    "stale",
+    "legacy-prune",
+    "switch-off",
+  ]),
+  git: Schema.optionalKey(MemoryGit),
+  /** Act on this repository instead of this server's (one that a deleted server left). */
+  repository: Schema.optionalKey(Schema.String),
 });
 
 export interface TestEnv extends Env {
@@ -701,6 +737,12 @@ export class PlatformTestServer extends TalkToServer {
     this.ctx.storage.sql.exec(
       "UPDATE file_transfers SET upload_expires_at=created_at, expires_at=created_at",
     );
+    // A task result keeps a copy of each file's offer; its copies expire with it.
+    this.ctx.storage.sql.exec(
+      `UPDATE task_result_files SET expires_at=(SELECT t.created_at FROM file_transfers t
+       WHERE t.id=task_result_files.transfer_id)
+       WHERE transfer_id IN (SELECT id FROM file_transfers)`,
+    );
     return { ok: true };
   }
   /** Age every signal link past its expiry, or start a new history lineage, as a restore would. */
@@ -720,6 +762,318 @@ export class PlatformTestServer extends TalkToServer {
         "UPDATE updates_identity SET generation=lower(hex(randomblob(16))) WHERE singleton=1",
       );
     return { ok: true };
+  }
+  /**
+   * Make claimed leases run out now (all, or task `number`'s), as if their time had passed, then
+   * run the real alarm body once. `inspect` reads the alarm and the leases only.
+   */
+  async boardControl(input: {
+    readonly action:
+      | "expire"
+      | "lapse"
+      | "inspect"
+      | "prune"
+      | "transitions"
+      | "drop"
+      | "alarm"
+      | "fill"
+      | "seize"
+      | "spread"
+      | "silence"
+      | "drop-holders"
+      | "drop-results"
+      | "forget-result"
+      | "prune-messages"
+      | "results"
+      | "row";
+    readonly number?: number;
+    readonly participantId?: string;
+    readonly minutes?: number;
+  }) {
+    // Task `number`'s whole stored row, and the rows an update could add elsewhere.
+    if (input.action === "row")
+      return {
+        task: this.ctx.storage.sql
+          .exec("SELECT * FROM tasks WHERE number=?", input.number ?? 0)
+          .toArray()[0],
+        events: this.ctx.storage.sql.exec("SELECT COUNT(*) AS n FROM task_events").one()["n"],
+        holders: this.ctx.storage.sql.exec("SELECT COUNT(*) AS n FROM task_holders").one()["n"],
+      };
+    // Every ready task becomes claimed by `participantId` with a lease that already ran out, past
+    // the holding cap: more lapsed leases than one transaction expires, without hundreds of agents.
+    if (input.action === "seize") {
+      const past = Date.now() - 1;
+      this.ctx.storage.sql.exec(
+        `UPDATE tasks SET state='claimed', claimer_id=?, lease_token=?, lease_epoch=lease_epoch+1,
+         lease_seconds=300, claimed_at=?, lease_expires_at=?, last_note_at=?, revision=revision+1
+         WHERE state='ready'`,
+        input.participantId ?? "",
+        "s".repeat(22),
+        past,
+        past,
+        past,
+      );
+    }
+    // Previews: spread finished tasks back in time, `number` seconds apart (newest first), and
+    // open unclaimed tasks 20 seconds apart, so the Board's times and last hour look lived in.
+    // Tasks canceled because a need failed keep their time, after that failure, so a Retry of
+    // the need still brings them back.
+    if (input.action === "spread") {
+      const now = Date.now();
+      const step = (input.number ?? 60) * 1000;
+      this.ctx.storage.transactionSync(() => {
+        // Every task was made a day earlier, so the times below never precede its creation.
+        this.ctx.storage.sql.exec(
+          "UPDATE tasks SET created_at=created_at - 86400000, ready_at=ready_at - 86400000",
+        );
+        this.ctx.storage.sql.exec(
+          `UPDATE tasks SET finished_at=?1 - r.rank * ?2, updated_at=?1 - r.rank * ?2
+           FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY number DESC) AS rank FROM tasks
+                 WHERE state IN ('completed','failed','canceled')
+                   AND outcome_reason IS NOT 'need_failed') r
+           WHERE tasks.id=r.id`,
+          now,
+          step,
+        );
+        this.ctx.storage.sql.exec(
+          `UPDATE tasks SET updated_at=?1 - r.rank * 20000
+           FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY number DESC) AS rank FROM tasks
+                 WHERE state IN ('waiting','ready')) r
+           WHERE tasks.id=r.id`,
+          now,
+        );
+      });
+      return { ok: true };
+    }
+    // Previews: task `number`'s holder last spoke `minutes` ago, so the Board shows it stalled.
+    if (input.action === "silence") {
+      const at = Date.now() - (input.minutes ?? 10) * 60_000;
+      this.ctx.storage.sql.exec(
+        "UPDATE tasks SET claimed_at=?, last_note_at=?, updated_at=?, lease_expires_at=?, lease_seconds=300 WHERE number=? AND state='claimed'",
+        at,
+        at,
+        at,
+        Date.now() + 15 * 60_000,
+        input.number ?? 0,
+      );
+      return { ok: true };
+    }
+    // `number` more ready tasks, briefed by messages already stored (seed them first), so a test
+    // reaches the unfinished-task limit without thousands of calls.
+    if (input.action === "fill") {
+      this.ctx.storage.transactionSync(() => {
+        this.ctx.storage.sql.exec(
+          `INSERT INTO tasks(id, number, batch_id, title, brief_message_id, state, owner_participant_id, created_at, updated_at, ready_at)
+           SELECT lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-4'||substr(lower(hex(randomblob(2))),2)||'-a'||substr(lower(hex(randomblob(2))),2)||'-'||lower(hex(randomblob(6))),
+             (SELECT next_number FROM board_settings) + (ROW_NUMBER() OVER ()) - 1,
+             (SELECT batch_id FROM tasks ORDER BY number LIMIT 1), 'Filler', m.id, 'ready',
+             (SELECT owner_participant_id FROM tasks ORDER BY number LIMIT 1), m.created_at, m.created_at, m.created_at
+           FROM messages m WHERE NOT EXISTS (SELECT 1 FROM tasks t WHERE t.brief_message_id=m.id)
+           ORDER BY m.seq LIMIT ?`,
+          input.number ?? 0,
+        );
+        this.ctx.storage.sql.exec(
+          "UPDATE board_settings SET next_number=(SELECT MAX(number) + 1 FROM tasks)",
+        );
+      });
+    }
+    if (input.action === "lapse") {
+      this.ctx.storage.sql.exec(
+        "UPDATE tasks SET lease_expires_at=? WHERE state='claimed'",
+        Date.now() - 1,
+      );
+    }
+    if (input.action === "alarm") {
+      await this.ctx.storage.deleteAlarm();
+      await super.alarm();
+    }
+    // Remove finished tasks and then messages as a history window ending now would.
+    if (input.action === "prune") {
+      const cutoff = Date.now() + 1;
+      const applied = { plan: "shop", days: M.Count.make(90), archive: false } as const;
+      const tasks = Prune.removeTasks(this.ctx.storage, cutoff, Prune.taskBatchSize, applied);
+      const batch = Prune.select(this.ctx.storage, cutoff, cutoff, Prune.batchSize);
+      if (batch !== null) Prune.remove(this.ctx.storage, batch, applied);
+      return { tasks, messages: batch?.ids.length ?? 0 };
+    }
+    // Drop every board table, as a server created before the board release has none. The test
+    // restarts the object next.
+    if (input.action === "drop") {
+      this.ctx.storage.transactionSync(() => {
+        for (const table of [
+          "task_result_files",
+          "task_results",
+          "task_holders",
+          "task_finishers",
+          "task_requests",
+          "task_interests",
+          "task_message_recipients",
+          "task_messages",
+          "task_event_recipients",
+          "task_events",
+          "task_labels",
+          "task_needs",
+          "tasks",
+          "task_batches",
+          "board_settings",
+        ])
+          this.ctx.storage.sql.exec(`DROP TABLE IF EXISTS ${table}`);
+      });
+      return { dropped: true };
+    }
+    // Drop only the task-holders tables, as a server object that ran board.sql before that extension
+    // (staging) has none. The test restarts the object next.
+    if (input.action === "drop-holders") {
+      this.ctx.storage.transactionSync(() => {
+        this.ctx.storage.sql.exec("DROP TABLE IF EXISTS task_holders");
+        this.ctx.storage.sql.exec("DROP TABLE IF EXISTS task_finishers");
+      });
+      return { dropped: true };
+    }
+    // Drop only the task-results tables, as a server object from before that extension has none.
+    // The test restarts the object next.
+    if (input.action === "drop-results") {
+      this.ctx.storage.transactionSync(() => {
+        this.ctx.storage.sql.exec("DROP TRIGGER IF EXISTS task_results_cleanup");
+        this.ctx.storage.sql.exec("DROP TABLE IF EXISTS task_result_files");
+        this.ctx.storage.sql.exec("DROP TABLE IF EXISTS task_results");
+      });
+      return { dropped: true };
+    }
+    // Remove only messages as a history window ending now would, keeping every task.
+    if (input.action === "prune-messages") {
+      const cutoff = Date.now() + 1;
+      const applied = { plan: "shop", days: M.Count.make(90), archive: false } as const;
+      const batch = Prune.select(this.ctx.storage, cutoff, cutoff, Prune.batchSize);
+      if (batch !== null) Prune.remove(this.ctx.storage, batch, applied);
+      return { messages: batch?.ids.length ?? 0 };
+    }
+    // Remove task `number`'s result rows, as if a Worker from before task results finished it.
+    if (input.action === "forget-result") {
+      this.ctx.storage.transactionSync(() => {
+        for (const table of ["task_result_files", "task_results"])
+          this.ctx.storage.sql.exec(
+            `DELETE FROM ${table} WHERE task_id=(SELECT id FROM tasks WHERE number=?)`,
+            input.number ?? 0,
+          );
+      });
+      return { forgotten: true };
+    }
+    // The stored results and their files, as task-results.sql holds them.
+    if (input.action === "results")
+      return {
+        results: this.ctx.storage.sql
+          .exec("SELECT * FROM task_results ORDER BY created_at, task_id, epoch")
+          .toArray(),
+        files: this.ctx.storage.sql
+          .exec("SELECT * FROM task_result_files ORDER BY task_id, epoch, position")
+          .toArray(),
+        transfers: this.ctx.storage.sql
+          .exec("SELECT id, message_id AS messageId, expires_at AS expiresAt FROM file_transfers")
+          .toArray(),
+        bytes: Prune.size(this.ctx.storage),
+      };
+    // Try every move between two states on a copy of task `number`, each in a transaction that is
+    // rolled back: which moves does the tasks_transition trigger refuse?
+    if (input.action === "transitions") {
+      const states = [
+        "waiting",
+        "ready",
+        "claimed",
+        "blocked",
+        "completed",
+        "failed",
+        "canceled",
+      ] as const;
+      const trigger = Schema.decodeUnknownSync(Schema.Struct({ sql: Schema.String }))(
+        this.ctx.storage.sql
+          .exec("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='tasks_transition'")
+          .one(),
+      ).sql;
+      const now = Date.now();
+      const columns = {
+        waiting: "state='waiting', ready_at=NULL",
+        ready: "state='ready', ready_at=created_at",
+        claimed: `state='claimed', claimer_id=owner_participant_id, lease_token='${"a".repeat(22)}', lease_seconds=300, claimed_at=${now}, lease_expires_at=${now + 300_000}`,
+        blocked: `state='blocked', block_kind='needs_input', blocked_by_participant_id=owner_participant_id, blocked_at=${now}`,
+        completed: `state='completed', finished_at=${now}, outcome_summary='done', outcome_reason='by_claimer'`,
+        failed: `state='failed', finished_at=${now}, outcome_summary='failed', outcome_reason='by_claimer'`,
+        canceled: `state='canceled', finished_at=${now}, outcome_reason='by_person'`,
+      };
+      const refused: string[] = [];
+      const rollback = new Error("rollback");
+      for (const from of states)
+        for (const to of states) {
+          try {
+            this.ctx.storage.transactionSync(() => {
+              this.ctx.storage.sql.exec("DROP TRIGGER tasks_transition");
+              this.ctx.storage.sql.exec(
+                `UPDATE tasks SET claimer_id=NULL, lease_token=NULL, lease_seconds=NULL, claimed_at=NULL, lease_expires_at=NULL, block_kind=NULL, blocked_by_participant_id=NULL, blocked_at=NULL, finished_at=NULL, outcome_summary=NULL, outcome_reason=NULL, ${columns[from]} WHERE number=?`,
+                input.number ?? 1,
+              );
+              this.ctx.storage.sql.exec(trigger);
+              try {
+                this.ctx.storage.sql.exec(
+                  "UPDATE tasks SET state=? WHERE number=?",
+                  to,
+                  input.number ?? 1,
+                );
+              } catch (cause) {
+                if (cause instanceof Error && cause.message.includes("task_transition_invalid"))
+                  refused.push(`${from}->${to}`);
+              }
+              throw rollback;
+            });
+          } catch (cause) {
+            if (cause !== rollback) throw cause;
+          }
+        }
+      return { refused };
+    }
+    if (input.action === "expire") {
+      const past = Date.now() - 1;
+      if (input.number === undefined)
+        this.ctx.storage.sql.exec(
+          "UPDATE tasks SET lease_expires_at=? WHERE state='claimed'",
+          past,
+        );
+      else
+        this.ctx.storage.sql.exec(
+          "UPDATE tasks SET lease_expires_at=? WHERE state='claimed' AND number=?",
+          past,
+          input.number,
+        );
+      await this.ctx.storage.deleteAlarm();
+      await super.alarm();
+    }
+    return {
+      alarm: await this.ctx.storage.getAlarm(),
+      leases: this.ctx.storage.sql
+        .exec(
+          "SELECT number, state, lease_epoch AS epoch, lease_expires_at AS expiresAt, attempts FROM tasks ORDER BY number",
+        )
+        .toArray(),
+      bytes: Prune.size(this.ctx.storage),
+      version: this.ctx.storage.sql
+        .exec("SELECT MAX(version) AS version FROM schema_migrations")
+        .one().version,
+      tables: this.ctx.storage.sql
+        .exec(
+          "SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE 'task%' OR name='board_settings') ORDER BY name",
+        )
+        .toArray()
+        .map((row) => row["name"]),
+      retention: this.ctx.storage.sql
+        .exec(
+          "SELECT pruned_through_seq AS seq, pruned_through_at AS at FROM history_retention WHERE singleton=1",
+        )
+        .one(),
+      rows: this.ctx.storage.sql
+        .exec(
+          "SELECT (SELECT COUNT(*) FROM tasks) AS tasks, (SELECT COUNT(*) FROM task_events) AS events, (SELECT COUNT(*) FROM task_messages) AS threads, (SELECT COUNT(*) FROM task_batches) AS batches, (SELECT COUNT(*) FROM messages) AS messages",
+        )
+        .one(),
+    };
   }
   /**
    * Inspect wake rows, deliver what is due as if its time had come, or spend a participant's
@@ -925,6 +1279,87 @@ export class PlatformTestServer extends TalkToServer {
   private testTime: M.Timestamp | null = null;
   protected override meteringTime() {
     return this.testTime ?? super.meteringTime();
+  }
+  /** Substitute the fake Git store for swarm memory when the harness asks (memory-fake.ts). */
+  protected override configureMemory(env: Env) {
+    return "TEST_FAKE_MEMORY" in env && env.TEST_FAKE_MEMORY === "true"
+      ? MemoryFake.store
+      : super.configureMemory(env);
+  }
+  /**
+   * Swarm memory (docs/swarm-server-spec.md, 14). `inspect` reads the ledger, the memory channel's
+   * messages and the meter's journal; `git` acts on this server's fake repository as an agent's Git
+   * would; `expire-tokens` makes every live token's time run out; `stale` lets the next claim read
+   * the head at once, as if its 30 seconds had passed; `switch-off` stores what the old switch
+   * stored when memory was switched off.
+   */
+  async memoryControl(input: typeof MemoryControl.Type) {
+    const all = (query: string, ...bindings: ReadonlyArray<SqlStorageValue>) =>
+      this.ctx.storage.sql.exec(query, ...bindings).toArray();
+    if (input.repository !== undefined)
+      return Effect.runPromise(
+        MemoryFake.control(input.repository, input.git ?? { action: "inspect" }),
+      );
+    const id = String(all("SELECT id FROM server")[0]?.["id"] ?? "");
+    const name = `mem-${id}`;
+    if (input.action === "git" && input.git !== undefined)
+      return Effect.runPromise(MemoryFake.control(name, input.git));
+    if (input.action === "expire-tokens")
+      this.ctx.storage.sql.exec(
+        "UPDATE memory_tokens SET expires_at=issued_at WHERE revoked_at IS NULL AND settled_at IS NULL",
+      );
+    if (input.action === "stale")
+      this.ctx.storage.sql.exec("UPDATE memory_repository SET checked_at=0");
+    // What the old switch stored when the creator switched memory off; memory ignores it now.
+    if (input.action === "switch-off")
+      this.ctx.storage.sql.exec("UPDATE memory_repository SET enabled=0");
+    let pruned = null;
+    if (input.action === "legacy-prune") {
+      const applied = { plan: "shop", days: M.Count.make(90), archive: false } as const;
+      pruned = Prune.removeTasks(this.ctx.storage, Date.now() + 1, Prune.taskBatchSize, applied);
+    }
+    const tables = all(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('memory_repository','memory_files','memory_commits','memory_tokens') ORDER BY name",
+    ).map((row) => String(row["name"]));
+    const repository = all("SELECT * FROM memory_repository")[0] ?? null;
+    const channelId = repository?.["channel_id"] ?? null;
+    return {
+      pruned,
+      version: all("SELECT MAX(version) AS version FROM schema_migrations")[0]?.["version"],
+      tables,
+      foreignKeys: tables.flatMap((table) =>
+        all(`SELECT "table" AS target FROM pragma_foreign_key_list(?)`, table).map(
+          (row) => `${table} -> ${String(row["target"])}`,
+        ),
+      ),
+      triggers: all(
+        "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name IN ('memory_repository','memory_files','memory_commits','memory_tokens')",
+      ),
+      repository,
+      channels: all("SELECT name FROM conversations WHERE kind='channel' ORDER BY name").map(
+        (row) => String(row["name"]),
+      ),
+      files: all("SELECT path, blob, bytes, labels FROM memory_files ORDER BY path"),
+      commits: all("SELECT * FROM memory_commits ORDER BY found_at, rowid"),
+      tokens: all("SELECT * FROM memory_tokens ORDER BY issued_at, rowid"),
+      // The memory channel's messages, oldest first, with what could make them wake or count.
+      posts:
+        channelId === null
+          ? []
+          : all(
+              `SELECT m.id, m.body, m.sender_id AS senderId,
+               (SELECT COUNT(*) FROM message_mentions x WHERE x.seq=m.seq) AS mentions,
+               (SELECT COUNT(*) FROM message_notices n WHERE n.message_id=m.id) AS notices
+               FROM messages m WHERE m.conversation_id=? ORDER BY m.seq`,
+              channelId,
+            ),
+      git: await Effect.runPromise(MemoryFake.control(name, { action: "inspect" })),
+      usage:
+        all("SELECT 1 FROM sqlite_master WHERE type='table' AND name='message_usage'").length === 0
+          ? []
+          : all("SELECT message_id AS id, units, kind FROM message_usage ORDER BY committed_at"),
+      tasks: all("SELECT COUNT(*) AS n FROM tasks")[0]?.["n"],
+    };
   }
   async inspectMeter() {
     return {
@@ -1142,6 +1577,37 @@ export default {
           await env.SERVERS.getByName(url.searchParams.get("server") ?? "").wakesControl(input),
         );
       }
+      if (url.pathname === "/__control/board") {
+        const input = Schema.decodeUnknownSync(
+          Schema.Struct({
+            action: Schema.Literals([
+              "expire",
+              "lapse",
+              "inspect",
+              "prune",
+              "transitions",
+              "drop",
+              "alarm",
+              "fill",
+              "seize",
+              "spread",
+              "silence",
+              "drop-holders",
+              "drop-results",
+              "forget-result",
+              "prune-messages",
+              "results",
+              "row",
+            ]),
+            number: Schema.optionalKey(Schema.Int),
+            participantId: Schema.optionalKey(Schema.String),
+            minutes: Schema.optionalKey(Schema.Int),
+          }),
+        )(await request.json());
+        return Response.json(
+          await env.SERVERS.getByName(url.searchParams.get("server") ?? "").boardControl(input),
+        );
+      }
       if (url.pathname === "/__control/cost") {
         const action = Schema.decodeUnknownSync(Schema.Literals(["start", "take"]))(
           await request.json(),
@@ -1271,6 +1737,12 @@ export default {
             ),
           ),
         );
+      if (url.pathname === "/__control/memory") {
+        const input = Schema.decodeUnknownSync(MemoryControl)(await request.json());
+        return Response.json(
+          await env.SERVERS.getByName(url.searchParams.get("server") ?? "").memoryControl(input),
+        );
+      }
       if (url.pathname.startsWith("/__control/meter")) {
         const server = env.SERVERS.getByName(url.searchParams.get("server") ?? "");
         if (url.pathname.endsWith("/spend"))
@@ -1430,9 +1902,17 @@ export default {
           },
         })
       : env.PLATFORM;
+    const workerEnv = {
+      ...env,
+      ...envOverrides,
+      PLATFORM: platform,
+      SERVERS: recordLookups(env.SERVERS),
+    };
+    // With the fake Git store, the Worker sees a binding too, so it offers memory and lists its tools.
+    const fakeMemory = "TEST_FAKE_MEMORY" in env && env.TEST_FAKE_MEMORY === "true";
     return worker.fetch(
       request,
-      { ...env, ...envOverrides, PLATFORM: platform, SERVERS: recordLookups(env.SERVERS) },
+      fakeMemory ? { ...workerEnv, MEMORY_ARTIFACTS: MemoryFake.binding } : workerEnv,
       ctx,
     );
   },

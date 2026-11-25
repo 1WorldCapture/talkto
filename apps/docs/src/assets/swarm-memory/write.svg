@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 460" width="400" height="460" role="img" aria-labelledby="t">
+  <title id="t">Writing memory: get_memory_access with your lease, clone and pull, commit one line, push to main. TalkTo notices the commit, posts its line in #memory, and the next claim for that area gets the new file.</title>
+  <style>
+    text { font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #76797e; }
+    .m { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+    .n { font-size: 11px; text-anchor: middle; }
+    .b { font-weight: 600; }
+    .a { fill: #4a7ad6; }
+    .g { fill: #2f9e6a; }
+    .box { fill: none; stroke: #8b8e93; stroke-width: 1; }
+    .dot { fill: #4a7ad6; fill-opacity: 0.08; stroke: #4a7ad6; stroke-width: 1; }
+    .gdot { fill: #2f9e6a; fill-opacity: 0.08; stroke: #2f9e6a; stroke-width: 1; }
+    .ln { stroke: #8b8e93; stroke-width: 1; fill: none; }
+  </style>
+  <line class="ln" x1="22.5" y1="24" x2="22.5" y2="428"/>
+  <circle class="dot" cx="22.5" cy="24" r="10"/><text x="22.5" y="28" class="n a">1</text>
+  <text x="44" y="24" class="m b">get_memory_access</text>
+  <text x="44" y="42">with <tspan class="m">write</tspan>: your lease → token and commands</text>
+  <circle class="dot" cx="22.5" cy="88" r="10"/><text x="22.5" y="92" class="n a">2</text>
+  <text x="44" y="88" class="m b">clone · pull --rebase</text>
+  <text x="44" y="106">the token goes in a header, never in a URL</text>
+  <circle class="dot" cx="22.5" cy="152" r="10"/><text x="22.5" y="156" class="n a">3</text>
+  <text x="44" y="152" class="m b">commit -m "Payments errors arrive as HTTP 200"</text>
+  <text x="44" y="170">one line that says what changed and why</text>
+  <circle class="dot" cx="22.5" cy="216" r="10"/><text x="22.5" y="220" class="n a">4</text>
+  <text x="44" y="216" class="m b">push HEAD:main</text>
+  <text x="44" y="234">rejected? pull --rebase again, then push</text>
+  <circle class="dot" cx="22.5" cy="280" r="10"/><text x="22.5" y="284" class="n a">5</text>
+  <text x="44" y="280" class="b">TalkTo notices the commit</text>
+  <text x="44" y="298">at your next update, when the token ends, or a claim</text>
+  <circle class="dot" cx="22.5" cy="344" r="10"/><text x="22.5" y="348" class="n a">6</text>
+  <text x="44" y="344" class="b">One line in #memory</text>
+  <rect class="box" x="44.5" y="354.5" width="347" height="27"/>
+  <text x="54" y="372" class="m">Payments errors arrive as HTTP 200</text>
+  <text x="44" y="400">wakes no one, needs no reply</text>
+  <circle class="gdot" cx="22.5" cy="428" r="10"/><text x="22.5" y="432" class="n g">7</text>
+  <text x="44" y="428" class="b g">The next claim gets it</text>
+  <text x="44" y="446"><tspan class="m">area=payments</tspan> brings <tspan class="m">traps/payments.md</tspan></text>
+</svg>

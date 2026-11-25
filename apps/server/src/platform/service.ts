@@ -7,6 +7,7 @@ import * as Model from "./model.js";
 import * as IdentityDirectory from "./identity-directory.js";
 import * as People from "./people.js";
 import * as InvitationPolicy from "./invitation-policy.js";
+import { present } from "../present.js";
 
 type Operation<A> = Effect.Effect<A, Model.Failure>;
 /** WorkOS operations needed for ownership and membership; no provider SDK leaks out. */
@@ -113,7 +114,7 @@ export class Directory extends Context.Service<
       actor: Model.Actor,
       account: P.Account,
       member: P.Member,
-      input: P.Create,
+      input: P.CreateServer,
       at: M.Timestamp,
     ) => Operation<Model.ServerReservation>;
     readonly server: (id: M.ServerId) => Operation<Model.ServerReservation | null>;
@@ -121,14 +122,21 @@ export class Directory extends Context.Service<
     /**
      * Rename an organization or a server and record it in one batch. The exact current name changes
      * nothing; a request key the person already used returns that rename's outcome unchanged, or
-     * `idempotency_conflict` for another name.
+     * `idempotency_conflict` for another name. "limited" when the target already had `limit.max`
+     * renames since `limit.since`, checked in the same write.
      */
     readonly rename: (
       actor: Model.Actor,
       target: Model.RenameTarget,
       input: P.Rename,
       at: M.Timestamp,
-    ) => Operation<Model.Renamed>;
+      limit: { readonly since: M.Timestamp; readonly max: number },
+    ) => Operation<Model.Renamed | "limited">;
+    /** How many times the target was renamed since `since`, and when the earliest of them was. */
+    readonly renamesSince: (
+      target: Model.RenameTarget,
+      since: M.Timestamp,
+    ) => Operation<{ readonly count: number; readonly earliest: M.Timestamp | null }>;
     /** The target's current name and revision; null once it is deleted. */
     readonly currentName: (target: Model.RenameTarget) => Operation<Model.CurrentName | null>;
     /** Record that the target's mirror holds `revision`, confirming every rename up to it. */
@@ -227,7 +235,7 @@ export class Service extends Context.Service<
       evidence: Model.Evidence,
       accountId: P.AccountId,
       input: P.Rename,
-    ) => Operation<P.RenamedAccount>;
+    ) => Effect.Effect<P.RenamedAccount, Model.Failure | Model.RenameLimited>;
     readonly listAccounts: (
       actor: Model.Actor,
       input: P.IdentityListing,
@@ -257,7 +265,7 @@ export class Service extends Context.Service<
       accountId: P.AccountId,
       serverId: M.ServerId,
       input: P.Rename,
-    ) => Operation<P.RenamedServer>;
+    ) => Effect.Effect<P.RenamedServer, Model.Failure | Model.RenameLimited>;
     /** The server's recent renames, for anyone who can open it in the organization. */
     readonly serverRenames: (
       actor: Model.Actor,
@@ -314,7 +322,7 @@ export class Service extends Context.Service<
     readonly createServer: (
       actor: Model.Actor,
       accountId: P.AccountId,
-      input: P.Create,
+      input: P.CreateServer,
     ) => Operation<P.Server>;
     readonly discoverServers: (
       actor: Model.Actor,
@@ -402,6 +410,7 @@ const publicServer = (s: Model.ServerReservation): P.Server => ({
   createdBy: s.createdBy,
   createdAt: s.createdAt,
   status: s.status,
+  ...present("board", s.board),
 });
 /**
  * Shared by every invitation send and resend (Members and server guests), after every other check
@@ -465,12 +474,18 @@ const accountContext = (value: P.Account, actor: Model.Actor): P.AccountContext 
     rename: value.createdBy === actor.userId,
   },
 });
-/** Renaming changes what every member and agent sees, so it needs the person on the website. */
+/**
+ * Renaming changes what every member and agent sees, so it needs the person: on the website or with
+ * one of their API keys, never an agent's token.
+ */
 const websiteOnly = (what: "an organization" | "a server") =>
   new Model.Failure({
     code: "forbidden",
-    message: `Rename ${what} on the TalkTo website while signed in. API tokens and agents cannot.`,
+    message: `Rename ${what} on the TalkTo website while signed in, or with an API key. Agents cannot.`,
   });
+/** Renames one organization or server may have in an hour, whoever makes them. */
+export const renamesPerHour = 10;
+const hourMs = 3_600_000;
 /** A person's label in a rename notice: their name, else their email address. */
 const personLabel = (user: P.User) =>
   [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
@@ -542,6 +557,34 @@ export const layer = Layer.effect(
      * confirmed. When a newer rename landed meanwhile, the newer name is delivered too, so a slow
      * earlier delivery never leaves the mirror on an older name.
      */
+    /**
+     * Rename the target, at most `renamesPerHour` times an hour; the limit is checked in the
+     * rename's own write, so parallel renames cannot pass it together.
+     */
+    const renameLimited = Effect.fn("Platform.renameLimited")(function* (
+      actor: Model.Actor,
+      target: Model.RenameTarget,
+      input: P.Rename,
+    ) {
+      const at = yield* Clock.currentTimeMillis;
+      const since = M.Timestamp.make(DateTime.formatIso(DateTime.makeUnsafe(at - hourMs)));
+      const renamed = yield* directory.rename(actor, target, input, yield* now, {
+        since,
+        max: renamesPerHour,
+      });
+      if (renamed !== "limited") return renamed;
+      const recent = yield* directory.renamesSince(target, since);
+      const earliest = recent.earliest === null ? at : Date.parse(recent.earliest);
+      const retryAfterSeconds = Math.min(
+        3600,
+        Math.max(1, Math.ceil((earliest + hourMs - at) / 1000)),
+      );
+      return yield* new Model.RenameLimited({
+        scope: target.kind,
+        retryAfterSeconds,
+        message: `This ${target.kind} was renamed ${renamesPerHour} times in the last hour, the most allowed. Wait, then try again.`,
+      });
+    });
     const syncName = Effect.fn("Platform.syncName")(function* (target: Model.RenameTarget) {
       for (let attempt = 0; attempt < 3; attempt++) {
         const current = yield* directory.currentName(target);
@@ -598,7 +641,7 @@ export const layer = Layer.effect(
         return accountContext(value, actor);
       }),
       renameAccount: Effect.fn("Platform.renameAccount")(function* (actor, evidence, id, input) {
-        if (!evidence.website) return yield* websiteOnly("an organization");
+        if (!Model.byPerson(evidence)) return yield* websiteOnly("an organization");
         const { value } = yield* account(actor, id);
         // The owner manages members and billing; the same person renames the organization.
         if (value.createdBy !== actor.userId)
@@ -607,7 +650,7 @@ export const layer = Layer.effect(
             message: "Only the organization's owner can rename it.",
           });
         const target = { kind: "organization", id } as const;
-        const renamed = yield* directory.rename(actor, target, input, yield* now);
+        const renamed = yield* renameLimited(actor, target, input);
         yield* syncName(target).pipe(
           Effect.mapError(
             () =>
@@ -687,7 +730,7 @@ export const layer = Layer.effect(
       }),
       renameServer: Effect.fn("Platform.renameServer")(
         function* (actor, evidence, accountId, id, input) {
-          if (!evidence.website) return yield* websiteOnly("a server");
+          if (!Model.byPerson(evidence)) return yield* websiteOnly("a server");
           const { server, reader, owner } = yield* managedView(actor, accountId, id);
           // The people who see the server's Settings tab rename it; readers are told why not.
           if (!owner)
@@ -696,7 +739,7 @@ export const layer = Layer.effect(
               message: "Only the person who manages this server can rename it.",
             });
           const target = { kind: "server", id } as const;
-          const renamed = yield* directory.rename(actor, target, input, yield* now);
+          const renamed = yield* renameLimited(actor, target, input);
           yield* syncName(target).pipe(
             Effect.mapError(
               () =>

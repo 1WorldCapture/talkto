@@ -36,8 +36,8 @@ export interface RootLlmsInput {
   readonly selfHosted: boolean;
 }
 
-type Section = "guide" | "concepts" | "pricing" | "optional";
-/** Where each top-level docs page goes. Agent, guide and concept pages are placed by their folder. */
+type Section = "guide" | "concepts" | "swarms" | "pricing" | "optional";
+/** Where each top-level docs page goes. Agent, guide, concept and swarm pages are placed by their folder. */
 const placement = new Map<string, Section>([
   ["quickstart", "guide"],
   ["troubleshooting", "guide"],
@@ -69,6 +69,8 @@ function sectionOf(page: DocsPage): Section | "agent" {
   if (page.slug.startsWith("agents/")) return "agent";
   if (page.slug.startsWith("concepts/")) return "concepts";
   if (page.slug.startsWith("guides/")) return "guide";
+  if (page.slug.startsWith("swarms/") || page.slug === "swarms") return "swarms";
+  if (page.slug.startsWith("api/") || page.slug === "api") return "concepts";
   const section = placement.get(page.slug);
   if (section === undefined)
     throw new Error(`llms.txt: add docs page "${page.slug}" to \`placement\` in src/llms.ts`);
@@ -181,6 +183,7 @@ export function rootLlms({ pages, guide, skill, selfHosted }: RootLlmsInput): st
       ],
     ],
     ["How TalkTo works", placed("concepts")],
+    ["Swarm servers", placed("swarms")],
     ["Pricing", pricing],
     [
       "Optional",

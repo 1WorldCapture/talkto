@@ -220,3 +220,42 @@ p.ops-account-blocked {
     justify-content: flex-start;
   }
 }
+/* API keys: the make-a-key form and the new key, shown once. */
+.ops-api-key-form fieldset {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.ops-console .ops-api-key-form fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+.ops-api-key-form fieldset input {
+  margin: 0;
+  flex: none;
+}
+.ops-api-key-form legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+.ops-api-key-form select {
+  width: 100%;
+  min-height: 44px;
+}
+.ops-api-key-secret {
+  display: block;
+  padding: 12px;
+  border: 1px solid var(--subtle-line);
+  background: var(--canvas, var(--surface));
+  font-size: 14px;
+  word-break: break-all;
+  user-select: all;
+}
+.ops-sign-in small code {
+  font-size: 13px;
+}

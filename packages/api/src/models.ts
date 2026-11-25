@@ -3,7 +3,8 @@ import { agentTypeInstructions, normalizeAgentType } from "./agent-types.js";
 import * as Plugins from "./plugins.js";
 
 const uuid = Schema.String.check(Schema.isUUID(4), Schema.isPattern(/^[0-9a-f-]+$/));
-const textWithin = (bytes: number) =>
+/** Nonempty Unicode text of at most `bytes` UTF-8 bytes, without NUL. */
+export const textWithin = (bytes: number) =>
   Schema.makeFilter(
     (value: string) =>
       value.isWellFormed() &&
@@ -33,6 +34,10 @@ export type ConversationId = typeof ConversationId.Type;
 export const MessageId = uuid.pipe(Schema.brand("MessageId"));
 /** Parsed message identity. */
 export type MessageId = typeof MessageId.Type;
+/** Stable identity of a task on a swarm server's board. */
+export const TaskId = uuid.pipe(Schema.brand("TaskId"));
+/** Parsed task identity. */
+export type TaskId = typeof TaskId.Type;
 /** Human-readable name with ASCII case-insensitive uniqueness. */
 export const Name = Schema.Trim.check(Schema.isPattern(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/)).pipe(
   Schema.brand("Name"),
@@ -467,6 +472,21 @@ export const MessageNotice = Schema.Struct({
 });
 /** Parsed notice. */
 export interface MessageNotice extends Schema.Schema.Type<typeof MessageNotice> {}
+/**
+ * The task thread a message belongs to, on a swarm server's board channel. `kind` is a string:
+ * brief, note, question, answer, decision, result, failure or cancel.
+ */
+export const MessageTask = Schema.Struct({
+  id: TaskId,
+  number: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+  kind: Schema.String,
+}).annotate({
+  identifier: "MessageTask",
+  description:
+    "Present only on messages of a task's thread: the task and the message's kind (brief, note, question, answer, decision, result, failure or cancel). Read the task with read_tasks.",
+});
+/** Parsed thread reference. */
+export interface MessageTask extends Schema.Schema.Type<typeof MessageTask> {}
 /** Most participants one channel message can @mention; later names in the same message are ignored. */
 export const maxMentions = 20;
 /** Participants a channel message @mentions by their current name, in the order written. */
@@ -480,8 +500,8 @@ export const Mentions = Schema.Array(ParticipantId)
 export type Mentions = typeof Mentions.Type;
 /**
  * Immutable message with an authoritative ordering key; `share` and `transfer` are present only on file announcements,
- * `priority` only on urgent messages, `mentions` only when a channel message @mentions someone and `notice` only on
- * TalkTo's own notices, so every earlier message keeps its exact shape.
+ * `priority` only on urgent messages, `mentions` only when a channel message @mentions someone, `notice` only on
+ * TalkTo's own notices and `task` only on a task thread's messages, so every earlier message keeps its exact shape.
  */
 export const Message = Schema.Struct({
   id: MessageId,
@@ -495,6 +515,7 @@ export const Message = Schema.Struct({
   priority: Schema.optionalKey(Schema.Literal("urgent")),
   mentions: Schema.optionalKey(Mentions),
   notice: Schema.optionalKey(MessageNotice),
+  task: Schema.optionalKey(MessageTask),
 }).annotate({ identifier: "Message" });
 /** Parsed message. */
 export interface Message extends Schema.Schema.Type<typeof Message> {}

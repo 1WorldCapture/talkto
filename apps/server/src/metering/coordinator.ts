@@ -171,7 +171,7 @@ export class WorkspaceQuota extends DurableObject<Env> {
     );
   }
   /**
-   * Lease read or admin units to one server (docs/plan-limits.md). Owner-pilot and self-hosted
+   * Lease read, admin or task-operation units to one server (docs/plan-limits.md). Owner-pilot and self-hosted
    * organizations are unlimited; everyone else spends from the plan's monthly budgets.
    */
   async budget(input: BudgetModel.Request): Promise<BudgetModel.Grant> {

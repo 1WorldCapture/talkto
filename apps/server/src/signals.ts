@@ -191,7 +191,7 @@ export type Answer =
       readonly kind: "rate_limited";
       readonly message: string;
       readonly retryAfterSeconds: number;
-      readonly scope: "participant" | "organization" | "network";
+      readonly scope: E.RateLimited["scope"];
     }
   | { readonly kind: "storage_unavailable" };
 

@@ -461,6 +461,31 @@ test("past the month's admin calls, admin calls are refused; messages and reads 
   assert.ok(Number(http.headers.get("retry-after")) >= 1);
 });
 
+test("a spent month never stops a person removing or restoring an agent, on the website or with a key", async (t) => {
+  const s = await setup(t, { readBudgets: false, adminBudgets: true }, { adminMonthly: 1 });
+  // Registering spent the month's one admin call.
+  assert.equal((await channel(s, "over", s.agent.item.id, true)).error.scope, "organization");
+  const root = `/v1/servers/${s.server.id}/participants/${s.agent.item.id}`;
+  const dashboard = await website(s.x);
+  for (const action of ["remove", "restore"]) {
+    const answer = await dashboard("POST", `${root}/${action}`, {});
+    assert.equal(answer.status, 200, `website ${action}: ${JSON.stringify(answer.json)}`);
+  }
+  const made = await dashboard("POST", "/v1/me/api-keys", { name: "remover", access: "full" });
+  assert.equal(made.status, 200, JSON.stringify(made.json));
+  for (const action of ["remove", "restore"]) {
+    const response = await s.x.raw(`${root}/${action}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${made.json.data.secret}`,
+        "content-type": "application/json",
+      },
+      body: "{}",
+    });
+    assert.equal(response.status, 200, `key ${action}: ${await response.text()}`);
+  }
+});
+
 test("refused sends count as admin calls and slow down a looping agent", async (t) => {
   const s = await setup(t, { readBudgets: false, adminBudgets: true });
   await s.holdLimits();

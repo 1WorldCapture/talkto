@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import type * as B from "@talkto/api/billing";
 import * as P from "@talkto/api/platform";
 import * as M from "@talkto/api/models";
@@ -134,11 +134,21 @@ export class Failure extends Schema.TaggedError<Failure>()("PlatformFailure", {
     "people_limit_reached",
     "starter_unavailable",
     "server_limit_reached",
+    "api_key_limit_reached",
     "idempotency_conflict",
     "storage_unavailable",
     "identity_unavailable",
     "unauthenticated",
   ]),
+  message: Schema.String,
+}) {}
+/**
+ * Too many renames of one organization or server in the last hour (`Platform.renamesPerHour`), so
+ * a script cannot rename in a loop; an organization rename also updates WorkOS. Nothing changed.
+ */
+export class RenameLimited extends Schema.TaggedError<RenameLimited>()("RenameLimited", {
+  scope: Schema.Literals(["organization", "server"]),
+  retryAfterSeconds: Schema.Int,
   message: Schema.String,
 }) {}
 /**
@@ -190,7 +200,24 @@ export interface Evidence {
   readonly website: boolean;
   /** Cloudflare's connecting address, for observation only. */
   readonly network: string | null;
+  /** The caller is a personal API key (docs/dashboard-api.md, "API keys"). Absent means no. */
+  readonly apiKey?: boolean;
 }
+/** The person themself: the website's session or one of their API keys, not an agent's token. */
+export const byPerson = (evidence: Evidence) => evidence.website || evidence.apiKey === true;
+/**
+ * Refuse a personal API key for an action that stays with the person on the website. Checked in
+ * the handler, after routing, so no spelling of the path gets past it.
+ */
+export const refuseApiKey = (evidence: Evidence, action: string) =>
+  evidence.apiKey === true
+    ? Effect.fail(
+        new Failure({
+          code: "forbidden",
+          message: `API keys cannot ${action}. Do it on the TalkTo website.`,
+        }),
+      )
+    : Effect.void;
 /** API tokens, scheduled work and tests carry no website session. */
 export const noEvidence: Evidence = { website: false, network: null };
 /** Construct a caller key from verified WorkOS identity. */

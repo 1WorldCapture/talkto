@@ -70,6 +70,11 @@ export function AccountSettings() {
         <p>See where your agent apps are signed in to TalkTo, and sign any of them out.</p>
         <AppLink path="account/sign-ins">Signed-in computers</AppLink>
       </section>
+      <section className="ops-account-email" aria-labelledby="api-keys-link-title">
+        <h2 id="api-keys-link-title">API keys</h2>
+        <p>Make keys for scripts and services that call the TalkTo API as you, and revoke them.</p>
+        <AppLink path="account/api-keys">API keys</AppLink>
+      </section>
       <Notice error={plan.error} retry={() => void plan.refetch()} />
       {plan.isPending && <p role="status">Loading account…</p>}
       {plan.data && <DeleteAccountSection plan={plan.data.data} />}

@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router";
-import { Schema } from "effect";
+import { Schema, SchemaGetter } from "effect";
 import * as D from "@talkto/api/dashboard";
 import * as M from "@talkto/api/models";
 import { PublicPage, publicPages } from "./public.js";
@@ -13,12 +13,26 @@ const Dashboard = lazy(() =>
 const Onboarding = lazy(() =>
   loadChunk(() => import("./onboarding.js")).then((module) => ({ default: module.Onboarding })),
 );
+/**
+ * Free text in the URL. The router reads each search value as JSON first, so a hand-typed
+ * `?query=10080` (or `true`, `null`) arrives as a number, boolean or null; read it back as text.
+ */
+const Text = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean, Schema.Null]).pipe(
+  Schema.decodeTo(Schema.String, {
+    decode: SchemaGetter.transform((value) => String(value)),
+    encode: SchemaGetter.passthrough(),
+  }),
+);
 const Search = Schema.Struct({
-  query: Schema.optional(Schema.String),
-  cursor: Schema.optional(Schema.String),
+  query: Schema.optional(Text),
+  cursor: Schema.optional(Text),
   channel: Schema.optional(Schema.String),
   tab: Schema.optional(Schema.String),
   state: Schema.optional(Schema.String),
+  // The Board's task list (board.tsx): its tab, agent and label filters.
+  list: Schema.optional(Schema.String),
+  agent: Schema.optional(Schema.String),
+  label: Schema.optional(Text),
   billing: Schema.optional(Schema.Literals(["return", "cancel"])),
   connect: Schema.optional(Schema.Literal("agents")),
   // `?feedback=1` (the public footer's link) opens the Feedback dialog once, then is removed.

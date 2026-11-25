@@ -17,7 +17,7 @@ import * as People from "../platform/people.js";
 import * as GuestsD1 from "../guests/d1.js";
 import * as M from "@talkto/api/models";
 import * as PlatformHttp from "../platform/http.js";
-import type * as Identity from "../platform/model.js";
+import * as Identity from "../platform/model.js";
 import * as Responses from "../responses.js";
 import * as Telemetry from "../telemetry.js";
 import { trace } from "@talkto/telemetry/effect";
@@ -40,9 +40,15 @@ export function failure(error: Model.Failure, meta: Envelope.Meta) {
 }
 const respond = Effect.fn("BillingHttp.respond")(function* <A>(
   operation: (actor: Identity.Actor) => Effect.Effect<A, Identity.Failure | Model.Failure>,
+  change = true,
 ) {
-  const { actor, meta } = yield* PlatformHttp.RequestContext;
-  const data = yield* operation(actor).pipe(
+  const { actor, meta, evidence } = yield* PlatformHttp.RequestContext;
+  // Billing changes can charge the saved card: never with a personal API key (checked here, after
+  // routing, so no spelling of the path gets past it). Reading the state is allowed.
+  const refused = change
+    ? Identity.refuseApiKey(evidence ?? Identity.noEvidence, "change billing")
+    : Effect.void;
+  const data = yield* refused.pipe(Effect.andThen(operation(actor))).pipe(
     Effect.mapError((error) => {
       if (error._tag === "PlatformFailure") return PlatformHttp.failure(error, meta);
       Telemetry.failure(error.code, meta.requestId, error, "billing");
@@ -64,7 +70,7 @@ const handlers = HttpApiBuilder.group(B.Api, "billing", (routes) =>
   Effect.gen(function* () {
     const service = yield* Billing.Service;
     return routes.handleAll({
-      state: ({ params }) => respond((actor) => service.state(actor, params.accountId)),
+      state: ({ params }) => respond((actor) => service.state(actor, params.accountId), false),
       checkout: ({ params, payload }) =>
         respond((actor) => service.checkout(actor, params.accountId, payload)),
       cancelCheckout: ({ params, payload }) =>
@@ -113,6 +119,7 @@ export const handle = Effect.fn("BillingHttp.handle")(function* (
   request: Request,
   actor: Identity.Actor,
   meta: Envelope.Meta,
+  evidence: Identity.Evidence,
   env: Env,
   application: Layer.Layer<Platform.Service>,
 ) {
@@ -134,7 +141,7 @@ export const handle = Effect.fn("BillingHttp.handle")(function* (
   );
   try {
     return yield* Effect.promise(() =>
-      web.handler(request, Context.make(PlatformHttp.RequestContext, { actor, meta })),
+      web.handler(request, Context.make(PlatformHttp.RequestContext, { actor, meta, evidence })),
     );
   } finally {
     yield* Effect.promise(() => web.dispose());

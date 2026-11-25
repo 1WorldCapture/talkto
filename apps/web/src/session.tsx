@@ -23,6 +23,10 @@ export function clearAgentData(
     "conversation",
     "file-shares",
     "onboarding-progress",
+    "board",
+    "board-tasks",
+    "board-task",
+    "board-agents",
   ];
   const affected = queries
     .getQueryCache()

@@ -12,6 +12,7 @@ import * as S from "@talkto/api/starter";
 import * as A from "@talkto/api/account";
 import * as E from "@talkto/api/email";
 import * as SignIns from "@talkto/api/sign-ins";
+import * as ApiKeys from "@talkto/api/api-keys";
 import * as Share from "@talkto/api/share";
 import * as Feedback from "@talkto/api/feedback";
 import * as Guests from "@talkto/api/guests";
@@ -95,6 +96,7 @@ export function createApi(baseUrl: string) {
       account: HttpApiClient.make(A.Api, { baseUrl }),
       email: HttpApiClient.make(E.Api, { baseUrl }),
       signIns: HttpApiClient.make(SignIns.Api, { baseUrl }),
+      apiKeys: HttpApiClient.make(ApiKeys.Api, { baseUrl }),
       share: HttpApiClient.make(Share.Api, { baseUrl }),
       feedback: HttpApiClient.make(Feedback.Api, { baseUrl }),
       guests: HttpApiClient.make(Guests.Api, { baseUrl }),
@@ -109,6 +111,7 @@ export function createApi(baseUrl: string) {
     account: clients.account.account,
     email: clients.email.email,
     signIns: clients.signIns.signIns,
+    apiKeys: clients.apiKeys.apiKeys,
     share: clients.share.share,
     feedback: clients.feedback.feedback,
     guests: clients.guests.guests,

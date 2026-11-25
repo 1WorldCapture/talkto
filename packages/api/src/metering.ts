@@ -69,5 +69,9 @@ export const RateLimitRecovery = Schema.Struct({
   retryable: Schema.Literal(true),
   action: Schema.Literal("retry_after"),
   retryAfterSeconds: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3600 })),
-  scope: Schema.Literals(["participant", "organization"]),
+  /**
+   * `network`: too many bad API keys from one network (docs/dashboard-api.md, "API keys").
+   * `organization` and `server` also answer too many renames of one in an hour.
+   */
+  scope: Schema.Literals(["participant", "organization", "network", "server"]),
 });

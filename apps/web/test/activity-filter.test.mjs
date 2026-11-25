@@ -52,3 +52,22 @@ test("activity URLs restore time selection on Back and reject incomplete or out-
     );
   }
 });
+
+test("a hand-typed number in a free-text field reads as text, not as a broken page", async (t) => {
+  const vite = await createVite({
+    server: { middlewareMode: true, hmr: false },
+    appType: "custom",
+  });
+  t.after(() => vite.close());
+  const { createAppRouter } = await vite.ssrLoadModule("/src/router.tsx");
+  // The router reads `?query=10080&label=true&cursor=null` as JSON: a number, a boolean and null.
+  const validate = createAppRouter().routesById.__root__.options.validateSearch;
+  assert.deepEqual(validate({ tab: "board", query: 10080, label: true, cursor: null }), {
+    tab: "board",
+    query: "10080",
+    label: "true",
+    cursor: "null",
+  });
+  // Fields with a fixed form still refuse anything else.
+  assert.throws(() => validate({ range: 5 }));
+});

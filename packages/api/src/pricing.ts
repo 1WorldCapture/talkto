@@ -177,6 +177,69 @@ export const adminCalls = { free: 1000, shop: 10_000, studio: 50_000, factory: 1
 /** Admin calls one agent (or one connection naming no agent) may make a minute on one server. */
 export const adminPerMinute = 30;
 /**
+ * Task operations per organization per billing month (Free and organizations without a paid plan:
+ * per UTC calendar month), decided by the owner on November 25, 2026 (the swarm pricing study). A
+ * task operation is one agent or API call to create, claim or update tasks: every `create_tasks`,
+ * every `claim_task` (an empty claim included), every `update_task` (a summary-only finish, an
+ * owner's cancel or reopen included), refused ones too. A lease renewal (`update_task` with
+ * `progress`) counts `renewalWeight` of an operation: it writes only the lease. After `monthly`,
+ * agents keep working through a slow lane of `slowPerMinute` task operations a minute across the
+ * organization until the month ends, like reads: 1 every 10, 4, 2 and 1 minutes. Organizations on
+ * a trial or without a paid plan use Free's numbers. Owner-pilot and self-hosted organizations
+ * have no task-operation budget.
+ */
+export const taskOperations = {
+  free: { monthly: 10_000, slowPerMinute: 1 / 10 },
+  shop: { monthly: 80_000, slowPerMinute: 1 / 4 },
+  studio: { monthly: 400_000, slowPerMinute: 1 / 2 },
+  factory: { monthly: 1_000_000, slowPerMinute: 1 },
+} as const satisfies Record<
+  "free" | PlanKey,
+  { readonly monthly: number; readonly slowPerMinute: number }
+>;
+/**
+ * What one lease renewal counts in the month, as a fraction of a task operation (owner, November
+ * 25, 2026). The organization's count keeps whole parts of `1 / renewalWeight` per operation, so a
+ * renewal is one part and every other operation `taskOperationParts`.
+ */
+export const renewalWeight = { parts: 1, of: 5 } as const;
+/** Parts one task operation counts in the organization's month (5: a renewal is 1 of them). */
+export const taskOperationParts = renewalWeight.of;
+/**
+ * The claim cap a new swarm server starts with on Free's numbers (Free, the trial, no plan):
+ * at most this many tasks claimed at once (decided by the owner on November 25, 2026; Vercel's
+ * swarm template caps at 4). The server's creator changes or removes it in Settings. Paid plans,
+ * owner pilots and self-hosted copies start with no cap.
+ */
+export const freeClaimCap = 4;
+/**
+ * Swarm memory's metering (docs/swarm-server-spec.md, 14), decided by the owner on November 25,
+ * 2026. Each is one number, so a decision changes one line:
+ * - `readUnits`: a `read_memory` call counts as this many reads; delivery at claim is inside the
+ *   claim's task operation;
+ * - `grantTaskOperations`: each Git token TalkTo grants (`get_memory_access`) counts as this many
+ *   task operations, because a clone is invisible to TalkTo;
+ * - `grantsPerHour`: the most tokens one participant is granted an hour, per scope;
+ * - `commitMessages`: each new commit TalkTo finds on memory's `main` counts as this many messages;
+ * - `editsMonthly`: new commits on memory per organization a month (Free and organizations without a
+ *   paid plan: per UTC calendar month). Past it, memory is read-only until the month resets: no
+ *   write token is granted and live ones are revoked. A commit that lands anyway is still posted.
+ * The memory channel's posts are TalkTo's notes and are never metered.
+ */
+export const memoryMetering = {
+  readUnits: 1,
+  grantTaskOperations: 1,
+  grantsPerHour: { read: 6, write: 12 },
+  commitMessages: 1,
+  editsMonthly: { free: 200, shop: 2_000, studio: 12_500, factory: 37_500 },
+} as const satisfies {
+  readonly readUnits: number;
+  readonly grantTaskOperations: number;
+  readonly grantsPerHour: { readonly read: number; readonly write: number };
+  readonly commitMessages: number;
+  readonly editsMonthly: Record<"free" | PlanKey, number>;
+};
+/**
  * Servers one organization may hold (owner decision, November 16, 2026): a safety cap that the
  * operator raises on request. Free stays at `free.servers`.
  */

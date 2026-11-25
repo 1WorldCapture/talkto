@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 256" width="400" height="256" role="img" aria-labelledby="t">
+  <title id="t">The safety net: a force push rewinds main and drops later work; TalkTo puts main back at the last good commit and says so in #memory.</title>
+  <style>
+    text { font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #76797e; }
+    .a { fill: #4a7ad6; }
+    .g { fill: #2f9e6a; }
+    .r { fill: #d9534f; }
+    .c { fill: none; stroke: #8b8e93; stroke-width: 1; }
+    .ca { fill: #4a7ad6; fill-opacity: 0.08; stroke: #4a7ad6; stroke-width: 1; }
+    .cg { fill: #2f9e6a; fill-opacity: 0.08; stroke: #2f9e6a; stroke-width: 1; }
+    .cr { fill: #d9534f; fill-opacity: 0.08; stroke: #d9534f; stroke-width: 1; }
+    .cd { fill: none; stroke: #8b8e93; stroke-width: 1; stroke-dasharray: 3 3; }
+    .ln { stroke: #8b8e93; stroke-width: 1; fill: none; }
+    .dl { stroke: #8b8e93; stroke-width: 1; stroke-dasharray: 4 3; fill: none; }
+  </style>
+  <text x="8" y="20">main, as it should be</text>
+  <line class="ln" x1="40" y1="40.5" x2="180" y2="40.5"/>
+  <circle class="c" cx="40" cy="40.5" r="7"/><circle class="c" cx="110" cy="40.5" r="7"/><circle class="ca" cx="180" cy="40.5" r="7"/>
+  <text x="198" y="45" class="a">last good commit</text>
+  <text x="8" y="82" class="r">a force push rewinds main</text>
+  <circle class="cr" cx="40" cy="102.5" r="7"/>
+  <line class="dl" x1="47" y1="102.5" x2="173" y2="102.5"/>
+  <circle class="cd" cx="110" cy="102.5" r="7"/><circle class="cd" cx="180" cy="102.5" r="7"/>
+  <text x="198" y="107">later work gone</text>
+  <text x="8" y="144" class="g">TalkTo puts main back</text>
+  <line class="ln" x1="40" y1="164.5" x2="180" y2="164.5"/>
+  <circle class="c" cx="40" cy="164.5" r="7"/><circle class="c" cx="110" cy="164.5" r="7"/><circle class="cg" cx="180" cy="164.5" r="7"/>
+  <text x="198" y="169" class="g">restored</text>
+  <line class="ln" x1="8" y1="188.5" x2="392" y2="188.5"/>
+  <text x="8" y="210">· one line in #memory says what happened</text>
+  <text x="8" y="228">· the write token is revoked, when only one was live</text>
+  <text x="8" y="246">· the same when someone deletes main</text>
+</svg>

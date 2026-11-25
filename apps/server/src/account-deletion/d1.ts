@@ -30,6 +30,12 @@ export const layer = (database: D1Database) =>
     const db = database.withSession("first-primary");
     const sql = (query: string, values: ReadonlyArray<string | number | null> = []) =>
       db.prepare(query).bind(...values);
+    // api_keys keeps epoch milliseconds; deletion times are ISO text.
+    const revokeKeys = (userId: string, at: string) =>
+      sql(
+        "UPDATE api_keys SET revoked_at=CAST(unixepoch(?,'subsec')*1000 AS INTEGER) WHERE user_id=? AND revoked_at IS NULL",
+        [at, userId],
+      );
     const batch = (statements: ReadonlyArray<D1PreparedStatement>) =>
       Effect.tryPromise({ try: () => db.batch([...statements]), catch: unavailable });
     const all = Effect.fn("AccountDeletionStore.read")(function* <A>(
@@ -102,6 +108,8 @@ export const layer = (database: D1Database) =>
             "UPDATE memberships SET status='deleted',updated_at=MAX(updated_at,?) WHERE user_id=?",
             [at, userId],
           ),
+          // The person's API keys stop at once (docs/dashboard-api.md, "API keys").
+          revokeKeys(userId, at),
         ]).pipe(Effect.asVoid);
       },
       userDeleted: (userId, at) =>
@@ -110,6 +118,7 @@ export const layer = (database: D1Database) =>
             "UPDATE account_deletions SET user_deleted_at=COALESCE(user_deleted_at,?) WHERE user_id=?",
             [at, userId],
           ),
+          revokeKeys(userId, at),
         ]).pipe(Effect.asVoid),
       deleting: (userId) =>
         all(
@@ -186,6 +195,8 @@ export const layer = (database: D1Database) =>
             userId,
           ]),
           sql(`DELETE FROM mcp_revocations WHERE user_id=? AND ${ready}`, [userId, userId, userId]),
+          // API keys the person made, revoked when deletion began.
+          sql(`DELETE FROM api_keys WHERE user_id=? AND ${ready}`, [userId, userId, userId]),
           // Feedback and bug reports the person sent (docs/feedback.md).
           sql(`DELETE FROM feedback WHERE user_id=? AND ${ready}`, [userId, userId, userId]),
           // Their emails first (docs/email.md, "Server invitations"): an invitation's own rows

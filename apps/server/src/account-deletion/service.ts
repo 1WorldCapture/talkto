@@ -6,6 +6,7 @@ import * as M from "@talkto/api/models";
 import * as Model from "../platform/model.js";
 import * as Platform from "../platform/service.js";
 import * as Guests from "../guests/model.js";
+import * as ApiKeyGuard from "../api-keys/guard.js";
 
 type Operation<A> = Effect.Effect<A, Model.Failure>;
 
@@ -418,6 +419,8 @@ export const layer = Layer.effect(
             owned.map((account) => account.accountId),
             yield* now,
           );
+          // `begin` revoked the person's API keys; stop them on this isolate at once too.
+          ApiKeyGuard.forgetPerson(actor.userId);
           deletion = yield* store.deletion(actor.userId);
           if (deletion === null) return yield* unfinished();
         }

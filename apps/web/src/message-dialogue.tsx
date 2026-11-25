@@ -23,7 +23,7 @@ export function shareReference(share: M.FileShare) {
 }
 
 /** A transfer offer renders like a share chip; people see what was offered and when it expires. */
-function TransferChip({ transfer }: { readonly transfer: M.FileTransfer }) {
+export function TransferChip({ transfer }: { readonly transfer: M.FileTransfer }) {
   const files = transfer.fileCount;
   const count =
     files === null ? [] : [`${files.toLocaleString()} ${files === 1 ? "file" : "files"}`];

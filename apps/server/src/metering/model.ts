@@ -112,6 +112,17 @@ export const Units = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: bl
 export type Units = typeof Units.Type;
 /** What every persisted message costs, and the default spend of any metered operation. */
 export const singleUnit = Units.make(1);
+/** The journal ID of one commit on swarm memory, which counts as a message (`memoryMetering`). */
+export const MemoryUsageId = Schema.String.check(Schema.isUUID(4)).pipe(
+  Schema.brand("MemoryUsageId"),
+);
+export type MemoryUsageId = typeof MemoryUsageId.Type;
+/**
+ * What one journal row counts: a message, or a commit on swarm memory. The journal's `message_id`
+ * column has no foreign key and `kind` stays `message`, so an older Worker and the quota object
+ * read the journal unchanged.
+ */
+export type UsageId = M.MessageId | MemoryUsageId;
 /** Journalled operation class; shares stay countable per server and period before any price exists. */
 export const UsageKind = Schema.Literals(["message", "share"]);
 /** Parsed operation class for the usage journal. */
@@ -131,7 +142,7 @@ export class Meter extends Context.Service<
      * and `kind`; dropping them would silently meter a surcharged operation as one message.
      */
     readonly consume: (
-      messageId: M.MessageId,
+      usageId: UsageId,
       units?: Units,
       kind?: UsageKind,
     ) => Effect.Effect<void, CapacityRequired | E.StorageUnavailable>;

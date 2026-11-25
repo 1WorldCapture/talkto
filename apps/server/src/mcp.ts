@@ -12,7 +12,7 @@ import * as F from "@talkto/api/feedback";
 import * as M from "@talkto/api/models";
 import { agentTypeInstructions } from "@talkto/api/agent-types";
 import * as Responses from "./responses.js";
-import instructions from "./instructions.md";
+import { agentGuide } from "./guide.js";
 import { renderDocumentation } from "@talkto/api/documentation";
 import * as Telemetry from "./telemetry.js";
 import * as U from "@talkto/api/updates";
@@ -20,6 +20,7 @@ import * as Monitoring from "./monitoring.js";
 import * as S from "@talkto/api/signal";
 import * as R from "@talkto/api/renames";
 import * as W from "@talkto/api/wake";
+import * as T from "@talkto/api/tasks";
 import * as McpEvents from "./wakes/mcp-events.js";
 import * as ToolInput from "./tool-input.js";
 import * as Capabilities from "./capabilities.js";
@@ -241,6 +242,42 @@ const definitions = [
     "wakes",
   ),
   tool(
+    T.createToolName,
+    T.descriptions[T.createToolName],
+    T.CreateTasks,
+    A.reply(T.CreatedTasks),
+    false,
+  ),
+  tool(
+    T.claimToolName,
+    T.descriptions[T.claimToolName],
+    T.ClaimTask,
+    A.reply(T.ClaimResult),
+    false,
+  ),
+  tool(
+    T.updateToolName,
+    T.descriptions[T.updateToolName],
+    T.UpdateTask,
+    A.reply(T.UpdatedTask),
+    false,
+  ),
+  tool(T.readToolName, T.descriptions[T.readToolName], T.ReadTasks, A.reply(T.ReadTasksData), true),
+  tool(
+    T.readMemoryToolName,
+    T.descriptions[T.readMemoryToolName],
+    T.ReadMemory,
+    A.reply(T.MemoryRead),
+    true,
+  ),
+  tool(
+    T.memoryAccessToolName,
+    T.descriptions[T.memoryAccessToolName],
+    T.GetMemoryAccess,
+    A.reply(T.MemoryAccess),
+    false,
+  ),
+  tool(
     F.toolName,
     "Send a bug report or product feedback about TalkTo itself to the TalkTo team (the team that runs this TalkTo). Use it when TalkTo misbehaves or you or your person want it to work differently; not for messages to other agents. Your person can send 10 a day, shared with the dashboard; feedback_limited gives retryAt. serverId and participantId are optional context. Reuse requestKey when retrying.",
     F.AgentFeedback,
@@ -248,13 +285,43 @@ const definitions = [
     false,
   ),
 ];
+/**
+ * The task-board tools, listed on every connection once the deployment offers boards
+ * (`TALKTO_BOARD=on`): one connection spans servers, so listing cannot follow one server's board.
+ * A server without a board answers them with `board_off`. A.Capability gains no value for them
+ * (docs/mcp-compatibility.md); `get_context.board` announces a board instead.
+ */
+const boardTools: ReadonlySet<string> = new Set([
+  T.createToolName,
+  T.claimToolName,
+  T.updateToolName,
+  T.readToolName,
+]);
+/**
+ * The swarm-memory tools, listed only where the deployment offers memory (`TALKTO_MEMORY=on` and a
+ * `MEMORY_ARTIFACTS` binding). A server whose board is off answers them with memory_unavailable.
+ */
+const memoryTools: ReadonlySet<string> = new Set([T.readMemoryToolName, T.memoryAccessToolName]);
 /** Only tools whose capability the deployment offers; absent tools are unknown to callers. */
-const available = (capabilities: ReadonlySet<A.Capability>, feedback: boolean) =>
+const available = (
+  capabilities: ReadonlySet<A.Capability>,
+  feedback: boolean,
+  board: boolean,
+  memory: boolean,
+) =>
   definitions.filter(
     (tool) =>
       (tool.capability === null || capabilities.has(tool.capability)) &&
-      (feedback || tool.name !== F.toolName),
+      (feedback || tool.name !== F.toolName) &&
+      (board || !boardTools.has(tool.name)) &&
+      ((board && memory) || !memoryTools.has(tool.name)),
   );
+/** The sentence the connection's instructions gain once boards are offered (spec 10.3). */
+const boardInstructions =
+  " On servers whose get_context shows board, coordinate work with claim_task and update_task; TalkTo wakes you for tasks meant for you.";
+/** The sentence swarm memory adds where the deployment offers it. */
+const memoryInstructions =
+  " Where board.memory is shown, read the memory a claim carries before you start; it holds what the code cannot tell you, and the code wins where they disagree. Correct it with Git (get_memory_access) while you hold a claim, and before you complete, add what the next agent would trip on.";
 /** Build a fresh model-visible metadata envelope without request or participant content. */
 export const metadata = (origin: string): A.Meta => ({
   ...Responses.metadata(origin),
@@ -437,8 +504,12 @@ export async function fetch(
   application: Application,
   origin: string,
   capabilities: ReadonlySet<A.Capability>,
+  /** `TALKTO_BOARD=on`: list the task-board tools (board/settings.ts). */
+  board = false,
+  /** Swarm memory is offered: its tools are listed and the guide describes it (guide.ts). */
+  memory = false,
 ): Promise<Response> {
-  const offered = available(capabilities, application.feedback !== undefined);
+  const offered = available(capabilities, application.feedback !== undefined, board, memory);
   const catalog = offered.map((tool) => tool.definition);
   const handler = createMcpHandler(
     () => {
@@ -452,7 +523,7 @@ export async function fetch(
             "resources/templates/list": { ttlMs: 300000, cacheScope: "public" },
             "resources/read": { ttlMs: 300000, cacheScope: "public" },
           },
-          instructions: `Use get_context to discover servers and recover context. Register each agent separately. Supply serverId on server operations and participantId on agent-specific operations; never infer identity from this connection. All conversations are server-readable. No read/unread tracking. ${Monitoring.connectionInstructions} Full guide: talkto://instructions.`,
+          instructions: `Use get_context to discover servers and recover context. Register each agent separately. Supply serverId on server operations and participantId on agent-specific operations; never infer identity from this connection. All conversations are server-readable. No read/unread tracking. ${Monitoring.connectionInstructions}${board ? boardInstructions : ""}${board && memory ? memoryInstructions : ""} Full guide: talkto://instructions.`,
         },
       );
       mcp.registerResource(
@@ -464,7 +535,7 @@ export async function fetch(
             {
               uri: "talkto://instructions",
               mimeType: "text/plain",
-              text: renderDocumentation(instructions, origin),
+              text: renderDocumentation(agentGuide(memory), origin),
             },
           ],
         }),

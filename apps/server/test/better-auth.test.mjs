@@ -575,6 +575,53 @@ test("deleting an account deletes its Better Auth records too", async (t) => {
   }
 });
 
+test("API keys: the website session makes one, and it acts as that person on /v1 but not /mcp", async (t) => {
+  const x = await harness(t, { board: true });
+  const owner = await x.owner();
+  const id = (await x.json("/v1/me", owner)).user.id;
+  const made = await x.json("/v1/me/api-keys", owner, {
+    method: "POST",
+    body: { name: "CI", access: "full" },
+  });
+  assert.match(made.secret, /^tk_[A-Za-z0-9_-]{43}$/);
+  const withKey = (path, init = {}) =>
+    x.raw(path, {
+      method: init.method ?? "GET",
+      headers: { authorization: `Bearer ${made.secret}`, "content-type": "application/json" },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    });
+  const me = await withKey("/v1/me");
+  const text = await me.text();
+  assert.equal(me.status, 200, text);
+  assert.equal(JSON.parse(text).data.user.id, id);
+  // The key acts as the person: an organization and a swarm server it makes are theirs.
+  const account = await withKey("/v1/accounts", {
+    method: "POST",
+    body: { name: "Team", requestKey: randomUUID() },
+  });
+  assert.equal(account.status, 200);
+  const accountId = (await account.json()).data.id;
+  const server = await withKey(`/v1/accounts/${accountId}/servers`, {
+    method: "POST",
+    body: { name: "Swarm", requestKey: randomUUID(), board: true },
+  });
+  assert.equal(server.status, 200);
+  const serverId = (await server.json()).data.id;
+  assert.equal((await x.json("/v1/accounts", owner)).items.length, 1);
+  assert.equal((await withKey(`/v1/servers/${serverId}/board`)).status, 200);
+  // Only the website makes keys, and keys never work on /mcp.
+  const again = await withKey("/v1/me/api-keys", {
+    method: "POST",
+    body: { name: "Again", access: "full" },
+  });
+  assert.equal(again.status, 403);
+  assert.equal((await again.json()).error.code, "forbidden");
+  assert.equal((await x.raw("/mcp", rpc("server/discover", {}, made.secret))).status, 401);
+  // A revoked key stops at once on this isolate.
+  await x.json(`/v1/me/api-keys/${made.key.id}`, owner, { method: "DELETE" });
+  assert.equal((await withKey("/v1/me")).status, 401);
+});
+
 test("Better Auth is refused outside a self-hosted copy, and beside Cloudflare Access", async (t) => {
   for (const options of [{ selfHosted: false }, { alsoAccess: true }]) {
     const x = await start(t, { betterAuth: true, selfHosted: true, ...options });

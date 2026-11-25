@@ -6,7 +6,14 @@ import * as U from "@talkto/api/updates";
 import * as R from "@talkto/api/renames";
 import * as S from "@talkto/api/signal";
 import * as W from "@talkto/api/wake";
-import { adminPerMinute, deepReadUnits } from "@talkto/api/pricing";
+import * as T from "@talkto/api/tasks";
+import {
+  adminPerMinute,
+  deepReadUnits,
+  memoryMetering,
+  renewalWeight,
+  taskOperationParts,
+} from "@talkto/api/pricing";
 import type { AccessContext } from "./access.js";
 import type * as Budget from "./budgets/client.js";
 import * as BudgetModel from "./budgets/model.js";
@@ -31,6 +38,14 @@ export interface AdminCall {
   readonly operation: string;
   readonly transport: Transport;
   readonly participantId: M.ParticipantId | null;
+  /** The parts a task operation counts in the month: `taskOperationParts`, a renewal fewer. */
+  readonly units?: number;
+  /**
+   * Whether a spent month refuses this call. False for removing and restoring an agent: a looping
+   * agent must never use up the month and leave its person unable to remove it. Such calls still
+   * count toward the month and wait on the caller's minute.
+   */
+  readonly monthly?: boolean;
 }
 /**
  * Application-owned port that measures every read and poll and, when enabled, refuses reads that
@@ -53,14 +68,53 @@ export class Reads extends Context.Service<
       access: AccessContext,
       call: AdminCall,
     ) => Effect.Effect<void, E.RateLimited>;
+    /**
+     * Admit one task operation (create, claim or update a task) against the agent's and the
+     * server's minute, then the organization's month (docs/swarm-server-spec.md, 8.2). Task
+     * operations are not admin calls.
+     */
+    readonly task: (access: AccessContext, call: AdminCall) => Effect.Effect<void, E.RateLimited>;
+    /**
+     * The organization's task operations this month, for `get_context`'s board: one quota call.
+     * Null where none are counted (standalone, owner pilots, self-hosted, budgets off) or when the
+     * quota object cannot answer.
+     */
+    readonly taskUsage: () => Effect.Effect<TaskUsage | null>;
+    /**
+     * Count new commits on swarm memory in the organization's month (`memoryMetering.editsMonthly`).
+     * They have landed, so this never refuses; `capped` reports the month's number is now spent.
+     */
+    readonly memoryCommits: (units: number) => Effect.Effect<{ readonly capped: boolean }>;
+    /** Whether the month's memory edits are spent, and when they reset; null where none are counted. */
+    readonly memoryUsage: () => Effect.Effect<MemoryUsage | null>;
   }
 >()("@talkto/Reads") {}
+/** The month's memory edits as a write grant checks them. */
+export interface MemoryUsage {
+  readonly used: number;
+  readonly limit: number;
+  readonly resetsAt: M.Timestamp;
+}
+/** The month's task operations as `get_context` shows them. */
+export type TaskUsage = NonNullable<T.ContextBoard["taskOperations"]>;
 /** Standalone and unit compositions: nothing is measured or limited. */
 export const unmeasured = Reads.of({
   admit: () => Effect.void,
   admin: () => Effect.void,
   refused: () => Effect.void,
+  task: () => Effect.void,
+  taskUsage: () => Effect.succeed(null),
+  memoryCommits: () => Effect.succeed({ capped: false }),
+  memoryUsage: () => Effect.succeed(null),
 });
+/**
+ * Task operations a minute: per agent on a server (with a burst of 20), and for the whole server
+ * to protect its object. A worker claims, renews about every two minutes and completes: about
+ * five a task, so a swarm stays far below these.
+ */
+export const taskPerMinute = 120;
+export const taskBurst = 20;
+export const serverTaskPerMinute = 1200;
 
 /**
  * Deep reads count `deepReadUnits` against the read budget: a search (any transport, the web
@@ -79,9 +133,15 @@ export const deepOperations: ReadonlySet<string> = new Set([
   "serverFeedWindow",
   "dashboard.search",
 ]);
+/** `read_memory` over MCP and HTTP: `memoryMetering.readUnits` each. */
+const memoryReads: ReadonlySet<string> = new Set([T.readMemoryToolName, "readMemory"]);
 /** The units one read counts against the organization's read budget. */
 export const weight = (read: Read) =>
-  read.deep === true || deepOperations.has(read.operation) ? deepReadUnits : 1;
+  read.deep === true || deepOperations.has(read.operation)
+    ? deepReadUnits
+    : memoryReads.has(read.operation)
+      ? memoryMetering.readUnits
+      : 1;
 /**
  * The web app's reads per person per server a minute: a view reads a server's summary and recent
  * activity and refreshes every 3–60 seconds. On a paid plan, after the month's read budget the
@@ -105,12 +165,16 @@ const Settings = Schema.Struct({
   budgets: Schema.Boolean,
   /** `TALKTO_ADMIN_BUDGETS`: admin calls per agent a minute and per organization a month. */
   adminBudgets: Schema.Boolean,
+  /** `TALKTO_TASK_LIMITS`: task operations per agent and per server a minute. */
+  taskLimits: Schema.Boolean,
+  /** `TALKTO_TASK_BUDGETS`: task operations per organization a month, then a slow lane. */
+  taskBudgets: Schema.Boolean,
 });
 export interface Settings extends Schema.Schema.Type<typeof Settings> {}
 /**
- * `TALKTO_READ_LIMITS=off` turns all read limiting off; measurement continues. `TALKTO_READ_BUDGETS`
- * and `TALKTO_ADMIN_BUDGETS` (both on by default) switch the plan budgets on their own, so either
- * can be turned off without a code change. The last backstop is the `ORGANIZATION_READS`
+ * `TALKTO_READ_LIMITS=off` turns all read limiting off; measurement continues. `TALKTO_READ_BUDGETS`,
+ * `TALKTO_ADMIN_BUDGETS` and `TALKTO_TASK_BUDGETS` (all on by default) switch the plan budgets on
+ * their own, so each can be turned off without a code change. The last backstop is the `ORGANIZATION_READS`
  * rate-limit binding, whose limit lives in the Wrangler configuration.
  */
 export const read = Effect.fn("Reads.configure")(function* (env: Env) {
@@ -128,12 +192,20 @@ export const read = Effect.fn("Reads.configure")(function* (env: Env) {
     adminBudgets: Config.schema(Schema.Literals(["on", "off"]), "TALKTO_ADMIN_BUDGETS").pipe(
       Config.withDefault("on"),
     ),
+    taskLimits: Config.schema(Schema.Literals(["on", "off"]), "TALKTO_TASK_LIMITS").pipe(
+      Config.withDefault("on"),
+    ),
+    taskBudgets: Config.schema(Schema.Literals(["on", "off"]), "TALKTO_TASK_BUDGETS").pipe(
+      Config.withDefault("on"),
+    ),
   }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))));
   return Settings.make({
     ...values,
     enabled: values.enabled === "on",
     budgets: values.budgets === "on",
     adminBudgets: values.adminBudgets === "on",
+    taskLimits: values.taskLimits === "on",
+    taskBudgets: values.taskBudgets === "on",
   });
 });
 
@@ -141,19 +213,19 @@ export const read = Effect.fn("Reads.configure")(function* (env: Env) {
  * Token buckets held in the server object's memory: every request for a server reaches the same
  * object, so the count is exact and costs no storage. Eviction only forgets recent history.
  */
-export const makeLimiter = (perMinute: number) => {
+export const makeLimiter = (perMinute: number, burst = perMinute) => {
   const buckets = new Map<string, { tokens: number; at: number }>();
   const rate = perMinute / 60_000;
   return (key: string, at: number): number | null => {
     const prior = buckets.get(key);
     const tokens =
-      prior === undefined ? perMinute : Math.min(perMinute, prior.tokens + (at - prior.at) * rate);
+      prior === undefined ? burst : Math.min(burst, prior.tokens + (at - prior.at) * rate);
     if (tokens >= 1) {
       buckets.set(key, { tokens: tokens - 1, at });
       // Full buckets carry no information; drop them so idle participants cost nothing.
       if (buckets.size > 1000)
         for (const [name, bucket] of buckets)
-          if (bucket.tokens + (at - bucket.at) * rate >= perMinute) buckets.delete(name);
+          if (bucket.tokens + (at - bucket.at) * rate >= burst) buckets.delete(name);
       return null;
     }
     buckets.set(key, { tokens, at });
@@ -178,6 +250,8 @@ export interface Dependencies {
    * (standalone, unknown owner, owner-pilot and self-hosted organizations).
    */
   readonly budget: () => Effect.Effect<Budget.Client | null>;
+  /** The organization's budgets this month from its quota object; null when it cannot answer. */
+  readonly usage: () => Effect.Effect<BudgetModel.Usage | null>;
   /**
    * The time the per-minute buckets refill by: `Clock.currentTimeMillis` in every deployment;
    * verification subclasses may hold it still so a burst's ceiling never depends on machine speed.
@@ -208,6 +282,8 @@ export const make = (dependencies: Dependencies) => {
   const dashboard = makeLimiter(dashboardPerMinute);
   const dashboardSlow = makeLimiter(dashboardSlowPerMinute);
   const admins = makeLimiter(adminPerMinute);
+  const taskAgents = makeLimiter(taskPerMinute, taskBurst);
+  const taskServer = makeLimiter(serverTaskPerMinute, serverTaskPerMinute / 6);
   const spend = (lane: BudgetModel.Lane, units: number) =>
     dependencies
       .budget()
@@ -276,8 +352,9 @@ export const make = (dependencies: Dependencies) => {
             : `Too many admin calls: this ${who} may register, rename, change channels, signal links or wakes, or have sends refused ${adminPerMinute} times a minute on this server. ${BudgetModel.waitFor(wait)}, then retry the same call.`,
       });
     const outcome = yield* Effect.promise(() => client.spend("admin", 1));
-    // A refused send keeps its own refusal; only calls about to run are refused for the month.
-    if (outcome.kind === "limited" && !refused)
+    // A refused send keeps its own refusal; only calls about to run are refused for the month,
+    // and never removing or restoring an agent.
+    if (outcome.kind === "limited" && !refused && call.monthly !== false)
       return yield* new E.RateLimited({
         retryable: true,
         action: "retry_after",
@@ -371,7 +448,107 @@ export const make = (dependencies: Dependencies) => {
     }),
     admin: (access, call) => adminCall(access, call, false),
     refused: (access, call) => adminCall(access, call, true),
+    task: Effect.fn("Reads.task")(function* (access, call) {
+      if (!settings.taskLimits && !settings.taskBudgets) return;
+      // Like admin calls, a hosted plan's limit: owner-pilot organizations and self-hosted copies
+      // (no budget to spend from) have none.
+      const client = yield* dependencies.budget();
+      if (client === null) return;
+      if (settings.taskLimits) {
+        const at = yield* dependencies.now;
+        const subject = subjectOf(access, call.participantId);
+        const who = subject[0] === "participant" ? "agent" : "connection";
+        const own = taskAgents(subject.join(":"), at);
+        const wait = own ?? taskServer(access.serverId, at);
+        if (wait !== null)
+          return yield* new E.RateLimited({
+            retryable: true,
+            action: "retry_after",
+            retryAfterSeconds: wait,
+            scope: "participant",
+            message:
+              own === null
+                ? `Too many task operations on this server: all agents together may create, claim and update tasks ${serverTaskPerMinute} times a minute. ${BudgetModel.waitFor(wait)}, then retry with the same request key.`
+                : `Too many task operations: this ${who} may create, claim and update tasks ${taskPerMinute} times a minute on this server. ${BudgetModel.waitFor(wait)}, then retry with the same request key. Do not claim in a loop: when nothing is ready, wait for get_updates.`,
+          });
+      }
+      if (!settings.taskBudgets) return;
+      // The organization's month, spent from the server's leased balance: a quota call only when
+      // the balance runs out (at most one in ten operations once the server is busy), never one
+      // per operation. A refusal is remembered until its retry time, so a refused loop costs none.
+      const outcome = yield* Effect.promise(() =>
+        client.spend("task", call.units ?? taskOperationParts),
+      );
+      if (outcome.kind === "limited")
+        return yield* new E.RateLimited({
+          retryable: true,
+          action: "retry_after",
+          retryAfterSeconds: outcome.retryAfterSeconds,
+          scope: "organization",
+          message: BudgetModel.taskMessage(outcome.terms, outcome.retryAfterSeconds),
+        });
+    }),
+    taskUsage: Effect.fn("Reads.taskUsage")(function* () {
+      if (!settings.taskBudgets || (yield* dependencies.budget()) === null) return null;
+      const usage = yield* dependencies.usage();
+      if (usage === null || usage.terms === null) return null;
+      return {
+        used: usage.tasks.used,
+        limit: usage.tasks.limit,
+        resetsAt: usage.terms.periodEnd,
+      };
+    }),
+    memoryCommits: Effect.fn("Reads.memoryCommits")(function* (units) {
+      if (units < 1) return { capped: false };
+      const client = yield* dependencies.budget();
+      if (client === null) return { capped: false };
+      const outcome = yield* Effect.promise(() => client.spend("memory", units));
+      return { capped: outcome.slow };
+    }),
+    memoryUsage: Effect.fn("Reads.memoryUsage")(function* () {
+      if ((yield* dependencies.budget()) === null) return null;
+      const usage = yield* dependencies.usage();
+      if (usage === null || usage.terms === null) return null;
+      return {
+        used: usage.memory.used,
+        limit: usage.memory.limit,
+        resetsAt: usage.terms.periodEnd,
+      };
+    }),
   });
+};
+/** The parts an `update_task` counts in the month: a renewal 1, every other action a whole 5. */
+export const taskParts = (action: string) =>
+  action === "progress" ? renewalWeight.parts : taskOperationParts;
+/** The task operation an agent tool makes, or null (task-board tools only; reads are reads). */
+export const classifyTask = (command: A.Command): AdminCall | null => {
+  switch (command.tool) {
+    case T.createToolName:
+    case T.claimToolName:
+      return {
+        operation: command.tool,
+        transport: "mcp",
+        participantId: command.input.participantId,
+      };
+    // A lease renewal counts a fifth of an operation (`renewalWeight`): it writes the lease alone.
+    case T.updateToolName:
+      return {
+        operation: command.tool,
+        transport: "mcp",
+        participantId: command.input.participantId,
+        units: taskParts(command.input.action),
+      };
+    // A Git token counts as task operations (`memoryMetering`): a clone is invisible to TalkTo.
+    case T.memoryAccessToolName:
+      return {
+        operation: command.tool,
+        transport: "mcp",
+        participantId: command.input.participantId,
+        units: memoryMetering.grantTaskOperations * taskOperationParts,
+      };
+    default:
+      return null;
+  }
 };
 /**
  * The admin call an agent tool makes, or null. Sends are not admin calls; a refused send is
@@ -402,6 +579,7 @@ export const transientFailures: ReadonlySet<string> = new Set([
   "SendingUnavailable",
   "StorageUnavailable",
   "FilesUnavailable",
+  "MemoryUnavailable",
   "RateLimited",
 ]);
 /** The read an agent tool performs, or null for tools that write or touch no history. */
@@ -426,6 +604,9 @@ export const classify = (command: A.Command): Read | null => {
     case "read_transfer":
       return read(null);
     case "fetch_transfer":
+    case T.readToolName:
+    // `memoryMetering.readUnits`: one read.
+    case T.readMemoryToolName:
       return read(command.input.participantId);
     default:
       return null;

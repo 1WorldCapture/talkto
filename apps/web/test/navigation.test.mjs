@@ -97,9 +97,30 @@ test("join and shared paths open their own views; malformed ones never open an o
   // A truncated or altered link still opens the join page, which explains it.
   for (const path of ["/app/join", "/app/join/sinv_short", `/app/join/${invitation}/extra`])
     assert.deepEqual(dashboardRoute(path), { kind: "join", invitationId: null }, path);
-  assert.deepEqual(dashboardRoute(`/app/shared/${uuid}`), { kind: "shared", serverId: uuid });
+  assert.deepEqual(dashboardRoute(`/app/shared/${uuid}`), {
+    kind: "shared",
+    serverId: uuid,
+    task: undefined,
+  });
   for (const path of ["/app/shared", "/app/shared/not-a-server", `/app/shared/${uuid}/x`])
-    assert.deepEqual(dashboardRoute(path), { kind: "shared", serverId: null }, path);
+    assert.deepEqual(
+      dashboardRoute(path),
+      { kind: "shared", serverId: null, task: undefined },
+      path,
+    );
+  // A Board task page keeps its server and names the task.
+  assert.deepEqual(dashboardRoute(`/app/shared/${uuid}/board/T-14`), {
+    kind: "shared",
+    serverId: uuid,
+    task: "T-14",
+  });
+  assert.deepEqual(dashboardRoute(`/app/accounts/${uuid}/servers/${uuid}/board/T-14`), {
+    kind: "account",
+    accountId: uuid,
+    view: "servers",
+    serverId: uuid,
+    task: "T-14",
+  });
   // A server ID in the shared path is never read as an organization.
   assert.equal(dashboardRoute(`/app/shared/${uuid}`).kind, "shared");
   assert.deepEqual(dashboardRoute(`/app/accounts/${uuid}/servers/${uuid}`), {
@@ -107,6 +128,7 @@ test("join and shared paths open their own views; malformed ones never open an o
     accountId: uuid,
     view: "servers",
     serverId: uuid,
+    task: undefined,
   });
   assert.deepEqual(dashboardRoute("/app"), { kind: "entry" });
   assert.deepEqual(dashboardRoute("/app/organizations"), { kind: "organizations" });

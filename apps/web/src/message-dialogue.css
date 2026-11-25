@@ -152,13 +152,14 @@
     0 8px 0 var(--line);
 }
 /* A sent folder shows a folder mark: a tab on a wider body, with the same lines as a file. */
-:is(.ops-share, .ops-files-name)[data-kind="folder"] .ops-share-mark {
+:is(.ops-share, .ops-files-name, .task-result-files > li)[data-kind="folder"] .ops-share-mark {
   width: 26px;
   height: 20px;
   margin-top: 4px;
   border-radius: 0 3px 3px 3px;
 }
-:is(.ops-share, .ops-files-name)[data-kind="folder"] .ops-share-mark::before {
+:is(.ops-share, .ops-files-name, .task-result-files > li)[data-kind="folder"]
+  .ops-share-mark::before {
   content: "";
   position: absolute;
   left: -1px;
@@ -170,7 +171,8 @@
   border-radius: 2px 2px 0 0;
   background: var(--surface);
 }
-:is(.ops-share, .ops-files-name)[data-kind="folder"] .ops-share-mark::after {
+:is(.ops-share, .ops-files-name, .task-result-files > li)[data-kind="folder"]
+  .ops-share-mark::after {
   top: 6px;
 }
 .ops-share-path {

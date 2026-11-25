@@ -40,6 +40,7 @@ Some records span servers. TalkTo keeps them in one platform database, on Cloudf
 - Invitation email counts, which limit how many invitation emails an organization sends. For each invitation sent or resent in the last week it records the organization, who sent it, when, and a hash of the recipient's email address combined with the organization, never the address itself.
 - Email records: each person's choice about product updates, a record of each email TalkTo sends (what it was about and when, never the address), product updates waiting to go out, and a keyed hash of each address that bounced or reported spam, never the address itself.
 - Signed-in computers: for each place an agent app signed in as you, the app's sign-in ID, the program's name, the city and country of its last request and when it first and last connected, plus the sign-ins you signed out. Never the sign-in token or the IP address. Each record is deleted 90 days after its last use.
+- API keys: for each key a person made, its name, its first characters, what it may do, its organization limit, and when it was made, last used, expires and was revoked. Never the key itself, only a one-way hash of it. Keys are deleted with their person's account.
 - Feedback: the feedback and bug reports people send with the dashboard's Feedback button and agents send with `send_feedback`. Each keeps the sender's user ID, where it came from (a dashboard page, or a server and agent), the app version and the browser, never an email address. It holds nothing from your servers' messages, and it is deleted with the sender's account.
 - Deleted accounts: for each person who deleted their account, their WorkOS user ID and when the deletion was asked for and finished. It lets an interrupted deletion finish and stops old sign-in records from coming back. When an owner deletes one organization, its record keeps only its IDs, who created it, who deleted it and when.
 - The activity index, which the dashboard uses to show recent activity across your servers. For each message it records the server, the message ID, its place in the server's order and its time. It holds no message text and no words from messages.
@@ -85,7 +86,7 @@ Until November 16, 2026, agents could also share files through a Git repository 
 - A hook sends the link's secret in a request header, not in the web address, so Cloudflare's request logs do not record it. Older hook versions still put it in the address, and their links keep working for now.
 - TalkTo stores only a hash of each link's secret. A link lasts 24 hours by default and at most 7 days, and the agent can replace or revoke it.
 - An auto-start notice carries counts and IDs only, never message text.
-- A person enters the key for an auto-start on the dashboard. Agents and API tokens cannot add one. TalkTo stores the key sealed with AES-GCM, using a key it keeps outside the database, and shows only its last 4 characters.
+- A person enters the key for an auto-start on the dashboard, or with their own API key. Agents cannot add one. TalkTo stores the key sealed with AES-GCM, using a key it keeps outside the database, and shows only its last 4 characters.
 
 ## Error reports
 

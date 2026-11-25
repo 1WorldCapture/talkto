@@ -10,6 +10,7 @@ import { clearAgentData, useHuman, useSelfHostedSignIn, useServices } from "./se
 import { CopyLink } from "./server-invites.js";
 import { formatCount } from "./format.js";
 import { StarterOffer, useStarter } from "./starter.js";
+import { useBoardsOffered } from "./board.js";
 import {
   allowanceRule,
   guestInvited,
@@ -44,7 +45,9 @@ export function useAction<A, B>(
 function readIntent(key: string) {
   try {
     const value = sessionStorage.getItem(key);
-    return value === null ? null : Schema.decodeUnknownSync(Schema.fromJsonString(P.Create))(value);
+    return value === null
+      ? null
+      : Schema.decodeUnknownSync(Schema.fromJsonString(P.CreateServer))(value);
   } catch {
     return null;
   }
@@ -72,13 +75,25 @@ export function CreateDialog({
   // The organization's first server opens the free start when its owner is eligible.
   const starter = useStarter(accountId ?? null);
   const claim = starter.data?.data.status === "eligible" && starter.data.data.offer !== null;
+  // "Swarm" creates a server with its task board on, where this deployment offers boards.
+  const boards = useBoardsOffered() && accountId !== undefined;
+  const [swarm, setSwarm] = useState(intent?.board === true);
   const action = useAction(
-    async (input: P.Create) => {
+    async (input: P.CreateServer) => {
+      const named = { name: input.name, requestKey: input.requestKey };
       if (accountId && claim) {
         try {
           const result = await request(
-            api.starter.claim({ params: { accountId }, payload: input }),
+            api.starter.claim({ params: { accountId }, payload: named }),
           );
+          // The free start creates a plain server; its creator then switches the board on.
+          if (input.board === true)
+            await request(
+              api.server.setBoard({
+                params: { serverId: result.data.server.id },
+                payload: { enabled: true },
+              }),
+            );
           return `accounts/${accountId}/servers/${result.data.server.id}`;
         } finally {
           // A denial explains itself through the refreshed state (paused, verify email, used).
@@ -91,7 +106,7 @@ export function CreateDialog({
         );
         return `accounts/${accountId}/servers/${result.data.id}`;
       }
-      const result = await request(api.platform.createAccount({ payload: input }));
+      const result = await request(api.platform.createAccount({ payload: named }));
       return `accounts/${result.data.id}`;
     },
     (path) => {
@@ -107,10 +122,10 @@ export function CreateDialog({
         onSubmit={(event) => {
           event.preventDefault();
           if (action.isPending) return;
-          const parsed = Schema.decodeUnknownResult(P.Create)({
-            name,
-            requestKey: intent?.requestKey ?? crypto.randomUUID(),
-          });
+          const named = { name, requestKey: intent?.requestKey ?? crypto.randomUUID() };
+          const parsed = Schema.decodeUnknownResult(P.CreateServer)(
+            boards && swarm ? { ...named, board: true } : named,
+          );
           if (parsed._tag === "Failure") {
             setValidation(
               new ApiError("invalid_input", "Enter a name between 1 and 100 characters."),
@@ -144,6 +159,29 @@ export function CreateDialog({
             onChange={(event) => setName(event.target.value)}
           />
         </label>
+        {boards && (
+          <fieldset className="create-kind" disabled={intent !== null}>
+            <legend>Kind</legend>
+            <label className={swarm ? undefined : "is-selected"}>
+              <input type="radio" name="kind" checked={!swarm} onChange={() => setSwarm(false)} />
+              <span>
+                <strong>Server</strong>
+                <small>Channels and direct chats for people and agents.</small>
+              </span>
+            </label>
+            <label className={swarm ? "is-selected" : undefined}>
+              <input type="radio" name="kind" checked={swarm} onChange={() => setSwarm(true)} />
+              <span>
+                <strong>Swarm</strong>
+                <small>
+                  A server with a task board: agents claim tasks, work in parallel and ask you when
+                  they need a decision.
+                </small>
+              </span>
+            </label>
+            <p className="muted">You can switch the board on or off later in Settings.</p>
+          </fieldset>
+        )}
         {intent && (
           <p className="muted">
             This request is saved. Retrying checks the same {accountId ? "server" : "organization"}.

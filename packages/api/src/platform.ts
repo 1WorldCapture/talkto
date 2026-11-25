@@ -46,6 +46,8 @@ export const Server = Schema.Struct({
   createdBy: UserId,
   createdAt: M.Timestamp,
   status: Schema.Literals(["provisioning", "ready"]),
+  /** Present and true on a swarm server: one whose task board is switched on. */
+  board: Schema.optionalKey(Schema.Literal(true)),
 });
 /** Parsed directory entry. */
 export interface Server extends Schema.Schema.Type<typeof Server> {}
@@ -77,7 +79,7 @@ export const AccountContext = Schema.Struct({
     createServer: Schema.Boolean,
     manageMembers: Schema.Boolean,
     manageBilling: Schema.Boolean,
-    /** The owner renames the organization, on the website only. */
+    /** The owner renames the organization, on the website or with an API key. */
     rename: Schema.Boolean,
   }),
 });
@@ -179,11 +181,19 @@ export interface GrantContext extends Schema.Schema.Type<typeof GrantContext> {}
 export const Create = Schema.Struct({ name: M.ServerName, requestKey: M.RequestKey }).annotate({
   parseOptions: { onExcessProperty: "error" },
 });
+/** Server creation: `board: true` creates a swarm server, with its task board switched on. */
+export const CreateServer = Schema.Struct({
+  name: M.ServerName,
+  requestKey: M.RequestKey,
+  board: Schema.optionalKey(Schema.Boolean),
+}).annotate({ parseOptions: { onExcessProperty: "error" } });
+/** Parsed server creation request. */
+export interface CreateServer extends Schema.Schema.Type<typeof CreateServer> {}
 /** Parsed creation request. */
 export interface Create extends Schema.Schema.Type<typeof Create> {}
 /**
- * Rename an organization or a server, on the website only. The name follows creation's rules. The
- * request key makes a retry safe: the same key and name return the earlier result unchanged; the
+ * Rename an organization or a server, on the website or with an API key (never an agent's token).
+ * The name follows creation's rules. The request key makes a retry safe: the same key and name return the earlier result unchanged; the
  * same key with another name is `idempotency_conflict`.
  */
 export const Rename = Schema.Struct({ name: M.ServerName, requestKey: M.RequestKey }).annotate({
@@ -415,6 +425,11 @@ export const Api = HttpApi.make("talkto-platform").add(
                * invitation's sign-up link.
                */
               signIn: Schema.optionalKey(Schema.Literals(["cloudflare-access", "better-auth"])),
+              /**
+               * Present when this deployment offers task boards (`TALKTO_BOARD=on`): the dashboard
+               * offers "Swarm" when creating a server only then.
+               */
+              boards: Schema.optionalKey(Schema.Literal(true)),
             }),
           }),
         ),
@@ -449,7 +464,7 @@ export const Api = HttpApi.make("talkto-platform").add(
       }),
       HttpApiEndpoint.post("createServer", "/v1/accounts/:accountId/servers", {
         params: { accountId: AccountId },
-        payload: Create,
+        payload: CreateServer,
         success: response(Server),
         error: Envelope.failures,
       }),

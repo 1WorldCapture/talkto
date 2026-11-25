@@ -98,6 +98,15 @@ export class WakeStore extends Context.Service<
     /** Mark every matching idle target due; returns the earliest due time set, or null. */
     readonly markDue: (arrival: Arrival, at: number, debounceMs: number) => Op<number | null>;
     /**
+     * Mark these participants' idle targets due, as a normal message would: a task event meant
+     * for them (board.sql's recipient rows with wakes = 1). Returns the earliest due time, or null.
+     */
+    readonly markParticipantsDue: (
+      participantIds: ReadonlyArray<M.ParticipantId>,
+      at: number,
+      debounceMs: number,
+    ) => Op<number | null>;
+    /**
      * After the participant's cadence changed: move its due wakes earlier where the new cadence
      * allows, never later. Returns the earliest due time, or null.
      */
@@ -298,6 +307,13 @@ export const sqlite = (storage: DurableObjectStorage) => {
             )
       ).pipe(Effect.flatMap(earliest));
     },
+    markParticipantsDue: (participantIds, at, debounceMs) =>
+      exec(
+        `UPDATE wake_targets SET due_at=MAX(?, COALESCE(last_attempt_at,0)+${Policy.gapSql})
+         WHERE due_at IS NULL AND disabled_at IS NULL AND expires_at>?
+         AND participant_id IN (SELECT value FROM json_each(?)) RETURNING due_at AS dueAt`,
+        [at + debounceMs, at, JSON.stringify(participantIds)],
+      ).pipe(Effect.flatMap(earliest)),
     advance: (participantId, at) =>
       exec(
         `UPDATE wake_targets SET due_at=MIN(due_at, MAX(?, COALESCE(last_attempt_at,0)+${Policy.gapSql}))

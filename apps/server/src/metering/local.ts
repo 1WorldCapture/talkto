@@ -168,7 +168,7 @@ export function make(
   });
   const meter = Model.Meter.of({
     consume: Effect.fn("Metering.consume")(function* (
-      messageId: M.MessageId,
+      usageId: Model.UsageId,
       units: Model.Units = Model.singleUnit,
       kind: Model.UsageKind = "message",
     ) {
@@ -189,7 +189,7 @@ export function make(
       storage.sql.exec("UPDATE message_allocation SET used=used+? WHERE singleton=1", units);
       storage.sql.exec(
         "INSERT INTO message_usage(message_id,allocation_id,period_start,committed_at,units,kind) VALUES(?,?,?,?,?,?)",
-        messageId,
+        usageId,
         row.id,
         row.periodStart,
         at,

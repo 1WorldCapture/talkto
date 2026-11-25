@@ -68,6 +68,7 @@ export type Stage =
   | "share"
   | "guests"
   | "files"
+  | "memory"
   | "mcp";
 
 const Operation = Schema.String.check(Schema.isPattern(/^[A-Za-z][A-Za-z0-9_.]{0,100}$/));
@@ -305,6 +306,7 @@ export function failure(
       "billing_unavailable",
       "sending_unavailable",
       "files_unavailable",
+      "memory_unavailable",
       "email_unavailable",
     ].includes(code)
   )
@@ -426,6 +428,46 @@ export function stuckReader(plugin: string | null, polls: number) {
   });
 }
 
+/** Thrown nowhere: names the Sentry issue for a memory store call that failed. */
+class MemoryStoreFailed extends Error {
+  override readonly name = "MemoryStoreFailed";
+}
+const StoreTag = Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_.: -]{1,120}$/));
+const storeTag = (value: string | number | undefined | null) =>
+  value === undefined || value === null
+    ? "none"
+    : Schema.is(StoreTag)(String(value))
+      ? String(value)
+      : "unsafe";
+
+/**
+ * Report one failed call to the memory store (Cloudflare Artifacts) with the step that made it
+ * ("seed push", "read file"), the store's operation, and the provider's code, HTTP status and
+ * message as memory/model.ts `safeDetail` cut them: never a token, a URL or a repository name.
+ */
+export function memoryStore(
+  step: string,
+  failure: {
+    readonly operation: string;
+    readonly code?: string | null;
+    readonly status?: number;
+    readonly detail?: string;
+  },
+) {
+  Sentry.captureException(new MemoryStoreFailed("A memory store call failed"), {
+    level: "error",
+    fingerprint: ["talkto-memory-store", storeTag(step), storeTag(failure.operation)],
+    tags: {
+      "talkto.code": "memory_store_failed",
+      "talkto.operation": `memory.${storeTag(failure.operation)}`,
+      "talkto.memory_step": storeTag(step),
+      "talkto.provider_code": storeTag(failure.code),
+      "talkto.provider_status": storeTag(failure.status),
+      "talkto.provider_message": storeTag(failure.detail),
+    },
+  });
+}
+
 /** Thrown nowhere: names the Sentry issue for a get_updates watch that failed to open. */
 class WatchFallback extends Error {
   override readonly name = "WatchFallback";
@@ -479,6 +521,7 @@ export interface ToolFault {
 const applicationReported = new Set([
   "storage_unavailable",
   "files_unavailable",
+  "memory_unavailable",
   "sending_unavailable",
 ]);
 

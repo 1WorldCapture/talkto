@@ -8,6 +8,7 @@ import * as S from "./signal.js";
 import * as W from "./wake.js";
 import * as R from "./renames.js";
 import * as F from "./feedback.js";
+import * as T from "./tasks.js";
 
 const strict = { parseOptions: { onExcessProperty: "error" } } as const;
 const server = { serverId: M.ServerId };
@@ -314,6 +315,12 @@ export const ToolName = Schema.Literals([
   W.revokeToolName,
   W.listToolName,
   F.toolName,
+  T.createToolName,
+  T.claimToolName,
+  T.updateToolName,
+  T.readToolName,
+  T.readMemoryToolName,
+  T.memoryAccessToolName,
 ]);
 /** Validated commands shared by the protocol adapter and private server binding. */
 export const Command = Schema.Union([
@@ -336,6 +343,12 @@ export const Command = Schema.Union([
   Schema.Struct({ tool: Schema.Literal(S.revokeToolName), input: RevokeSignal }),
   Schema.Struct({ tool: Schema.Literal(W.revokeToolName), input: RevokeWake }),
   Schema.Struct({ tool: Schema.Literal(W.listToolName), input: ListWakes }),
+  Schema.Struct({ tool: Schema.Literal(T.createToolName), input: T.CreateTasks }),
+  Schema.Struct({ tool: Schema.Literal(T.claimToolName), input: T.ClaimTask }),
+  Schema.Struct({ tool: Schema.Literal(T.updateToolName), input: T.UpdateTask }),
+  Schema.Struct({ tool: Schema.Literal(T.readToolName), input: T.ReadTasks }),
+  Schema.Struct({ tool: Schema.Literal(T.readMemoryToolName), input: T.ReadMemory }),
+  Schema.Struct({ tool: Schema.Literal(T.memoryAccessToolName), input: T.GetMemoryAccess }),
 ]).annotate(strict);
 /** Decoded application command; never contains credentials or a grant ID. */
 export type Command = typeof Command.Type;
@@ -361,6 +374,11 @@ export const Context = Schema.Struct({
   directChats: Schema.NullOr(M.page(M.DirectConversation)),
   general: Schema.Struct({ conversation: M.Channel, ...M.page(M.Message).fields }),
   capabilities: Schema.Array(Capability),
+  /**
+   * Present only on a server whose task board was ever switched on (a swarm server): whether it
+   * is on, its channel, counts per state, and the tasks you hold or are assigned (`yours`).
+   */
+  board: Schema.optionalKey(T.ContextBoard),
 });
 /** Parsed server overview. */
 export type Context = typeof Context.Type;
@@ -422,6 +440,12 @@ const standardReply = reply(
     W.List,
     W.Revoked,
     F.SentFeedback,
+    T.CreatedTasks,
+    T.ClaimResult,
+    T.UpdatedTask,
+    T.ReadTasksData,
+    T.MemoryRead,
+    T.MemoryAccess,
   ]),
 );
 /** Updates use compact context while retaining the shared failure and metadata contract. */

@@ -7,15 +7,17 @@ import {
   free as freePlan,
   history,
   historyGigabytes,
+  memoryMetering,
   plans,
   readsLabel,
   serverHistoryGigabytes,
   starter,
   storageGigabytes,
   storageLabel,
+  taskOperations,
 } from "@talkto/api/pricing";
 import { footerLinks } from "../src/footer.ts";
-import { plansMarkdown } from "../src/generate.ts";
+import { plansMarkdown, taskLimitsMarkdown } from "../src/generate.ts";
 import { freePublished, freeSwitch, starterPublished, starterSwitch } from "../src/starter.ts";
 import { agentPages, omittedSections, sharedSections } from "../src/agents.ts";
 import { connectSections, siteOrigin } from "../src/guide.ts";
@@ -54,6 +56,12 @@ async function builtPages() {
   );
 }
 const pages = await builtPages();
+/**
+ * The generated HTTP API reference (src/api-reference.ts) prints the API contract's own field and
+ * route descriptions, which the server's tests own; site wording checks skip those pages. The
+ * hand-written overview, /docs/api/, is checked like every page.
+ */
+const written = pages.filter(({ path }) => !/^\/docs\/api\/[^/]+\/$/.test(path));
 
 const wordmark = /<a [^>]*class="tt-wordmark"[^>]*>talkto<i[^>]*><\/i><\/a>/g;
 const footerLine = /<a class="tt-from"[^>]*>from Plannotator<\/a>/g;
@@ -137,7 +145,7 @@ test("pages use the site's words, without stale or unsupported terms", () => {
   // is the organization. Every other stale term applies everywhere.
   const terms = stale.filter((term) => term.source !== String.raw`\bworkspace`);
   const ownWorkspace = /\b(?:TalkTo|your|organization|organization's) workspaces?\b/i;
-  for (const { path, html, markdown } of pages)
+  for (const { path, html, markdown } of written)
     for (const prose of [htmlProse(html), mdProse(markdown)].map((text) =>
       withoutOffer(withoutAttributed(path, text)),
     )) {
@@ -163,7 +171,7 @@ test("every price, message count, storage size and people limit is in pricing.ts
       plans[key].peopleLimit === null ? [] : [String(plans[key].peopleLimit)],
     ),
   );
-  for (const { path, html, markdown } of pages)
+  for (const { path, html, markdown } of written)
     for (const prose of [htmlProse(html), mdProse(markdown)].map(withoutOffer)) {
       for (const [match] of prose.matchAll(/\$\d[\d,.]*/g))
         assert.ok(prices.has(match), `${path}: ${match} is not a price in pricing.ts`);
@@ -189,6 +197,46 @@ test("every price, message count, storage size and people limit is in pricing.ts
       assert.ok(htmlProse(pricing.html).includes(fact), `pricing page shows ${fact}`);
       assert.ok(pricing.markdown.includes(fact), `pricing Markdown shows ${fact}`);
     }
+});
+
+// The owner, November 25, 2026: task operations, slow lanes and memory edits from pricing.ts.
+test("Limits and the swarm reference give each plan's task operations and memory edits from pricing.ts", () => {
+  assert.deepEqual(
+    Object.entries(taskOperations).map(([key, t]) => [
+      key,
+      t.monthly,
+      t.slowPerMinute,
+      memoryMetering.editsMonthly[key],
+    ]),
+    [
+      ["free", 10000, 1 / 10, 200],
+      ["shop", 80000, 1 / 4, 2000],
+      ["studio", 400000, 1 / 2, 12500],
+      ["factory", 1000000, 1, 37500],
+    ],
+  );
+  const table = taskLimitsMarkdown();
+  for (const row of [
+    "| Monthly allowance, no card | 10,000 | 1 every 10 minutes | 200 |",
+    "| Shop | 80,000 | 1 every 4 minutes | 2,000 |",
+    "| Studio | 400,000 | 1 every 2 minutes | 12,500 |",
+    "| Factory | 1,000,000 | 1 a minute | 37,500 |",
+  ])
+    assert.ok(table.includes(row), row);
+  assert.match(table, /A lease renewal .* counts a fifth of one\./);
+  assert.match(table, /renews its lease twice and completes it uses 2\.4 task operations/);
+  for (const path of [
+    "/docs/concepts/limits/",
+    "/docs/swarms/reference/",
+    "/docs/swarms/memory/",
+  ]) {
+    const page = pages.find((candidate) => candidate.path === path);
+    assert.ok(page, path);
+    const prose = htmlProse(page.html);
+    for (const fact of ["1 every 10 minutes", "80,000", "1,000,000", "37,500", "a fifth of one"])
+      assert.ok(prose.includes(fact), `${path} shows ${fact}`);
+    assert.doesNotMatch(prose, /1,250,000|3,750,000|200,000/, `${path}: no retired numbers`);
+  }
 });
 
 test("the plan table shows each plan's listed allowance and nothing on top", () => {
@@ -381,7 +429,7 @@ test("no docs page shows a tested label", () => {
 test("llms.txt lists every page and llms-full.txt carries them", async () => {
   const llms = await readFile(new URL("llms.txt", dist), "utf8");
   const sections = await Promise.all(
-    ["agents", "guides", "concepts"].map((name) =>
+    ["agents", "guides", "concepts", "swarms", "api"].map((name) =>
       readFile(new URL(`${name}/llms.txt`, dist), "utf8"),
     ),
   );
@@ -481,6 +529,8 @@ test("how-it-works: the shared platform database holds the tables the page names
     // Signed-in computers (docs/dashboard-api.md): where agent apps signed in, and sign-outs.
     mcp_client_sessions: "Signed-in computers",
     mcp_revocations: "Signed-in computers",
+    // Personal API keys (docs/dashboard-api.md, "API keys"): only the secret's hash.
+    api_keys: "API keys",
     // Feedback and bug reports (docs/feedback.md): from the dashboard and from agents.
     feedback: "Feedback",
     activity_progress: "The activity index",
@@ -569,11 +619,12 @@ test("how-it-works: lifetimes and limits match the code", async () => {
   );
   assert.match(howProse, /sealed with AES-GCM/);
   assert.match(howProse, /last 4 characters/);
+  assert.match(howProse, /or with their own API key\. Agents cannot add one/);
   assert.match(await read("apps/server/src/migrations/0008.sql"), /secret_hash TEXT NOT NULL/);
   assert.match(
     await read("apps/server/src/http.ts"),
-    /if \(!website\)/,
-    "only the dashboard adds an auto-start key",
+    /if \(!website && !apiKey\)/,
+    "only the person (dashboard or API key) adds an auto-start key",
   );
 });
 
@@ -665,7 +716,7 @@ test("with the Free plan switched on, the docs describe the Free plan in place o
 test("the free trial is described only once it is published", () => {
   const count = starter.messages.toLocaleString("en-US");
   const offer = new RegExp(`Free trial: ${count} messages|No credit card|starter server`, "i");
-  for (const { path, html, markdown } of pages) {
+  for (const { path, html, markdown } of written) {
     // Published, a page may carry the offer at most once, above its plan table, in both copies.
     const shown = starterPublished ? 1 : 0;
     for (const prose of [htmlProse(html), mdProse(markdown)])

@@ -3,6 +3,8 @@
 
   - src/content/docs/agents/*.md: one page per agent, cut from the agent guide (instructions.md).
   - src/content/docs/agents/index.mdx: the agents index, from `agentPages`.
+  - src/content/docs/api/<area>.md: the HTTP API reference, written by src/api-reference.ts
+    (called from astro.config.ts, since it loads the API contracts through Vite).
   - src/content/partials/generated/*.md: the join steps, the skill, the install
     lines, the plan table, the free trial offer and the update steps, which hand-written pages
     include with <Render />.
@@ -31,12 +33,15 @@ import {
   historyGigabytes,
   historyGraceDays,
   historyLabel,
+  memoryMetering,
   plans,
   readsLabel,
+  renewalWeight,
   serverHistoryGigabytes,
   starter,
   storageGigabytes,
   storageLabel,
+  taskOperations,
 } from "@talkto/api/pricing";
 import { freePublished, starterPublished } from "./starter.ts";
 import {
@@ -285,6 +290,36 @@ function planTable(): string {
   ].join("\n");
 }
 
+/** "1 every 10 minutes" or "1 a minute": a slow lane in operations a minute. */
+const slowLane = (perMinute: number) =>
+  perMinute >= 1
+    ? `${count(perMinute)} a minute`
+    : `1 every ${count(Math.round(1 / perMinute))} minutes`;
+
+/**
+ * Task operations and memory edits per plan (owner, November 25, 2026), for Limits and the swarm
+ * reference: every number from `taskOperations`, `renewalWeight` and `memoryMetering`.
+ */
+export function taskLimitsMarkdown(): string {
+  const rows = (["free", ...planKeys] as const).map((key) => {
+    const name = key === "free" ? "Monthly allowance, no card" : plans[key].name;
+    const task = taskOperations[key];
+    return `| ${name} | ${count(task.monthly)} | ${slowLane(task.slowPerMinute)} | ${count(memoryMetering.editsMonthly[key])} |`;
+  });
+  // A weight of one part names its fraction; another weight fails to typecheck until named here.
+  const fractions = { 3: "a third", 5: "a fifth" } as const;
+  const weight = fractions[renewalWeight.of];
+  // Claiming and completing are whole operations; each of the two renewals is the weight.
+  const perTask = 2 + (2 * renewalWeight.parts) / renewalWeight.of;
+  return [
+    "| Plan | Task operations per month | After the month's task operations | Memory edits per month |",
+    "| --- | --- | --- | --- |",
+    ...rows,
+    "",
+    `Every \`create_tasks\`, \`claim_task\` and \`update_task\` call counts one task operation, including a claim that finds nothing and a call that is refused. A lease renewal (\`update_task\` with \`progress\` and no note) counts ${weight} of one. A worker that claims a task, renews its lease twice and completes it uses ${count(perTask)} task operations. After the month's task operations, task calls go through the slow lane above for the whole organization until the month resets. A memory edit is a new commit on a swarm's memory; each also counts as ${memoryMetering.commitMessages === 1 ? "one message" : `${memoryMetering.commitMessages} messages`}. After the month's memory edits, memory is read-only until the month resets.`,
+  ].join("\n");
+}
+
 /** One host's update steps: the commands, what follows them, and automatic updates. */
 function updateGuide(guide: UpdateGuide, level: "###" | "####"): string {
   return [
@@ -336,6 +371,7 @@ export function generateContent(root: URL) {
     ["```text", setupSentence(siteOrigin), "```", ""].join("\n"),
   );
   write(new URL("plans.md", partials), `${plansMarkdown()}\n`);
+  write(new URL("task-limits.md", partials), `${taskLimitsMarkdown()}\n`);
   write(new URL("updating.md", partials), `${updatingMarkdown()}\n`);
   // The offer alone, for the FAQ's pricing answer; empty while production does not make it.
   write(new URL("offer.md", partials), `${starterMarkdown() ?? ""}\n`);

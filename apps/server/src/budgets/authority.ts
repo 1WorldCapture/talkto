@@ -1,5 +1,6 @@
 import { Option, Schema } from "effect";
 import * as M from "@talkto/api/models";
+import { taskOperationParts } from "@talkto/api/pricing";
 import type * as Pool from "../files/pool.js";
 import * as Model from "./model.js";
 
@@ -29,7 +30,7 @@ export const quietMillis = 5_000;
 export const tailMillis = 5_000;
 
 /**
- * The organization's read and admin budgets, kept in its quota object beside message capacity and
+ * The organization's read, admin and task-operation budgets, kept in its quota object beside message capacity and
  * the file pool (docs/plan-limits.md). Servers lease small blocks of units and spend them locally,
  * so the quota object sees one call per block, not per read. A lease counts in full when granted,
  * so a server's unspent balance is counted though never read (see `Model.maxLease`). Every call
@@ -55,8 +56,10 @@ export function make(
     CREATE TABLE IF NOT EXISTS budget_months(lane TEXT NOT NULL,start TEXT NOT NULL,end TEXT NOT NULL,used INTEGER NOT NULL DEFAULT 0,beyond INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(lane,start)) STRICT;
     CREATE TABLE IF NOT EXISTS budget_buckets(name TEXT PRIMARY KEY,tokens REAL NOT NULL,at INTEGER NOT NULL) STRICT;
   `);
+  /** The months kept: reads (website reads included), admin calls and task operations. */
+  type Counted = "read" | "admin" | "task" | "memory";
   interface Month {
-    readonly lane: "read" | "admin";
+    readonly lane: Counted;
     readonly start: string;
     end: string;
     used: number;
@@ -69,7 +72,7 @@ export function make(
   // What storage holds is current when the object starts, so the first full save waits a minute.
   let savedAt = clock();
   let lastCallAt: number | null = null;
-  const monthOf = (lane: "read" | "admin", terms: Model.Terms): Month => {
+  const monthOf = (lane: Counted, terms: Model.Terms): Month => {
     const key = `${lane} ${terms.periodStart}`;
     const known = months.get(key);
     if (known !== undefined) return known;
@@ -85,11 +88,11 @@ export function make(
     months.set(key, loaded);
     return loaded;
   };
-  const month = (lane: "read" | "admin", terms: Model.Terms) => {
+  const month = (lane: Counted, terms: Model.Terms) => {
     const { used, beyond } = monthOf(lane, terms);
     return { used, beyond };
   };
-  const count = (lane: "read" | "admin", terms: Model.Terms, used: number, beyond: number) => {
+  const count = (lane: Counted, terms: Model.Terms, used: number, beyond: number) => {
     const known = monthOf(lane, terms);
     known.used += used;
     known.beyond += beyond;
@@ -199,6 +202,54 @@ export function make(
           count("admin", terms, units, 0);
           return { kind: "granted", units: M.Count.make(units), slow: false, terms };
         }
+        // Memory commits have landed when they are counted, so the lane never refuses: what is past
+        // the month's number counts apart, and `slow` tells the server memory is now read-only.
+        if (request.lane === "memory") {
+          const remaining = terms.memoryMonthly - month("memory", terms).used;
+          const within = Math.max(0, Math.min(want, remaining));
+          count("memory", terms, within, want - within);
+          return {
+            kind: "granted",
+            units: M.Count.make(want),
+            slow: within >= remaining,
+            terms,
+          };
+        }
+        // Task operations: no organization bucket (each server bounds them per agent and per
+        // server a minute), the month, then a slow lane of their own, like reads.
+        // Units here are parts: an operation is `taskOperationParts`, a renewal fewer.
+        if (request.lane === "task") {
+          const remaining = terms.taskMonthly * taskOperationParts - month("task", terms).used;
+          if (remaining > 0) {
+            const units = Math.min(want, remaining);
+            count("task", terms, units, 0);
+            return { kind: "granted", units: M.Count.make(units), slow: false, terms };
+          }
+          // The slow lane grants what the waiting operation needs, at most one operation's parts,
+          // all at once: `taskSlowPerMinute` operations a minute, at most one saved up.
+          const need = Math.max(1, Math.min(request.needed ?? 1, taskOperationParts));
+          const perMinute = terms.taskSlowPerMinute * taskOperationParts;
+          const tokens = Model.refill(
+            bucketOf("task-slow"),
+            perMinute,
+            Math.max(taskOperationParts, perMinute),
+            now,
+          );
+          if (tokens < need) {
+            buckets.set("task-slow", { tokens, at: now });
+            unsavedBuckets.add("task-slow");
+            return {
+              kind: "limited",
+              retryAfterSeconds: Model.waitSeconds(tokens - need + 1, perMinute),
+              slow: true,
+              terms,
+            };
+          }
+          buckets.set("task-slow", { tokens: tokens - need, at: now });
+          unsavedBuckets.add("task-slow");
+          count("task", terms, 0, need);
+          return { kind: "granted", units: M.Count.make(need), slow: true, terms };
+        }
         const spent = month("read", terms).used;
         const remaining = terms.monthly - spent;
         // The web app's reads never wait on the agents' bucket. On Free's numbers (Free, the
@@ -282,6 +333,8 @@ export function make(
       const { terms } = current();
       const reads = month("read", terms);
       const admin = month("admin", terms);
+      const tasks = month("task", terms);
+      const memory = month("memory", terms);
       return {
         terms,
         reads: {
@@ -293,6 +346,17 @@ export function make(
           used: M.Count.make(admin.used),
           beyond: M.Count.make(admin.beyond),
           limit: terms.adminMonthly,
+        },
+        // Counted in parts, shown in whole operations.
+        tasks: {
+          used: M.Count.make(Model.operations(tasks.used)),
+          beyond: M.Count.make(Model.operations(tasks.beyond)),
+          limit: terms.taskMonthly,
+        },
+        memory: {
+          used: M.Count.make(memory.used),
+          beyond: M.Count.make(memory.beyond),
+          limit: terms.memoryMonthly,
         },
       };
     },

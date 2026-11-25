@@ -6,6 +6,7 @@ import { request, input } from "./api.js";
 import { Dialog, Notice } from "./components.js";
 import { RenameSection } from "./rename-name.js";
 import { useHuman, useServices } from "./session.js";
+import { BoardSwitch } from "./board.js";
 import "./server-settings.css";
 
 /** Creator-only management; the API independently checks ownership and exact-name confirmation. */
@@ -21,17 +22,20 @@ export function ServerSettings({ server }: { readonly server: P.ServerContext })
 function DeleteServerSection({ server }: { readonly server: P.ServerContext }) {
   const [confirming, setConfirming] = useState(false);
   return (
-    <section className="ops-server-settings" aria-labelledby="server-settings-title">
-      <h2 id="server-settings-title">Delete server</h2>
-      <p>
-        Permanently delete <strong>{server.name}</strong> and everything in it. This cannot be
-        undone.
-      </p>
-      <button className="ops-danger" onClick={() => setConfirming(true)}>
-        Delete server…
-      </button>
-      {confirming && <DeleteServerDialog server={server} close={() => setConfirming(false)} />}
-    </section>
+    <>
+      <BoardSwitch server={server} />
+      <section className="ops-server-settings" aria-labelledby="server-settings-title">
+        <h2 id="server-settings-title">Delete server</h2>
+        <p>
+          Permanently delete <strong>{server.name}</strong> and everything in it. This cannot be
+          undone.
+        </p>
+        <button className="ops-danger" onClick={() => setConfirming(true)}>
+          Delete server…
+        </button>
+        {confirming && <DeleteServerDialog server={server} close={() => setConfirming(false)} />}
+      </section>
+    </>
   );
 }
 

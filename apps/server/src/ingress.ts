@@ -1,6 +1,7 @@
 import { Effect, Redacted, Result, Schema } from "effect";
 import * as A from "@talkto/api/agent";
 import * as Mcp from "./mcp.js";
+import * as BoardSettings from "./board/settings.js";
 import * as McpEvents from "./wakes/mcp-events.js";
 import * as Signals from "./signals.js";
 import { OpenApi } from "effect/unstable/httpapi";
@@ -14,7 +15,7 @@ import * as UpdateSignal from "./update-signal.js";
 import * as UpdateWait from "./update-wait.js";
 import { run } from "@talkto/telemetry/effect";
 import { installGuide } from "@talkto/api/agent-guides";
-import instructions from "./instructions.md";
+import { agentGuide } from "./guide.js";
 import skill from "./skill.md";
 import { renderDocumentation } from "@talkto/api/documentation";
 
@@ -52,9 +53,12 @@ export function makeWorker(authenticate: Authenticate): ExportedHandler<Env> {
       if (request.method === "GET" && url.pathname === "/health")
         return Response.json({ status: "ok", meta });
       if (request.method === "GET" && url.pathname === "/instructions")
-        return new Response(renderDocumentation(instructions, url.origin), {
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        });
+        return new Response(
+          renderDocumentation(agentGuide(BoardSettings.memoryFromEnv(env)), url.origin),
+          {
+            headers: { "content-type": "text/plain; charset=utf-8" },
+          },
+        );
       if (request.method === "GET" && url.pathname === "/skill.md")
         return new Response(renderDocumentation(skill, url.origin), {
           headers: { "content-type": "text/markdown; charset=utf-8" },
@@ -252,6 +256,8 @@ export function makeWorker(authenticate: Authenticate): ExportedHandler<Env> {
           },
           config.origin,
           capabilities(env),
+          BoardSettings.fromEnv(env),
+          BoardSettings.memoryFromEnv(env),
         );
       }
       const forwarded = new Request(url, { method: request.method, headers, body });

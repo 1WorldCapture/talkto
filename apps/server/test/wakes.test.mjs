@@ -1270,3 +1270,39 @@ test("revoke_wake and event subscriptions refuse another person's agent; people 
   );
   assert.equal(removed.revoked, 1);
 });
+
+test("a person's full API key adds and tests a wake; a read key and an agent's sign-in cannot", async (t) => {
+  const s = await setup(t, { wakeTokens: true });
+  const keyFor = async (access) => {
+    const made = await s.dashboard("POST", "/v1/me/api-keys", { name: access, access });
+    assert.equal(made.status, 200, made.text);
+    const secret = made.json.data.secret;
+    return async (method, path, value) => {
+      const response = await s.x.raw(path, {
+        method,
+        headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+        body: value === undefined ? undefined : JSON.stringify(value),
+      });
+      return { status: response.status, json: await response.json() };
+    };
+  };
+  const full = await keyFor("full");
+  const read = await keyFor("read");
+  const body = {
+    kind: "claude_routine",
+    url: fire,
+    token: `sk-ant-oat01-${randomBytes(24).toString("base64url")}`,
+    channelIds: [s.general],
+    directChats: "own",
+  };
+  assert.equal((await read("POST", s.wakesPath(), body)).status, 403);
+  const bySignIn = await s.x.call("user_alice", "POST", s.wakesPath(), body, 403);
+  assert.equal(bySignIn.error.code, "forbidden");
+  const added = await full("POST", s.wakesPath(), body);
+  assert.equal(added.status, 200, JSON.stringify(added.json));
+  const wake = added.json.data;
+  assert.equal((await read("POST", testPath(s, wake))).status, 403);
+  const tested = await full("POST", testPath(s, wake));
+  assert.equal(tested.status, 200, JSON.stringify(tested.json));
+  assert.equal(tested.json.data.lastTest.accepted, true);
+});

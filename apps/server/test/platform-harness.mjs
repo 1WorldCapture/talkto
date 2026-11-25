@@ -176,6 +176,8 @@ export async function start(t, options = {}) {
   if (options.serverLimits !== undefined)
     reads.TALKTO_SERVER_LIMITS = JSON.stringify(options.serverLimits);
   if (options.readLimits !== undefined) reads.TALKTO_READ_LIMITS = options.readLimits;
+  if (options.apiKeyCacheSeconds !== undefined)
+    reads.TALKTO_API_KEY_CACHE_SECONDS = String(options.apiKeyCacheSeconds);
   // Unset means enforce, as on a local or self-hosted copy; hosted TalkTo sets watch.
   if (options.agentOwnership !== undefined) reads.TALKTO_AGENT_OWNERSHIP = options.agentOwnership;
   if (options.participantReadsPerMinute !== undefined)
@@ -197,6 +199,21 @@ export async function start(t, options = {}) {
   // A throwaway signal key per run when a test asks; the test may recompute tags with it.
   const signalKey = options.signalKey ? randomBytes(32).toString("base64url") : undefined;
   const signals = signalKey === undefined ? {} : { TALKTO_SIGNAL_KEY: signalKey };
+  // The task board is off in every deployment until it ships; tests that need it switch it on.
+  const board = {
+    TALKTO_BOARD: options.board ? "on" : "off",
+    TALKTO_TASK_LIMITS: options.taskLimits ? "on" : "off",
+    // The monthly task-operation budget and Free's default claim cap, like the read budgets.
+    TALKTO_TASK_BUDGETS: options.taskBudgets ? "on" : "off",
+    TALKTO_FREE_CLAIM_CAP: options.freeClaimCap ? "on" : "off",
+    // Swarm memory is off unless a test asks; it then runs on the fake Git store (memory-fake.ts).
+    TALKTO_MEMORY: options.memory ? "on" : "off",
+    // `memoryBinding: false` keeps the switch on with no store, as a deployment without the binding.
+    TEST_FAKE_MEMORY: options.memory && options.memoryBinding !== false ? "true" : "false",
+  };
+  // A throwaway API key tag secret per run when a test asks.
+  const apiKeySecret = options.apiKeySecret ? randomBytes(32).toString("base64url") : undefined;
+  if (apiKeySecret !== undefined) signals.TALKTO_API_KEY_SECRET = apiKeySecret;
   const runtimeOptions = convertV4MiniflareOptions({
     name: "app",
     modulesRoot: build,
@@ -249,6 +266,7 @@ export async function start(t, options = {}) {
       ...invitations,
       ...wakes,
       ...signals,
+      ...board,
       TEST_MANUAL_ALARMS: String(options.manualAlarms ?? false),
       TEST_LEGACY_ONBOARDING: String(options.legacyOnboarding ?? false),
       TALKTO_TRIAL_DAILY_LIMIT: String(options.trialDailyLimit ?? 10),
@@ -370,6 +388,8 @@ export async function start(t, options = {}) {
         "0024.sql",
         "0025.sql",
         "0026.sql",
+        "0027.sql",
+        "0028.sql",
       ].map((file) =>
         readFile(new URL(`../src/platform/migrations/${file}`, import.meta.url), "utf8"),
       ),
@@ -517,6 +537,7 @@ export async function start(t, options = {}) {
     },
     raw,
     signalKey,
+    apiKeySecret,
     scheduled: async () => (await mf.getWorker()).scheduled({ cron: "* * * * *" }),
     control,
     call,

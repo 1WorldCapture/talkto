@@ -19,6 +19,7 @@ apps/server/wrangler.selfhost.jsonc
 apps/docs/.astro/
 apps/docs/.nimbus/
 apps/docs/src/content/docs/agents/
+apps/docs/src/content/docs/api/*.md
 apps/docs/src/content/partials/generated/
 
 # Internal work that must never be committed (it stays out of the public repository too):

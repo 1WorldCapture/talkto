@@ -6,6 +6,9 @@ import * as E from "@talkto/api/errors";
 import * as Navigation from "./navigation.js";
 import * as Actors from "./actors.js";
 import type * as Store from "./persistence.js";
+import * as T from "@talkto/api/tasks";
+import * as BoardView from "./board/view.js";
+import { present } from "./present.js";
 
 const invalidCursor = () =>
   new E.InvalidCursor({
@@ -14,10 +17,15 @@ const invalidCursor = () =>
   });
 const bytes = (value: U.Outcome) => new TextEncoder().encode(JSON.stringify(value)).length;
 
-const describe = (included: U.Included, messages: ReadonlyArray<M.Message>): U.Included => {
+const describe = (
+  included: U.Included,
+  messages: ReadonlyArray<M.Message>,
+  tasks: ReadonlyArray<T.TaskEvent>,
+): U.Included => {
   const conversationIds = new Set(messages.map((message) => message.conversationId));
   const conversations = included.conversations.filter((item) => conversationIds.has(item.id));
   const participantIds = new Set(messages.map((message) => message.senderId));
+  for (const id of BoardView.eventParticipants(tasks)) participantIds.add(id);
   for (const item of conversations) {
     if (item.kind === "direct") for (const id of item.participantIds) participantIds.add(id);
   }
@@ -76,7 +84,12 @@ export const read = Effect.fn("Updates.read")(function* (
   let boundary: number;
   let ceiling = head.sequence;
   if (input.mode === "start") {
-    selection = { channelIds: input.channelIds.toSorted(), directChats: input.directChats };
+    selection = {
+      channelIds: input.channelIds.toSorted(),
+      directChats: input.directChats,
+      // Present only when chosen, so checkpoints without it keep their exact shape (read as mine).
+      ...present("tasks", input.tasks),
+    };
     boundary = input.startAt === "now" ? head.sequence : 0;
   } else {
     const token = yield* Navigation.parseCursor(
@@ -150,6 +163,28 @@ export const read = Effect.fn("Updates.read")(function* (
   const lastRename = renameRows[renameLimit - 1];
   if (renameRows.length > renameLimit && lastRename !== undefined)
     through = Math.min(through, lastRename.sequence);
+  // Task events share the sequence too: the reader's own (`mine`, the default), every one (`all`)
+  // or none.
+  const taskSelection = selection.tasks ?? "mine";
+  const eventLimit = Math.min(limit, T.maxEventsPerPage);
+  const eventRows =
+    end === boundary || taskSelection === "none"
+      ? []
+      : yield* tx.board.eventsBetween(
+          taskSelection === "all" ? null : input.participantId,
+          boundary,
+          end,
+          eventLimit + 1,
+        );
+  const lastEvent = eventRows[eventLimit - 1];
+  if (eventRows.length > eventLimit && lastEvent !== undefined)
+    through = Math.min(through, lastEvent.seq);
+  const tasks = [
+    ...(yield* BoardView.events(
+      tx,
+      eventRows.filter((item) => item.seq <= through),
+    )),
+  ];
   const renames = renameRows.filter((item) => item.sequence <= through);
   const pageMessages = messages.filter((item) => item.sequence <= through);
   const conversations =
@@ -162,6 +197,7 @@ export const read = Effect.fn("Updates.read")(function* (
   for (const item of conversations) {
     if (item.kind === "direct") for (const id of item.participantIds) participantIds.add(id);
   }
+  for (const id of BoardView.eventParticipants(tasks)) participantIds.add(id);
   const included: U.Included = {
     conversations,
     participants:
@@ -186,19 +222,32 @@ export const read = Effect.fn("Updates.read")(function* (
       through < ceiling
         ? Navigation.encodeCursor({ ...state, kind: "updates_page", boundary: through, ceiling })
         : null;
-    const page: U.Page = { messages: [...pageMessages], checkpoint, nextCursor, ...wake };
-    // Present only when there is one, so pages without renames keep their exact shape.
+    const page: U.Page = {
+      messages: [...pageMessages],
+      checkpoint,
+      nextCursor,
+      ...wake,
+      // Present only when there is one, so pages without renames or task events keep their shape.
+      ...present("renames", renames.length === 0 ? null : [...renames]),
+      ...present("tasks", tasks.length === 0 ? null : [...tasks]),
+    };
     const result: U.Outcome = {
-      data: renames.length === 0 ? page : { ...page, renames: [...renames] },
-      included: describe(included, pageMessages),
+      data: page,
+      included: describe(included, pageMessages, tasks),
     };
     if (bytes(result) <= U.outcomeBudget) return result;
-    // Drop the newest item, message or rename, and end the page just before it.
+    // Drop the newest item, message, rename or task event, and end the page just before it.
     const messageAt = pageMessages.at(-1)?.sequence ?? 0;
     const renameAt = renames.at(-1)?.sequence ?? 0;
-    if (messageAt > renameAt) pageMessages.pop();
-    else renames.pop();
-    through = Math.max(pageMessages.at(-1)?.sequence ?? 0, renames.at(-1)?.sequence ?? 0);
+    const taskAt = tasks.at(-1)?.sequence ?? 0;
+    if (messageAt > renameAt && messageAt > taskAt) pageMessages.pop();
+    else if (renameAt > taskAt) renames.pop();
+    else tasks.pop();
+    through = Math.max(
+      pageMessages.at(-1)?.sequence ?? 0,
+      renames.at(-1)?.sequence ?? 0,
+      tasks.at(-1)?.sequence ?? 0,
+    );
     if (through <= boundary)
       return yield* Effect.die("A valid updates item must fit the response budget");
   }
@@ -210,7 +259,11 @@ export const read = Effect.fn("Updates.read")(function* (
  */
 export const selectionOf = (input: U.Input): Effect.Effect<U.Selection | null> =>
   input.mode === "start"
-    ? Effect.succeed({ channelIds: input.channelIds, directChats: input.directChats })
+    ? Effect.succeed({
+        channelIds: input.channelIds,
+        directChats: input.directChats,
+        ...present("tasks", input.tasks),
+      })
     : Navigation.parseCursor(
         Navigation.UpdatesCursor,
         input.mode === "poll" ? input.checkpoint : input.cursor,

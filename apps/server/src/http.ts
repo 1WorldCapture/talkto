@@ -1,10 +1,11 @@
-import { Clock, Context, DateTime, Effect, Layer } from "effect";
+import { Clock, Context, DateTime, Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http";
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi";
 import { Api } from "@talkto/api/api";
 import * as Envelope from "@talkto/api/envelope";
 import * as Security from "@talkto/api/security";
 import * as M from "@talkto/api/models";
+import * as T from "@talkto/api/tasks";
 import type * as Errors from "@talkto/api/errors";
 import type * as Removals from "@talkto/api/removals";
 import * as Responses from "./responses.js";
@@ -15,6 +16,11 @@ import * as Monitoring from "./monitoring.js";
 import * as Reads from "./reads.js";
 import * as Navigation from "./navigation.js";
 import * as Wakes from "./wakes/service.js";
+import * as Board from "./board/service.js";
+import { memoryMetering, taskOperationParts } from "@talkto/api/pricing";
+import { present } from "./present.js";
+import * as S from "@talkto/api/signal";
+import * as Signals from "./signals.js";
 
 /** Authority and diagnostics supplied by the verified runtime boundary for one request. */
 export class RequestContext extends Context.Service<
@@ -27,6 +33,11 @@ export class RequestContext extends Context.Service<
      * bearer token. Only a person on the dashboard can add a wake that stores a token.
      */
     readonly website: boolean;
+    /**
+     * The hosted Worker verified one of the person's API keys. A key acts as its person, never as
+     * an agent, so it may do the person's dashboard actions here (owner, 25 Nov).
+     */
+    readonly apiKey: boolean;
     /** The signed-in person's verified profile, used only if a person endpoint creates them. */
     readonly person: TalkTo.PersonProfile;
     /**
@@ -50,8 +61,15 @@ const respond = Effect.fn("Http.respond")(function* <A, C, F extends Errors.Fail
   read?: {
     readonly operation: string;
     readonly participantId?: M.ParticipantId;
-    /** `read` (the default) admits a read; `admin` an admin call; `send` counts a refused send. */
-    readonly kind?: "read" | "admin" | "send";
+    /**
+     * `read` (the default) admits a read; `admin` an admin call; `send` counts a refused send;
+     * `task` admits a task operation.
+     */
+    readonly kind?: "read" | "admin" | "send" | "task";
+    /** The parts a task operation counts (`taskOperationParts`, a renewal fewer), when not 5. */
+    readonly units?: number;
+    /** For an admin call, whether a spent month refuses it (`Reads.AdminCall.monthly`). */
+    readonly monthly?: boolean;
   },
 ) {
   const context = yield* RequestContext;
@@ -61,21 +79,25 @@ const respond = Effect.fn("Http.respond")(function* <A, C, F extends Errors.Fail
     // The website's views have their own per-person bound and never wait on the agents' bucket.
     transport: context.website ? ("dashboard" as const) : ("http" as const),
     participantId: read?.participantId ?? null,
+    ...present("units", read?.units),
+    monthly: read?.monthly !== false,
   };
   const guarded =
     read === undefined
       ? operation(access)
       : read.kind === "admin"
         ? reads.admin(access, call).pipe(Effect.andThen(operation(access)))
-        : read.kind === "send"
-          ? operation(access).pipe(
-              Effect.catch((error) =>
-                Reads.transientFailures.has(error._tag)
-                  ? Effect.fail(error)
-                  : reads.refused(access, call).pipe(Effect.andThen(Effect.fail(error))),
-              ),
-            )
-          : reads.admit(access, call).pipe(Effect.andThen(operation(access)));
+        : read.kind === "task"
+          ? reads.task(access, call).pipe(Effect.andThen(operation(access)))
+          : read.kind === "send"
+            ? operation(access).pipe(
+                Effect.catch((error) =>
+                  Reads.transientFailures.has(error._tag)
+                    ? Effect.fail(error)
+                    : reads.refused(access, call).pipe(Effect.andThen(Effect.fail(error))),
+                ),
+              )
+            : reads.admit(access, call).pipe(Effect.andThen(operation(access)));
   const outcome = yield* guarded.pipe(
     Effect.mapError((error) => Responses.projectFailure(error, context.meta)),
   );
@@ -94,21 +116,54 @@ const handlers = HttpApiBuilder.group(Api, "server", (routes) =>
     const service = yield* TalkTo.Service;
     const reads = yield* Reads.Reads;
     const wakes = yield* Wakes.Wakes;
+    const board = yield* Board.Board;
+    /** The dashboard's origin, where each task's page lives. */
+    const origin = RequestContext.pipe(
+      Effect.map(({ meta }) => new URL(meta.instructions.url).origin),
+    );
+    /**
+     * People's board actions run only for the person: a signed-in website session (spec 4.7) or
+     * one of their API keys, never an agent's token.
+     */
+    const website = <A, F, R>(effect: Effect.Effect<A, F, R>) =>
+      Effect.gen(function* () {
+        const context = yield* RequestContext;
+        if (!context.website && !context.apiKey)
+          return yield* Effect.fail(
+            Envelope.makeFailure(
+              "forbidden",
+              "Do this on the TalkTo dashboard or with an API key. Agents cannot.",
+              context.meta,
+            ),
+          );
+        return yield* effect;
+      });
     // Only a person on the dashboard removes or restores an agent: agents share their person's
     // connection, so one agent could otherwise cut off the others.
     const removal = (serverId: M.ServerId, agentId: M.ParticipantId, action: Removals.Action) =>
       Effect.gen(function* () {
-        const { website, meta, person } = yield* RequestContext;
-        if (!website)
+        const { website, apiKey, meta, person } = yield* RequestContext;
+        if (!website && !apiKey)
           return yield* Effect.fail(
             Envelope.makeFailure(
               "forbidden",
-              "Remove or restore an agent on the TalkTo dashboard. Agents and API tokens cannot.",
+              "Remove or restore an agent on the TalkTo dashboard or with an API key. Agents cannot.",
               meta,
             ),
           );
-        return yield* respond(reads, serverId, (access) =>
-          service.setAgentRemoved(access, person, agentId, action),
+        // The website is not metered here, as before keys. A key's call is the person's admin call,
+        // never the agent's, and waits only on the minute: a spent month never stops a removal.
+        return yield* respond(
+          reads,
+          serverId,
+          (access) => service.setAgentRemoved(access, person, agentId, action),
+          apiKey
+            ? {
+                operation: action === "removed" ? "removeAgent" : "restoreAgent",
+                kind: "admin",
+                monthly: false,
+              }
+            : undefined,
         );
       });
     return routes.handleAll({
@@ -226,29 +281,36 @@ const handlers = HttpApiBuilder.group(Api, "server", (routes) =>
         ),
       createWake: ({ params, payload }) =>
         Effect.gen(function* () {
-          const { website, meta } = yield* RequestContext;
-          // A third-party token must never pass through an agent: bearer callers cannot add one.
-          if (!website)
+          const { website, apiKey, meta } = yield* RequestContext;
+          // A third-party token must never pass through an agent: only the person adds one, on the
+          // dashboard or with their API key.
+          if (!website && !apiKey)
             return yield* Effect.fail(
               Envelope.makeFailure(
                 "forbidden",
-                "Add this wake on the TalkTo dashboard. Agents and API tokens cannot store a routine token.",
+                "Add this wake on the TalkTo dashboard or with an API key. Agents cannot store a routine token.",
                 meta,
               ),
             );
-          return yield* respond(reads, params.serverId, (access) =>
-            wakes.create(access, params.participantId, payload),
+          // The website is not metered here, as before keys. A key's call is the person's admin
+          // call, not the agent's: a key's loop never spends the agent's minute.
+          return yield* respond(
+            reads,
+            params.serverId,
+            (access) => wakes.create(access, params.participantId, payload),
+            apiKey ? { operation: "createWake", kind: "admin" } : undefined,
           );
         }),
       testWake: ({ params }) =>
         Effect.gen(function* () {
-          const { website, meta } = yield* RequestContext;
-          // Each test starts a run on the person's account: only their click on the dashboard.
-          if (!website)
+          const { website, apiKey, meta } = yield* RequestContext;
+          // Each test starts a run on the person's account: only the person, on the dashboard or
+          // with their API key.
+          if (!website && !apiKey)
             return yield* Effect.fail(
               Envelope.makeFailure(
                 "forbidden",
-                "Send a test from the TalkTo dashboard. Agents and API tokens cannot start one.",
+                "Send a test from the TalkTo dashboard or with an API key. Agents cannot start one.",
                 meta,
               ),
             );
@@ -256,7 +318,8 @@ const handlers = HttpApiBuilder.group(Api, "server", (routes) =>
             reads,
             params.serverId,
             (access) => wakes.test(access, params.participantId, params.wakeId),
-            { operation: "testWake", participantId: params.participantId, kind: "admin" },
+            // The person's admin call: only a person sends a test, so it never spends the agent's.
+            { operation: "testWake", kind: "admin" },
           );
         }),
       revokeWake: ({ params }) =>
@@ -391,12 +454,288 @@ const handlers = HttpApiBuilder.group(Api, "server", (routes) =>
         respond(reads, params.serverId, (access) => service.listTransfers(access, query), {
           operation: "listTransfers",
         }),
+      createTasks: ({ params, payload }) =>
+        Effect.gen(function* () {
+          const at = yield* origin;
+          return yield* respond(
+            reads,
+            params.serverId,
+            (access) =>
+              board.createTasks(
+                access,
+                { ...payload, serverId: params.serverId, participantId: params.participantId },
+                at,
+              ),
+            { operation: "createTasks", participantId: params.participantId, kind: "task" },
+          );
+        }),
+      claimTask: ({ params, payload }) =>
+        Effect.gen(function* () {
+          const at = yield* origin;
+          // A Worker holding a claim for next claims again on each wake; the call was admitted once.
+          const { reread } = yield* RequestContext;
+          return yield* respond(
+            reads,
+            params.serverId,
+            (access) =>
+              board.claimTask(
+                access,
+                { ...payload, serverId: params.serverId, participantId: params.participantId },
+                at,
+              ),
+            reread
+              ? undefined
+              : { operation: "claimTask", participantId: params.participantId, kind: "task" },
+          );
+        }),
+      updateTask: ({ params, payload }) =>
+        Effect.gen(function* () {
+          const at = yield* origin;
+          return yield* respond(
+            reads,
+            params.serverId,
+            (access) =>
+              board.updateTask(
+                access,
+                {
+                  ...payload,
+                  serverId: params.serverId,
+                  participantId: params.participantId,
+                  taskId: params.taskId,
+                },
+                at,
+              ),
+            {
+              operation: "updateTask",
+              participantId: params.participantId,
+              kind: "task",
+              units: Reads.taskParts(payload.action),
+            },
+          );
+        }),
+      listTasks: ({ params, query }) =>
+        Effect.gen(function* () {
+          const at = yield* origin;
+          return yield* respond(
+            reads,
+            params.serverId,
+            (access) => board.listTasks(access, { ...query, serverId: params.serverId }, at),
+            { operation: "listTasks", participantId: query.participantId },
+          );
+        }),
+      readTask: ({ params, query }) =>
+        Effect.gen(function* () {
+          const at = yield* origin;
+          return yield* respond(
+            reads,
+            params.serverId,
+            (access) =>
+              board.readTask(
+                access,
+                {
+                  ...query,
+                  serverId: params.serverId,
+                  task: isTaskNumber(params.task) ? { number: params.task } : { id: params.task },
+                },
+                at,
+              ),
+            { operation: "readTask", participantId: query.participantId },
+          );
+        }),
+      readMemory: ({ params, query }) =>
+        respond(reads, params.serverId, (access) => board.readMemory(access, query), {
+          operation: "readMemory",
+          participantId: query.participantId,
+        }),
+      getMemoryAccess: ({ params, payload }) =>
+        respond(
+          reads,
+          params.serverId,
+          (access) =>
+            board.memoryAccess(access, { ...payload, participantId: params.participantId }),
+          {
+            operation: "getMemoryAccess",
+            participantId: params.participantId,
+            kind: "task",
+            units: memoryMetering.grantTaskOperations * taskOperationParts,
+          },
+        ),
+      getBoard: ({ params, query }) =>
+        website(
+          respond(reads, params.serverId, (access) => board.board(access, query), {
+            operation: "board",
+          }),
+        ),
+      listBoardLabels: ({ params }) =>
+        website(
+          respond(reads, params.serverId, (access) => board.boardLabels(access), {
+            operation: "boardLabels",
+          }),
+        ),
+      listBoardTasks: ({ params, query }) =>
+        website(
+          respond(reads, params.serverId, (access) => board.boardTasks(access, query), {
+            operation: "boardTasks",
+          }),
+        ),
+      getBoardTask: ({ params, query }) =>
+        website(
+          Effect.gen(function* () {
+            const at = yield* origin;
+            return yield* respond(
+              reads,
+              params.serverId,
+              (access) =>
+                board.boardTask(
+                  access,
+                  {
+                    ...query,
+                    task: isTaskNumber(params.task) ? { number: params.task } : { id: params.task },
+                  },
+                  at,
+                ),
+              { operation: "boardTask" },
+            );
+          }),
+        ),
+      // The server's creator switches it on the website or with their own token (owner, Nov 25).
+      setBoard: ({ params, payload }) =>
+        RequestContext.use(({ person }) =>
+          respond(reads, params.serverId, (access) => board.setBoard(access, person, payload), {
+            operation: "setBoard",
+            kind: "admin",
+          }),
+        ),
+      cancelTask: ({ params, payload }) =>
+        website(
+          Effect.gen(function* () {
+            const { person } = yield* RequestContext;
+            const at = yield* origin;
+            return yield* respond(
+              reads,
+              params.serverId,
+              (access) => board.cancel(access, person, params.taskId, payload, at),
+              { operation: "cancelTask", kind: "admin" },
+            );
+          }),
+        ),
+      reopenTask: ({ params, payload }) =>
+        website(
+          Effect.gen(function* () {
+            const { person } = yield* RequestContext;
+            const at = yield* origin;
+            return yield* respond(
+              reads,
+              params.serverId,
+              (access) => board.reopen(access, person, params.taskId, payload, at),
+              { operation: "reopenTask", kind: "admin" },
+            );
+          }),
+        ),
       downloadTransfer: ({ params }) =>
         respond(
           reads,
           params.serverId,
           (access) => service.downloadTransfer(access, params.transferId),
           { operation: "downloadTransfer" },
+        ),
+      // The transfer and signal routes run the same operations as their MCP tools.
+      getPackCommand: ({ params }) =>
+        respond(reads, params.serverId, (access) => service.getPackCommand(access), {
+          operation: "getPackCommand",
+          kind: "admin",
+        }),
+      prepareTransfer: ({ params, payload }) =>
+        respond(
+          reads,
+          params.serverId,
+          (access) => service.prepareTransfer(access, { ...payload, serverId: params.serverId }),
+          { operation: "prepareTransfer", participantId: payload.participantId, kind: "admin" },
+        ),
+      completeTransfer: ({ params, payload }) =>
+        respond(
+          reads,
+          params.serverId,
+          (access) =>
+            service.completeTransfer(access, {
+              ...payload,
+              serverId: params.serverId,
+              transferId: params.transferId,
+            }),
+          { operation: "completeTransfer", participantId: payload.participantId, kind: "send" },
+        ),
+      fetchTransfer: ({ params, payload }) =>
+        respond(
+          reads,
+          params.serverId,
+          (access) =>
+            service.fetchTransfer(access, {
+              serverId: params.serverId,
+              participantId: payload.participantId,
+              transferId: params.transferId,
+            }),
+          { operation: "fetchTransfer", participantId: payload.participantId },
+        ),
+      readTransfer: ({ params }) =>
+        respond(
+          reads,
+          params.serverId,
+          (access) =>
+            service.readTransfer(access, {
+              serverId: params.serverId,
+              transferId: params.transferId,
+            }),
+          { operation: "readTransfer" },
+        ),
+      createSignal: ({ params, payload }) =>
+        Effect.gen(function* () {
+          const { meta } = yield* RequestContext;
+          const minted = yield* respond(
+            reads,
+            params.serverId,
+            (access) =>
+              service.createSignal(access, {
+                ...payload,
+                serverId: params.serverId,
+                participantId: params.participantId,
+              }),
+            { operation: "createSignal", participantId: params.participantId, kind: "admin" },
+          );
+          const origin = new URL(meta.instructions.url).origin;
+          return {
+            ...minted,
+            data: {
+              signalId: minted.data.signalId,
+              url: Signals.url(origin, params.serverId, minted.data.signalId, minted.data.secret),
+              expiresAt: minted.data.expiresAt,
+              selection: minted.data.selection,
+              minIntervalSeconds: S.minIntervalSeconds,
+              procedure: Signals.procedure,
+            },
+          };
+        }),
+      revokeSignals: ({ params }) =>
+        respond(
+          reads,
+          params.serverId,
+          (access) =>
+            service.revokeSignal(access, {
+              serverId: params.serverId,
+              participantId: params.participantId,
+            }),
+          { operation: "revokeSignals", participantId: params.participantId, kind: "admin" },
+        ),
+      revokeSignal: ({ params }) =>
+        respond(
+          reads,
+          params.serverId,
+          (access) =>
+            service.revokeSignal(access, {
+              serverId: params.serverId,
+              participantId: params.participantId,
+              signalId: params.signalId,
+            }),
+          { operation: "revokeSignal", participantId: params.participantId, kind: "admin" },
         ),
     });
   }),
@@ -420,9 +759,9 @@ const inputErrors = HttpRouter.middleware(
   (httpEffect) =>
     httpEffect.pipe(
       Effect.catchDefect((defect) => {
-        if (!HttpApiError.HttpApiSchemaError.is(defect) || defect.kind !== "Query")
-          return Effect.die(defect);
-        const message = Responses.timestampError(defect.cause.issue);
+        if (!HttpApiError.HttpApiSchemaError.is(defect)) return Effect.die(defect);
+        const message =
+          defect.kind === "Query" ? Responses.timestampError(defect.cause.issue) : undefined;
         if (message === undefined) return Effect.die(defect);
         return Effect.gen(function* () {
           const { meta } = yield* RequestContext;
@@ -439,8 +778,12 @@ export const routes = HttpApiBuilder.layer(Api).pipe(
   Layer.provide(HttpServer.layerServices),
   Layer.merge(inputErrors),
 );
+/** The task route's path names a task by number or by ID (T.TaskIdOrNumber). */
+const isTaskNumber = Schema.is(T.TaskNumber);
 /** Create one reusable HTTP handler for a server object's lifetime. */
-export const makeHandler = (application: Layer.Layer<TalkTo.Service | Reads.Reads | Wakes.Wakes>) =>
+export const makeHandler = (
+  application: Layer.Layer<TalkTo.Service | Reads.Reads | Wakes.Wakes | Board.Board>,
+) =>
   HttpRouter.toWebHandler(routes.pipe(Layer.provide(application)), {
     disableLogger: true,
     middleware: trace,

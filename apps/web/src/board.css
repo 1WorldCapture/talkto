@@ -1,0 +1,1066 @@
+/*
+  The swarm server's Board (board.tsx), from the approved v3 mockups: white panels with hairline
+  edges on paper, square swatches, no pills, no glow. Magenta is kept for what needs a person
+  (needs you, phase 2); trouble (stalled, failed) reads in the deletion ink. Dark mode maps the
+  swatches to the dark ramp.
+*/
+.ops-console {
+  --board-working: var(--control-line);
+  --board-ready: #c4c4bc;
+  --board-waiting: var(--soft);
+}
+:root[data-theme="dark"] .ops-console {
+  --board-ready: #55564f;
+}
+/* One column that never grows past the page: a wide control inside cannot widen the Board. */
+.board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  min-width: 0;
+}
+.board-panel {
+  border: 1px solid var(--subtle-line);
+  background: var(--surface);
+}
+.board-muted {
+  color: var(--muted);
+}
+.board-name {
+  font: 14px/1.4 var(--mono);
+}
+.board-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.board-who .board-name {
+  font-size: 13px;
+  line-height: 16px;
+}
+/* A long name shortens in the middle: the start ellipsizes, the last characters stay. */
+.board-name {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.board-name-head {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+/*
+ * A split name's start shrinks down to its ellipsis (1ch in the mono face) and no further, so
+ * the end always shows whole and the name never reads as its end alone.
+ */
+.board-name-head.is-cut {
+  min-width: 1ch;
+}
+.board-name-tail,
+.board-name-note {
+  flex: none;
+  white-space: pre;
+}
+.board-who .agent-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.board-bad {
+  color: var(--deletion-ink);
+}
+.board-quiet {
+  color: var(--muted);
+}
+
+/* Swatches: the bar, the counts and each row's state. */
+.k-done {
+  background: var(--ink);
+}
+.k-failed {
+  background: var(--deletion-ink);
+}
+.k-canceled {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.k-working {
+  background: var(--board-working);
+}
+.k-needs {
+  background: var(--lamp);
+}
+.k-ready {
+  background: var(--board-ready);
+}
+.k-waiting {
+  background: var(--board-waiting);
+  box-shadow: inset 0 0 0 1px var(--subtle-line);
+}
+.k-stalled {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--deletion-ink);
+}
+
+/* Board off, and a server without a board. */
+.board-off {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--subtle-line);
+  background: var(--surface);
+  font-size: 14px;
+}
+.board-off a,
+.board-empty-state a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--control-line);
+  text-underline-offset: 4px;
+}
+.board-empty-state {
+  padding: 24px;
+  border: 1px solid var(--subtle-line);
+  background: var(--surface);
+}
+.board-empty-state p {
+  margin: 0 0 8px;
+  max-width: 62ch;
+  color: var(--muted);
+}
+
+/* Summary. */
+.board-summary {
+  padding: 20px 24px;
+}
+.board-summary-top {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+.board-summary h2 {
+  margin: 0;
+  font: 600 20px/1.3 var(--sans);
+  letter-spacing: -0.015em;
+}
+.board-summary-top p {
+  margin: 0 0 0 auto;
+  color: var(--muted);
+  font-size: 14px;
+}
+.board-summary-empty {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.board-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  margin-top: 14px;
+  background: var(--soft);
+}
+.board-bar span {
+  display: block;
+  flex-basis: 0;
+  min-width: 3px;
+  height: 100%;
+}
+.board-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 20px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.ops-console .board-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.ops-console .board-count:hover {
+  color: var(--ink);
+}
+.board-count i,
+.board-st i {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+}
+.board-count b {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ops-console .board-count.you,
+.board-count.you b {
+  color: var(--lamp-ink);
+}
+.board-agents {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.board-agents a {
+  display: inline-flex;
+  gap: 6px;
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+.board-agents a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* Stalled and Failed. */
+.board-calm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.board-calm svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.board-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  margin-top: 24px;
+}
+.board-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.board-section-head h3 {
+  margin: 0;
+  font: 600 16px/1.3 var(--sans);
+}
+.board-section-head > span {
+  color: var(--muted);
+  font-size: 14px;
+}
+.board-section-head small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+.board-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.board-rows > li + li {
+  border-top: 1px solid var(--subtle-line);
+}
+/* A row with an action (Retry): the link keeps the row, the button sits after it. */
+.board-row-action {
+  display: flex;
+  align-items: center;
+}
+.board-row-action > .board-row {
+  flex: 1;
+  min-width: 0;
+  padding-right: 12px;
+}
+.ops-console .board-row-action > button {
+  flex: none;
+  min-height: 32px;
+  margin-right: 16px;
+  padding: 0 12px;
+}
+.board-notice {
+  margin: 0 0 16px;
+}
+.board-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 48px;
+  padding: 6px 16px;
+  color: var(--ink);
+  font-size: 14px;
+  text-decoration: none;
+}
+.board-row:hover {
+  background: var(--soft);
+  text-decoration: none;
+}
+.board-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-row-title small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A failed row's result count after its reason: the reason shortens, the count stays. */
+.board-row-title small.has-result {
+  display: flex;
+  align-items: baseline;
+}
+.board-row-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board-row .board-bad,
+.board-row .board-quiet,
+.board-row time {
+  font-size: 13px;
+  white-space: nowrap;
+}
+.board-row time {
+  color: var(--muted);
+}
+.board-none {
+  padding: 14px 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.board-more {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+}
+
+/* Task list. */
+.board-tasks {
+  margin-top: 28px;
+}
+.board-tool {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--subtle-line);
+}
+.board-tool h3 {
+  margin: 0 8px 0 0;
+  font: 600 16px/1.3 var(--sans);
+}
+.board-tabs {
+  display: flex;
+  gap: 2px;
+}
+.ops-console .board-tabs button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: 13px/1 var(--sans);
+  cursor: pointer;
+}
+.board-tabs button b {
+  margin-left: 4px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.ops-console .board-tabs button[aria-pressed="true"] {
+  background: var(--soft);
+  color: var(--ink);
+}
+.board-find {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.ops-console .board-tool :is(input, select) {
+  min-height: 32px;
+  height: 32px;
+  font-size: 13px;
+}
+.ops-console .board-find input {
+  width: 240px;
+  padding: 0 10px;
+  border-color: var(--control-line);
+}
+/* Outranks the dashboard's button display rule: Filter shows only where the filters fold. */
+:root[data-surface="dashboard"] .ops-console .board-filter-button {
+  display: none;
+}
+.board-filters {
+  display: flex;
+  gap: 8px;
+}
+.ops-console .board-filters select,
+.ops-console .board-filters input {
+  min-width: 0;
+  max-width: 220px;
+  padding: 0 28px 0 10px;
+}
+.ops-console .board-filters input {
+  width: 200px;
+  padding-right: 10px;
+}
+.board-narrowed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--subtle-line);
+  color: var(--muted);
+  font-size: 13px;
+}
+.board-cols,
+.board-tr {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 156px minmax(200px, 0.6fr) 112px 104px;
+  column-gap: 16px;
+  align-items: center;
+  padding: 0 16px;
+}
+.board-cols {
+  height: 36px;
+  border-bottom: 1px solid var(--subtle-line);
+  color: var(--muted);
+  font-size: 13px;
+}
+.board-cols span:last-child {
+  text-align: right;
+}
+.board-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.board-list > li {
+  border-bottom: 1px solid var(--subtle-line);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
+}
+.board-list > li:last-child {
+  border-bottom: 0;
+}
+.board-tr {
+  position: relative;
+  min-height: 44px;
+  color: var(--ink);
+  font-size: 14px;
+}
+.board-tr:hover {
+  background: var(--soft);
+}
+/* The title is the row's link; its ::after covers the row, so the whole row opens the task. */
+.board-row-link {
+  color: inherit;
+  text-decoration: none;
+}
+.board-row-link:hover {
+  text-decoration: none;
+}
+.board-row-link::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+}
+:root[data-surface="dashboard"] .board-row-link:focus-visible {
+  outline: none;
+}
+.board-row-link:focus-visible::after {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+/* "+N" and the names it shows sit above the row's link. The name and "+N" share one line. */
+.board-agent-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.board-agent-line > .board-who {
+  flex: 0 1 auto;
+}
+.board-tr.is-open {
+  align-items: start;
+}
+.board-tr.is-open > span {
+  padding-top: 12px;
+}
+.board-tr.is-open > .board-t {
+  padding-top: 11px;
+}
+.ops-console .board-held {
+  flex: none;
+  position: relative;
+  z-index: 1;
+  min-height: 24px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.ops-console .board-held:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.board-held-list {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 6px;
+  padding: 0;
+  list-style: none;
+}
+.board-held-list[hidden] {
+  display: none;
+}
+.board-held-list .board-name {
+  color: var(--muted);
+}
+.board-held-more {
+  color: var(--muted);
+  font-size: 13px;
+}
+.board-n {
+  color: var(--muted);
+  font-size: 13px;
+}
+.board-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-tr.is-finished .board-t {
+  color: var(--muted);
+}
+.board-st {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.board-st i {
+  width: 8px;
+  height: 8px;
+}
+.board-st.you {
+  color: var(--lamp-ink);
+}
+.board-st.bad {
+  color: var(--deletion-ink);
+}
+.board-agent {
+  display: grid;
+  min-width: 0;
+  font-size: 13px;
+}
+.board-lb,
+.board-u {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-u {
+  text-align: right;
+}
+.board-list-note {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.board-tasks .notice {
+  margin: 12px 16px;
+}
+.board-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-top: 1px solid var(--subtle-line);
+  color: var(--muted);
+  font-size: 13px;
+}
+.board-foot .text-button {
+  font-size: 13px;
+}
+
+/* Task page. */
+.task-crumb {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.task-crumb a {
+  color: var(--muted);
+}
+.task-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.task-head h2 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: 600 22px/1.3 var(--sans);
+  letter-spacing: -0.015em;
+}
+.task-number {
+  margin-right: 12px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.task-head button {
+  flex: none;
+  margin-left: auto;
+}
+.task-head {
+  align-items: center;
+}
+.task-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 16px 0 24px;
+  font-size: 14px;
+}
+/* Each fact may shrink to the page, so a long name shortens instead of widening it. */
+.task-facts div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+.task-facts dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.task-facts dd {
+  margin: 0;
+}
+.task-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+.task-thread ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.task-thread li {
+  padding: 16px 20px;
+}
+.task-thread li + li {
+  border-top: 1px solid var(--subtle-line);
+}
+.task-message-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.task-message-head .agent-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.task-sender {
+  display: flex;
+  min-width: 0;
+}
+.task-message-head .task-kind {
+  flex: none;
+}
+.task-message-head time {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 13px;
+}
+.task-kind {
+  color: var(--muted);
+  font-size: 13px;
+}
+.task-kind::before {
+  content: "· ";
+}
+.task-thread .message-body {
+  font-size: 15px;
+}
+/* A finished row's result, after its title: "2 files · 3 links". The title shortens first. */
+.board-t.has-result {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+.board-t-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board-result-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+  white-space: pre;
+}
+.task-side {
+  display: grid;
+  gap: 20px;
+  font-size: 14px;
+}
+.task-side h3 {
+  margin: 0 0 6px;
+  font: 600 14px/1.3 var(--sans);
+}
+.task-side p {
+  margin: 0;
+}
+.task-side ul,
+.task-events {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.task-ref {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+  color: var(--ink);
+  text-decoration: none;
+}
+/* A dependency's title wraps to two lines, then shortens; hovering shows it whole. */
+.task-ref-title {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.task-ref:hover .task-ref-title {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.task-events li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+}
+.task-events li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.task-events time {
+  flex: none;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 13px;
+}
+.task-cancel {
+  display: grid;
+  gap: 12px;
+}
+.task-cancel p,
+.task-cancel label {
+  margin: 0;
+  line-height: 1.6;
+}
+.ops-console .task-cancel textarea {
+  width: 100%;
+  padding: 10px 12px;
+}
+
+/* Settings: the Board switch. */
+.board-setting {
+  margin-bottom: 16px;
+}
+.board-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 16px;
+}
+.board-switch input {
+  margin-top: 3px;
+}
+.board-switch strong {
+  display: block;
+  font-weight: 500;
+}
+.board-switch small {
+  display: block;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 14px;
+}
+.ops-server-settings .board-setting-channel {
+  max-width: none;
+  margin: 16px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--subtle-line);
+  color: var(--muted);
+}
+.board-setting-channel .board-name {
+  color: var(--ink);
+}
+.board-setting-cap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--subtle-line);
+}
+.board-setting-cap input {
+  /* Room for the "any" placeholder or "100", plus the padding and the number arrows. */
+  width: 9ch;
+}
+.board-setting-cap small {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 14px;
+}
+/* Settings: swarm memory (no switch), and where a new memory starts from. */
+.board-setting-memory {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--subtle-line);
+}
+.ops-server-settings .board-setting-about {
+  max-width: none;
+  margin: 0;
+}
+.board-setting-about strong {
+  display: block;
+  font-weight: 500;
+}
+.board-setting-about small {
+  display: block;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 14px;
+}
+.board-setting-source {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  max-width: 44ch;
+  margin: 16px 0 0;
+}
+.board-setting-source select {
+  max-width: 100%;
+}
+.board-setting-source small {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* Create dialog: Server or Swarm. */
+.create-kind {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.create-kind legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+.create-kind label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--subtle-line);
+  cursor: pointer;
+}
+.create-kind label.is-selected {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.ops-console .create-kind input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 4px 0 0;
+}
+.create-kind strong {
+  display: block;
+  font-weight: 500;
+}
+.create-kind small {
+  display: block;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.create-kind p {
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+
+/* Phone width (spec 9.6): one column; the list keeps number, title and state on the first line. */
+@media (max-width: 720px) {
+  .board,
+  .task-page,
+  .board-empty-state {
+    margin-top: 12px;
+  }
+  .board-summary {
+    padding: 16px;
+  }
+  .board-summary-top {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .board-summary-top p {
+    margin: 0;
+  }
+  .board-agents {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  .board-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Stalled and Failed rows: the time or silence goes under the title, so the title keeps the width. */
+  .board-row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 2px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .board-tool {
+    padding: 8px 12px;
+  }
+  .board-find {
+    flex-basis: 100%;
+    min-width: 0;
+    margin-left: 0;
+  }
+  .ops-console .board-find input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+    min-height: 44px;
+    font-size: 16px;
+  }
+  :root[data-surface="dashboard"] .ops-console .board-filter-button {
+    display: inline-flex;
+    min-height: 44px;
+  }
+  .board-filters {
+    display: none;
+    flex-basis: 100%;
+    flex-direction: column;
+  }
+  .board-filters[data-open] {
+    display: flex;
+  }
+  /* Each filter takes the row, as wide as Find tasks and Filter above it. */
+  .ops-console .board-filters select,
+  .ops-console .board-filters input {
+    width: 100%;
+    max-width: none;
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .board-cols {
+    display: none;
+  }
+  .board-tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "n t st"
+      ". meta meta";
+    row-gap: 2px;
+    padding: 10px 12px;
+  }
+  /* Only the list's rows: the task page uses the same classes outside this grid. */
+  .board-tr > .board-n {
+    grid-area: n;
+  }
+  .board-tr > .board-t {
+    grid-area: t;
+  }
+  .board-tr > .board-st {
+    grid-area: st;
+  }
+  .board-tr > .board-agent,
+  .board-tr > .board-lb,
+  .board-tr > .board-u {
+    grid-row: 2;
+    text-align: left;
+  }
+  .board-tr > .board-agent {
+    grid-column: 2;
+  }
+  .board-tr > .board-lb {
+    display: none;
+  }
+  .board-tr > .board-u {
+    grid-column: 3;
+    text-align: right;
+  }
+  .task-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .task-head button {
+    margin-left: 0;
+  }
+  .task-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

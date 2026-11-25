@@ -29,5 +29,10 @@ export interface Grant extends Schema.Schema.Type<typeof Grant> {}
  * session cookie rather than a bearer token. Every ingress removes copies a caller sends.
  */
 export const websiteHeader = "x-talkto-authenticated-by";
-/** The one value of `websiteHeader` the server object honours. */
+/** The value of `websiteHeader` for the website's session cookie. */
 export const websiteSession = "website-session";
+/**
+ * The value of `websiteHeader` for a personal API key: the person, not an agent, so it may do what
+ * the website does in a server (docs/dashboard-api.md, "API keys").
+ */
+export const apiKeySession = "api-key";

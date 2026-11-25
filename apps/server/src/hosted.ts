@@ -1,6 +1,8 @@
 import { run } from "@talkto/telemetry/effect";
 import * as A from "@talkto/api/agent";
 import * as Mcp from "./mcp.js";
+import * as BoardSettings from "./board/settings.js";
+import { present } from "./present.js";
 import * as Signals from "./signals.js";
 import * as SignalGuard from "./signal-guard.js";
 import { describeFailure } from "./failure-log.js";
@@ -11,10 +13,7 @@ import * as CloudflareAccess from "./cloudflare-access.js";
 import * as BetterAuthSwitch from "./better-auth-switch.js";
 import * as LocalIdentity from "./platform/local-identity.js";
 import { Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect";
-import { OpenApi } from "effect/unstable/httpapi";
-import { Api } from "@talkto/api/api";
-import * as P from "@talkto/api/platform";
-import * as O from "@talkto/api/onboarding";
+import * as OpenApiDocument from "@talkto/api/openapi";
 import * as Onboarding from "./onboarding/service.js";
 import type * as Starter from "./starter/service.js";
 import * as OnboardingAdapters from "./onboarding/adapters.js";
@@ -37,25 +36,19 @@ import * as ActivityD1 from "./platform/activity-d1.js";
 import * as Servers from "./platform/servers.js";
 import * as WorkOS from "./platform/workos.js";
 import { installGuide } from "@talkto/api/agent-guides";
-import instructions from "./instructions.md";
+import { agentGuide } from "./guide.js";
 import skill from "./skill.md";
 import * as Llms from "./llms.js";
 import * as Robots from "./robots.js";
 import { renderDocumentation } from "@talkto/api/documentation";
-import * as BillingApi from "@talkto/api/billing";
 import * as BillingHttp from "./billing/http.js";
 import * as SelfHostRetired from "./selfhost-retired.js";
-import * as StarterApi from "@talkto/api/starter";
 import * as StarterHttp from "./starter/http.js";
-import * as AccountApi from "@talkto/api/account";
-import * as EmailApi from "@talkto/api/email";
 import * as AccountHttp from "./account-deletion/http.js";
 import * as EmailHttp from "./email/http.js";
-import * as SignInsApi from "@talkto/api/sign-ins";
 import * as SignInsHttp from "./sign-ins/http.js";
+import * as ApiKeysHttp from "./api-keys/http.js";
 import * as FeedbackHttp from "./feedback/http.js";
-import * as ShareApi from "@talkto/api/share";
-import * as FeedbackApi from "@talkto/api/feedback";
 import * as ShareHttp from "./share/http.js";
 import * as GuestsApi from "@talkto/api/guests";
 import * as GuestsHttp from "./guests/http.js";
@@ -110,6 +103,7 @@ const status = (code: Model.Failure["code"]) =>
     people_limit_reached: 409,
     starter_unavailable: 409,
     server_limit_reached: 409,
+    api_key_limit_reached: 409,
     storage_unavailable: 503,
     identity_unavailable: 503,
   })[code];
@@ -120,54 +114,6 @@ const platformPath = (path: string) =>
   path.startsWith("/v1/accounts") ||
   path === "/v1/servers" ||
   /^\/v1\/servers\/[^/]+\/access(?:\/|$)/.test(path);
-const openapi = () => {
-  const core = OpenApi.fromApi(Api);
-  const platform = OpenApi.fromApi(P.Api);
-  const auth = OpenApi.fromApi(P.AuthApi);
-  const billing = OpenApi.fromApi(BillingApi.Api);
-  const onboarding = OpenApi.fromApi(O.Api);
-  const starter = OpenApi.fromApi(StarterApi.Api);
-  const account = OpenApi.fromApi(AccountApi.Api);
-  const email = OpenApi.fromApi(EmailApi.Api);
-  const signIns = OpenApi.fromApi(SignInsApi.Api);
-  const share = OpenApi.fromApi(ShareApi.Api);
-  const feedback = OpenApi.fromApi(FeedbackApi.Api);
-  const guests = OpenApi.fromApi(GuestsApi.Api);
-  return {
-    ...core,
-    paths: {
-      ...core.paths,
-      ...platform.paths,
-      ...auth.paths,
-      ...billing.paths,
-      ...onboarding.paths,
-      ...starter.paths,
-      ...account.paths,
-      ...email.paths,
-      ...signIns.paths,
-      ...share.paths,
-      ...feedback.paths,
-      ...guests.paths,
-    },
-    components: {
-      ...core.components,
-      schemas: {
-        ...core.components?.schemas,
-        ...platform.components?.schemas,
-        ...auth.components?.schemas,
-        ...billing.components?.schemas,
-        ...onboarding.components?.schemas,
-        ...starter.components?.schemas,
-        ...account.components?.schemas,
-        ...email.components?.schemas,
-        ...signIns.components?.schemas,
-        ...share.components?.schemas,
-        ...feedback.components?.schemas,
-        ...guests.components?.schemas,
-      },
-    },
-  };
-};
 const body = Effect.fn("Hosted.readBody")(function* (request: Request) {
   const stream = request.body;
   if (stream === null) return null;
@@ -431,7 +377,7 @@ const mcpIngress = Effect.fn("Hosted.mcp")(function* (
           resultMeta = {
             ...resultMeta,
             instructionSheet: renderDocumentation(
-              instructions,
+              agentGuide(BoardSettings.memoryFromEnv(env)),
               new URL(requestMeta.instructions.url).origin,
             ),
           };
@@ -485,6 +431,8 @@ const mcpIngress = Effect.fn("Hosted.mcp")(function* (
       app,
       origin,
       capabilities(env),
+      BoardSettings.fromEnv(env),
+      BoardSettings.memoryFromEnv(env),
     ).then(finish),
   );
 });
@@ -651,16 +599,20 @@ export function makeWorker(
           if (url.pathname === "/health") return Response.json({ status: "ok", meta });
           if (url.pathname === "/v1/offers") return await run(StarterHttp.offers(env, meta));
           if (url.pathname === "/instructions")
-            return new Response(renderDocumentation(instructions, url.origin), {
-              headers: { "content-type": "text/plain; charset=utf-8" },
-            });
+            return new Response(
+              renderDocumentation(agentGuide(BoardSettings.memoryFromEnv(env)), url.origin),
+              {
+                headers: { "content-type": "text/plain; charset=utf-8" },
+              },
+            );
           if (url.pathname === "/skill.md")
             return new Response(renderDocumentation(skill, url.origin), {
               headers: { "content-type": "text/markdown; charset=utf-8" },
             });
-          if (Llms.isLlmsPath(url.pathname)) return await Llms.serve(request, env.ASSETS);
+          if (Llms.isLlmsPath(url.pathname))
+            return await Llms.serve(request, env.ASSETS, BoardSettings.memoryFromEnv(env));
           if (url.pathname === Robots.path) return Robots.serve(request, Robots.isProduction(env));
-          if (url.pathname === "/openapi.json") return Response.json(openapi());
+          if (url.pathname === "/openapi.json") return Response.json(OpenApiDocument.document());
           if (url.pathname === "/auth") {
             const config = await run(WorkOS.configuration(env).pipe(Effect.result));
             if (Result.isFailure(config))
@@ -690,7 +642,25 @@ export function makeWorker(
             let verifiedRequest = request;
             let website = false;
             let edgeActor: Model.Actor | undefined;
-            if (auth.edge !== undefined) {
+            let byApiKey = false;
+            // Cloudflare Access checks every request before it gets here, so a copy behind it takes
+            // no keys. Better Auth checks its sessions in this Worker, as WorkOS does, so keys work.
+            const apiKey =
+              auth.signIn === "cloudflare-access" ? undefined : ApiKeysHttp.bearerKey(request);
+            if (apiKey !== undefined) {
+              const refused = yield* ApiKeysHttp.refusedNetwork(
+                env,
+                request,
+                apiKey,
+                Responses.metadata(origin, meta.requestId),
+              );
+              if (refused !== null) return refused;
+              // A personal API key acts as the person who made it; never as a website session.
+              edgeActor = yield* ApiKeysHttp.authenticate(env, apiKey, request, (task) =>
+                context?.waitUntil(task),
+              );
+              byApiKey = true;
+            } else if (auth.edge !== undefined) {
               const verified = yield* auth.edge.verify(request, "api");
               edgeActor = verified.actor;
               sessionUpdates.push(...(verified.setCookies ?? []));
@@ -727,6 +697,7 @@ export function makeWorker(
             headers.delete(Persons.nameHeader);
             headers.delete(UpdateSignal.rereadHeader);
             if (website) headers.set(Access.websiteHeader, Access.websiteSession);
+            else if (byApiKey) headers.set(Access.websiteHeader, Access.apiKeySession);
             headers.set("x-talkto-principal", actor.principalKey);
             // Joining or opening a person's chat can create their participant, named from their
             // verified WorkOS profile; nothing in the request names them.
@@ -744,7 +715,11 @@ export function makeWorker(
             });
             const requestMeta = Responses.metadata(origin, meta.requestId);
             // Edge-supplied, never a client header: Cloudflare overwrites cf-connecting-ip.
-            const evidence = { website, network: request.headers.get("cf-connecting-ip") };
+            const evidence: Model.Evidence = {
+              website,
+              network: request.headers.get("cf-connecting-ip"),
+              apiKey: byApiKey,
+            };
             if (/^\/v1\/(?:starter|accounts\/[^/]+\/starter)$/.test(url.pathname))
               return yield* StarterHttp.handle(
                 forwarded,
@@ -770,6 +745,8 @@ export function makeWorker(
               return yield* EmailHttp.handle(forwarded, actor, requestMeta, env);
             if (SignInsHttp.isPath(url.pathname))
               return yield* SignInsHttp.handle(forwarded, actor, requestMeta, env, auth.identity);
+            if (ApiKeysHttp.isPath(url.pathname))
+              return yield* ApiKeysHttp.handle(forwarded, actor, requestMeta, evidence, env);
             if (FeedbackHttp.isPath(url.pathname))
               return yield* FeedbackHttp.handle(
                 forwarded,
@@ -802,6 +779,7 @@ export function makeWorker(
                 forwarded,
                 actor,
                 requestMeta,
+                evidence,
                 env,
                 application(env, auth.identity),
               );
@@ -826,12 +804,13 @@ export function makeWorker(
                   try: () =>
                     web.handler(
                       forwarded,
-                      Context.make(
-                        PlatformHttp.RequestContext,
-                        auth.signIn === undefined
-                          ? { actor, meta: requestMeta, evidence }
-                          : { actor, meta: requestMeta, evidence, signIn: auth.signIn },
-                      ),
+                      Context.make(PlatformHttp.RequestContext, {
+                        actor,
+                        meta: requestMeta,
+                        evidence,
+                        boards: BoardSettings.fromEnv(env),
+                        ...present("signIn", auth.signIn),
+                      }),
                     ),
                   catch: (cause) => {
                     upstream = cause;
@@ -917,7 +896,8 @@ export function makeWorker(
         if (Result.isSuccess(parsed)) {
           if (
             parsed.success.error.code === "invitation_limited" ||
-            parsed.success.error.code === "feedback_limited"
+            parsed.success.error.code === "feedback_limited" ||
+            parsed.success.error.code === "rate_limited"
           )
             result.headers.set("retry-after", String(parsed.success.error.retryAfterSeconds));
           return finish(

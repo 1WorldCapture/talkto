@@ -21,6 +21,11 @@ export const Configuration = Schema.Struct({
   serversPerOrganization: Limit,
   /** Operator overrides of the cap by organization ID (`TALKTO_SERVER_LIMITS`). */
   serverLimits: Schema.Record(P.AccountId, Limit),
+  /**
+   * `TALKTO_BOARD=on`: creation may ask for a swarm server (`board: true`). Off, the request is
+   * created as a plain server, so no server list shows a board the deployment does not offer.
+   */
+  boards: Schema.Boolean,
 });
 /** Parsed resource admission policy. */
 export interface Configuration extends Schema.Schema.Type<typeof Configuration> {}
@@ -42,6 +47,9 @@ export const configuration = Effect.fn("Provisioning.configuration")(
         Schema.fromJsonString(Schema.Record(P.AccountId, Limit)),
         "TALKTO_SERVER_LIMITS",
       ).pipe(Config.withDefault({})),
+      boards:
+        (yield* Config.schema(Schema.String, "TALKTO_BOARD").pipe(Config.withDefault("off"))) ===
+        "on",
     };
   },
   (effect, env) =>

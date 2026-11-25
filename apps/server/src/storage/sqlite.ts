@@ -44,6 +44,12 @@ import removalsExtension from "../migrations/removals.sql";
 import historySizeExtension from "../migrations/history-size.sql";
 import wakeTestsExtension from "../migrations/wake-tests.sql";
 import serverNameExtension from "../migrations/server-name.sql";
+import boardExtension from "../migrations/board.sql";
+import taskHoldersExtension from "../migrations/task-holders.sql";
+import taskResultsExtension from "../migrations/task-results.sql";
+import memoryExtension from "../migrations/memory-repository.sql";
+import * as Board from "./board.js";
+import * as Memory from "./memory.js";
 import type * as Platform from "../platform/model.js";
 
 /** Incremental migrations after the bootstrap schema, applied in order when their version is absent. */
@@ -73,6 +79,12 @@ const extensions: ReadonlyArray<string> = [
   historySizeExtension,
   wakeTestsExtension,
   serverNameExtension,
+  boardExtension,
+  taskHoldersExtension,
+  // Its cleanup trigger on tasks touches only task_results and task_result_files.
+  taskResultsExtension,
+  // Swarm memory's ledger beside its Git repository: no triggers and no foreign keys.
+  memoryExtension,
 ];
 
 const epoch = (timestamp: M.Timestamp): number =>
@@ -236,6 +248,17 @@ const noticeColumn = Schema.NullOr(Schema.fromJsonString(M.MessageNotice)).pipe(
     ),
   }),
 );
+// Storage yields NULL for messages outside a task's thread; the model omits the key instead.
+const taskColumn = Schema.NullOr(Schema.fromJsonString(M.MessageTask)).pipe(
+  Schema.decodeTo(Schema.optionalKey(M.MessageTask), {
+    decode: SchemaGetter.transformOptional<typeof M.MessageTask.Encoded, M.MessageTask | null>(
+      Option.flatMap(Option.fromNullOr),
+    ),
+    encode: SchemaGetter.forbidden<M.MessageTask | null, typeof M.MessageTask.Encoded>(
+      () => "Message rows are decoded from storage, never encoded",
+    ),
+  }),
+);
 const messageRow = Schema.Struct({
   ...M.Message.fields,
   createdAt: timestamp,
@@ -244,6 +267,7 @@ const messageRow = Schema.Struct({
   priority: priorityColumn,
   mentions: mentionsColumn,
   notice: noticeColumn,
+  task: taskColumn,
 });
 const historyRow = Schema.Struct({
   plan: M.HistoryPlan,
@@ -325,7 +349,9 @@ const messageColumns = `id, seq AS sequence, conversation_id AS conversationId, 
   (SELECT json_group_array(x.participant_id) FROM (SELECT participant_id FROM message_mentions
    WHERE seq=messages.seq ORDER BY position) x) END AS mentions,
  (SELECT json_object('kind',n.kind,'channelId',n.channel_id,'channelName',k.name)
-  FROM message_notices n JOIN conversations k ON k.id=n.channel_id WHERE n.message_id=messages.id) AS notice`;
+  FROM message_notices n JOIN conversations k ON k.id=n.channel_id WHERE n.message_id=messages.id) AS notice,
+ (SELECT json_object('id',tm.task_id,'number',tk.number,'kind',tm.kind)
+  FROM task_messages tm JOIN tasks tk ON tk.id=tm.task_id WHERE tm.message_id=messages.id) AS task`;
 const transferColumns = `id, sender_id AS senderId, grant_id AS grantId, request_key AS requestKey, name, kind, bytes,
  sha256, file_count AS fileCount, manifest_bytes AS manifestBytes, created_at AS createdAt,
  upload_expires_at AS uploadExpiresAt, expires_at AS expiresAt, message_id AS messageId, pool_state AS poolState`;
@@ -348,6 +374,15 @@ const incoming = (selection: U.Selection & { readonly participantId: M.Participa
     selection.participantId,
     selection.participantId,
   ],
+});
+/**
+ * Thread messages delivered to the reader through its task selection (task_message_recipients):
+ * every selection but `tasks: "none"`, which old checkpoints without the field read as `mine`.
+ * Expects `m`.
+ */
+const threaded = (selection: U.Selection & { readonly participantId: M.ParticipantId }) => ({
+  sql: `?<>'none' AND EXISTS (SELECT 1 FROM task_message_recipients tr WHERE tr.participant_id=? AND tr.seq=m.seq)`,
+  bindings: [selection.tasks ?? "mine", selection.participantId],
 });
 /** Channel messages that @mention the reader reach it the way its own direct chats do. Expects `m`. */
 const mentioned = (selection: U.Selection & { readonly participantId: M.ParticipantId }) => ({
@@ -418,6 +453,13 @@ export interface Bootstrap {
   readonly grantId: M.GrantId | null;
   readonly principalKey: Access.PrincipalKey | null;
   readonly now: M.Timestamp;
+  /**
+   * Created as a swarm server: the board starts switched on. Its channel needs a creator, so the
+   * first create_tasks call (or the person switching the board on) creates it.
+   */
+  readonly board?: boolean;
+  /** The swarm server's starting claim cap (`board_settings.claim_cap`); absent or null is none. */
+  readonly claimCap?: number | null;
 }
 const hasSchema = (storage: DurableObjectStorage) =>
   storage.sql
@@ -482,7 +524,8 @@ export const initialize = Effect.fn("Sqlite.initialize")(function* (
   return yield* Effect.try({
     try: () =>
       storage.transactionSync(() => {
-        if (!hasSchema(storage)) {
+        const fresh = !hasSchema(storage);
+        if (fresh) {
           storage.sql.exec(migration);
           storage.sql.exec(
             "INSERT INTO server(singleton,id,name,created_at) VALUES(1,?,?,?)",
@@ -509,6 +552,12 @@ export const initialize = Effect.fn("Sqlite.initialize")(function* (
         }
         if (upgradeSchema(storage, seed.now) !== seed.serverId)
           throw new Error("Configured server identity does not match stored server");
+        if (fresh && seed.board === true)
+          storage.sql.exec(
+            "INSERT INTO board_settings(singleton,enabled,channel_id,claim_cap,changed_at) VALUES(1,1,NULL,?,?)",
+            seed.claimCap ?? null,
+            epoch(seed.now),
+          );
       }),
     catch: () =>
       unavailable("initialize: check configuration, migration version, and database integrity"),
@@ -710,6 +759,28 @@ export function layer(storage: DurableObjectStorage) {
       const { grantId, requestKey, ...item } = row;
       return { item, grantId, requestKey };
     };
+    /**
+     * Take `count` numbers from the messages AUTOINCREMENT sequence and return the last; the range is
+     * `last - count + 1 … last`. Renames and task events number themselves this way, so one
+     * get_updates checkpoint orders them with messages, and the next message is numbered after
+     * them. sqlite_sequence has no row before the first message.
+     */
+    const allocateSequence = Effect.fnUntraced(function* (count: number) {
+      yield* execute(
+        "INSERT INTO sqlite_sequence(name,seq) SELECT 'messages',0 WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name='messages')",
+      );
+      const allocated = yield* one(
+        Schema.Struct({ seq: M.Count }),
+        `UPDATE sqlite_sequence SET seq=MAX(seq,
+           COALESCE((SELECT seq FROM messages ORDER BY seq DESC LIMIT 1),0),
+           COALESCE((SELECT seq FROM participant_renames ORDER BY seq DESC LIMIT 1),0),
+           COALESCE((SELECT seq FROM task_events ORDER BY seq DESC LIMIT 1),0))+?
+         WHERE name='messages' RETURNING seq`,
+        [count],
+      );
+      if (allocated === null) return yield* Effect.die("The message sequence is missing");
+      return allocated.seq;
+    });
     const participant = (id: M.ParticipantId) =>
       one(participantRow, `SELECT ${participantColumns} FROM participants WHERE id=?`, [id]);
     const channel = (id: M.ConversationId) =>
@@ -717,11 +788,19 @@ export function layer(storage: DurableObjectStorage) {
         id,
       ]);
     const session: Persistence.Session = {
+      board: Board.make({ execute, all, one, allocateSequence }),
+      memory: Memory.make({ execute, all, one }),
+      // The head is the sequence's high-water mark, not the newest stored row: pruning removes
+      // finished tasks' events (and old messages), and a head that fell back would refuse every
+      // checkpoint saved after them. sqlite_sequence never goes down; the rows cover a server
+      // whose sequence row does not exist yet.
       updatesHead: () =>
         one(
           Schema.Struct({ generation: U.Generation, sequence: M.Count }),
-          `SELECT generation,MAX(COALESCE((SELECT seq FROM messages ORDER BY seq DESC LIMIT 1),0),
-           COALESCE((SELECT seq FROM participant_renames ORDER BY seq DESC LIMIT 1),0)) AS sequence
+          `SELECT generation,MAX(COALESCE((SELECT seq FROM sqlite_sequence WHERE name='messages'),0),
+           COALESCE((SELECT seq FROM messages ORDER BY seq DESC LIMIT 1),0),
+           COALESCE((SELECT seq FROM participant_renames ORDER BY seq DESC LIMIT 1),0),
+           COALESCE((SELECT seq FROM task_events ORDER BY seq DESC LIMIT 1),0)) AS sequence
            FROM updates_identity WHERE singleton=1`,
         ).pipe(
           Effect.flatMap((row) =>
@@ -731,10 +810,11 @@ export function layer(storage: DurableObjectStorage) {
       updateCandidates: (selection) => {
         const rule = incoming(selection);
         const mention = mentioned(selection);
+        const thread = threaded(selection);
         return all(
           Schema.Struct({ id: M.MessageId }),
           `SELECT m.id FROM messages m NOT INDEXED CROSS JOIN conversations c ON c.id=m.conversation_id
-          WHERE m.seq>? AND m.seq<=? AND (${rule.sql} OR (m.sender_id<>? AND ${mention.sql}))
+          WHERE m.seq>? AND m.seq<=? AND (${rule.sql} OR (m.sender_id<>? AND (${mention.sql} OR ${thread.sql})))
           ORDER BY m.seq LIMIT ?`,
           [
             selection.boundary,
@@ -742,6 +822,7 @@ export function layer(storage: DurableObjectStorage) {
             ...rule.bindings,
             selection.participantId,
             ...mention.bindings,
+            ...thread.bindings,
             selection.limit,
           ],
         ).pipe(Effect.map((rows) => rows.map((row) => row.id)));
@@ -771,8 +852,44 @@ export function layer(storage: DurableObjectStorage) {
                 ],
               )
             : [];
+        // Task readers also count their thread messages and task events (board.sql's recipient
+        // rows), or, following every task, every event others caused.
+        const tasks = selection.tasks ?? "mine";
+        const threads =
+          tasks === "none"
+            ? []
+            : yield* all(
+                row,
+                `SELECT m.id, m.seq FROM task_message_recipients tr JOIN messages m ON m.seq=tr.seq
+                WHERE tr.participant_id=? AND tr.seq>? ORDER BY tr.seq DESC LIMIT ?`,
+                [selection.participantId, selection.boundary, selection.limit],
+              );
+        const events =
+          tasks === "none"
+            ? []
+            : tasks === "all"
+              ? yield* all(
+                  row,
+                  `SELECT id, seq FROM task_events WHERE seq>? AND (actor_participant_id IS NULL
+                  OR actor_participant_id<>?) ORDER BY seq DESC LIMIT ?`,
+                  [selection.boundary, selection.participantId, selection.limit],
+                )
+              : yield* all(
+                  row,
+                  `SELECT e.id, e.seq FROM task_event_recipients r JOIN task_events e ON e.seq=r.seq
+                  WHERE r.participant_id=? AND r.seq>? ORDER BY r.seq DESC LIMIT ?`,
+                  [selection.participantId, selection.boundary, selection.limit],
+                );
         const seen = new Set(selected.map((item) => item.id));
-        const newest = [...selected, ...mentions.filter((item) => !seen.has(item.id))]
+        const newest = [
+          ...selected,
+          ...[...mentions, ...threads].filter((item) => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          }),
+          ...events,
+        ]
           .toSorted((a, b) => b.seq - a.seq)
           .slice(0, selection.limit);
         // Urgent rows are rare and indexed by sequence, so this walks only urgent messages.
@@ -819,7 +936,27 @@ export function layer(storage: DurableObjectStorage) {
                 [selection.boundary, reader, JSON.stringify(selection.channelIds), selection.limit],
               )
             : [];
-        const waking = new Set([...direct, ...mentions, ...notices].map((item) => item.id));
+        // Task events and thread messages that wake the reader (recipient rows with wakes = 1).
+        const tasks =
+          (selection.tasks ?? "mine") === "none"
+            ? []
+            : [
+                ...(yield* all(
+                  row,
+                  `SELECT e.id FROM task_event_recipients r JOIN task_events e ON e.seq=r.seq
+                  WHERE r.participant_id=? AND r.seq>? AND r.wakes=1 ORDER BY r.seq DESC LIMIT ?`,
+                  [reader, selection.boundary, selection.limit],
+                )),
+                ...(yield* all(
+                  row,
+                  `SELECT m.id FROM task_message_recipients tr JOIN messages m ON m.seq=tr.seq
+                  WHERE tr.participant_id=? AND tr.seq>? AND tr.wakes=1 ORDER BY tr.seq DESC LIMIT ?`,
+                  [reader, selection.boundary, selection.limit],
+                )),
+              ];
+        const waking = new Set(
+          [...direct, ...mentions, ...notices, ...tasks].map((item) => item.id),
+        );
         return Math.min(waking.size, selection.limit);
       }),
       putSignal: (signal) =>
@@ -1015,19 +1152,9 @@ export function layer(storage: DurableObjectStorage) {
           [grant, key],
         ),
       addRename: Effect.fn("Sqlite.addRename")(function* (record) {
-        // Take the next message sequence: messages and renames then share one order, and the next
-        // message is numbered after this rename. sqlite_sequence has no row before the first message.
-        yield* execute(
-          "INSERT INTO sqlite_sequence(name,seq) SELECT 'messages',0 WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name='messages')",
-        );
-        const allocated = yield* one(
-          Schema.Struct({ seq: M.Count }),
-          `UPDATE sqlite_sequence SET seq=MAX(seq,
-             COALESCE((SELECT seq FROM messages ORDER BY seq DESC LIMIT 1),0),
-             COALESCE((SELECT seq FROM participant_renames ORDER BY seq DESC LIMIT 1),0))+1
-           WHERE name='messages' RETURNING seq`,
-        );
-        if (allocated === null) return yield* Effect.die("The message sequence is missing");
+        // Take the next message sequence: messages, renames and task events then share one order,
+        // and the next message is numbered after this rename.
+        const allocated = { seq: yield* allocateSequence(1) };
         yield* execute(
           `INSERT INTO participant_renames(seq,id,participant_id,previous_name,name,renamed_by_participant_id,created_by_grant_id,request_key,created_at)
            VALUES(?,?,?,?,?,?,?,?,?)`,
