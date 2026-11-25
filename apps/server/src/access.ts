@@ -36,3 +36,24 @@ export const websiteSession = "website-session";
  * the website does in a server (docs/dashboard-api.md, "API keys").
  */
 export const apiKeySession = "api-key";
+/*
+  Invited agents (docs/agent-invites.md). The hosted Worker never knows an invited agent's ID: it
+  checks the key's tag and passes the key's SHA-256 as the principal `invited-key:<hash>`, which only
+  the server object resolves, to `invited:<id>`, while the agent's one participant is not removed.
+  A caller cannot send either form: the Worker sets the principal from verified credentials only.
+*/
+const invitedKeyPrefix = "invited-key:";
+const invitedPrefix = "invited:";
+/** The principal the Worker passes for an invited agent's key, by the key's SHA-256 (hex). */
+export const invitedKey = (hash: string) => PrincipalKey.make(`${invitedKeyPrefix}${hash}`);
+/** The key hash an `invited-key:` principal carries, or null for any other principal. */
+export const invitedKeyHash = (principal: string) =>
+  principal.startsWith(invitedKeyPrefix) &&
+  /^[0-9a-f]{64}$/.test(principal.slice(invitedKeyPrefix.length))
+    ? principal.slice(invitedKeyPrefix.length)
+    : null;
+/** An invited agent's own principal: one grant on one server, never a person. */
+export const invitedPrincipal = (id: string) => PrincipalKey.make(`${invitedPrefix}${id}`);
+/** Whether a principal is an invited agent's. */
+export const isInvited = (principal: string) =>
+  principal.startsWith(invitedPrefix) || principal.startsWith(invitedKeyPrefix);

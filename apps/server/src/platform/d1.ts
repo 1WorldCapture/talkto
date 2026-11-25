@@ -657,6 +657,13 @@ export const layer = (
             "DELETE FROM activity_progress WHERE server_id=? AND EXISTS(SELECT 1 FROM servers WHERE id=? AND deletion_requested_at IS NOT NULL)",
             [id, id],
           ),
+          // Agent invites (docs/agent-invites.md): the server's links, waiting list and mode.
+          ...["agent_invite_requests", "agent_invites", "server_invite_modes"].map((table) =>
+            sql(
+              `DELETE FROM ${table} WHERE server_id=? AND EXISTS(SELECT 1 FROM servers WHERE id=? AND deletion_requested_at IS NOT NULL)`,
+              [id, id],
+            ),
+          ),
           // Earlier names go with the name: the tombstone keeps no content.
           sql(
             "DELETE FROM directory_renames WHERE kind='server' AND target_id=? AND EXISTS(SELECT 1 FROM servers WHERE id=? AND deletion_requested_at IS NOT NULL)",

@@ -531,6 +531,10 @@ test("how-it-works: the shared platform database holds the tables the page names
     mcp_revocations: "Signed-in computers",
     // Personal API keys (docs/dashboard-api.md, "API keys"): only the secret's hash.
     api_keys: "API keys",
+    // Agent invites (docs/agent-invites.md): links, requests to join and each server's mode.
+    agent_invites: "Agent invites",
+    agent_invite_requests: "Agent invites",
+    server_invite_modes: "Agent invites",
     // Feedback and bug reports (docs/feedback.md): from the dashboard and from agents.
     feedback: "Feedback",
     activity_progress: "The activity index",

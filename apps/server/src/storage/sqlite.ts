@@ -48,6 +48,7 @@ import boardExtension from "../migrations/board.sql";
 import taskHoldersExtension from "../migrations/task-holders.sql";
 import taskResultsExtension from "../migrations/task-results.sql";
 import memoryExtension from "../migrations/memory-repository.sql";
+import invitedExtension from "../migrations/invited.sql";
 import * as Board from "./board.js";
 import * as Memory from "./memory.js";
 import type * as Platform from "../platform/model.js";
@@ -85,6 +86,7 @@ const extensions: ReadonlyArray<string> = [
   taskResultsExtension,
   // Swarm memory's ledger beside its Git repository: no triggers and no foreign keys.
   memoryExtension,
+  invitedExtension,
 ];
 
 const epoch = (timestamp: M.Timestamp): number =>
@@ -131,6 +133,18 @@ const pluginColumn = Schema.NullOr(Schema.fromJsonString(pluginReport)).pipe(
     ),
   }),
 );
+// An invited agent's stored lineage (invited.sql); NULL for every other participant. The stored
+// JSON also names the origin's WorkOS user, which decoding drops.
+const inviteColumn = Schema.NullOr(Schema.fromJsonString(M.InviteLineage)).pipe(
+  Schema.decodeTo(Schema.optionalKey(M.InviteLineage), {
+    decode: SchemaGetter.transformOptional<typeof M.InviteLineage.Encoded, M.InviteLineage | null>(
+      Option.flatMap(Option.fromNullOr),
+    ),
+    encode: SchemaGetter.forbidden<M.InviteLineage | null, typeof M.InviteLineage.Encoded>(
+      () => "Participant rows are decoded from storage, never encoded",
+    ),
+  }),
+);
 // Storage yields NULL for agents nobody removed; the model omits the key for them.
 const removedColumn = Schema.NullOr(timestamp).pipe(
   Schema.decodeTo(Schema.optionalKey(M.Timestamp), {
@@ -149,6 +163,7 @@ const participantRow = Schema.Struct({
   kind: kindColumn,
   wakeCadence: cadenceColumn,
   plugin: pluginColumn,
+  invite: inviteColumn,
   removedAt: removedColumn,
 });
 const updateParticipantRow = Schema.Struct({ ...U.Participant.fields, kind: kindColumn });
@@ -326,6 +341,7 @@ const participantColumns = `id, name, agent_type AS agentType, working_directory
  (SELECT cadence FROM participant_wake_cadence WHERE participant_id=participants.id) AS wakeCadence,
  (SELECT json_object('name',plugin,'version',version,'seenAt',seen_at) FROM participant_plugins
    WHERE participant_id=participants.id) AS plugin,
+ (SELECT lineage FROM invited_agents WHERE participant_id=participants.id) AS invite,
  (SELECT removed_at FROM participant_removals WHERE participant_id=participants.id) AS removedAt`;
 const conversationColumns = `id, kind, created_by_participant_id AS createdByParticipantId,
  created_at AS createdAt, message_count AS messageCount, last_message_at AS lastMessageAt,
@@ -583,10 +599,24 @@ export const resolveAccess = Effect.fn("Sqlite.resolveAccess")(function* (
           .toArray().length === 0
       )
         return null;
+      // An invited agent's key arrives as its hash (Access.invitedKey). It resolves to its own
+      // principal only while its one participant is not removed: a removed agent's key stops at once.
+      const hash = Access.invitedKeyHash(principalKey);
+      const principal =
+        hash === null
+          ? principalKey
+          : (storage.sql
+              .exec<{ id: string }>(
+                "SELECT i.id FROM invited_agents i WHERE i.key_hash=? AND NOT EXISTS (SELECT 1 FROM participant_removals r WHERE r.participant_id=i.participant_id)",
+                hash,
+              )
+              .toArray()
+              .map((row) => Access.invitedPrincipal(row.id))[0] ?? null);
+      if (principal === null) return null;
       const rows = storage.sql
         .exec(
           "SELECT s.id AS serverId,g.id AS grantId,g.principal_key AS principalKey FROM server s JOIN server_grants g ON g.principal_key=? AND g.revoked_at IS NULL",
-          principalKey,
+          principal,
         )
         .toArray();
       return Schema.decodeUnknownSync(Schema.Array(Access.AccessContext))(rows)[0] ?? null;
@@ -1688,3 +1718,175 @@ export function layer(storage: DurableObjectStorage) {
     });
   });
 }
+
+/**
+ * Give an invited agent its one grant (docs/agent-invites.md): the grant's ID is the invited
+ * agent's, under `invited:<id>`. Repeating it changes nothing.
+ */
+export const grantInvited = Effect.fn("Sqlite.grantInvited")(function* (
+  storage: DurableObjectStorage,
+  id: string,
+  at: number,
+) {
+  yield* Effect.try({
+    try: () =>
+      storage.sql.exec(
+        "INSERT INTO server_grants(id,principal_key,created_at,revoked_at) VALUES(?,?,?,NULL) ON CONFLICT(id) DO NOTHING",
+        id,
+        Access.invitedPrincipal(id),
+        at,
+      ),
+    catch: () => unavailable("grantInvited"),
+  });
+});
+
+/**
+ * Record an admitted agent: its one participant, its key's hash and its lineage. Picking the key up
+ * again replaces the hash, so only the newest key works.
+ */
+export const recordInvited = Effect.fn("Sqlite.recordInvited")(function* (
+  storage: DurableObjectStorage,
+  row: {
+    readonly id: string;
+    readonly participantId: M.ParticipantId;
+    readonly keyHash: string;
+    readonly lineage: string;
+    readonly at: number;
+  },
+) {
+  yield* Effect.try({
+    try: () =>
+      storage.sql.exec(
+        "INSERT INTO invited_agents(id,participant_id,key_hash,lineage,admitted_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET key_hash=excluded.key_hash",
+        row.id,
+        row.participantId,
+        row.keyHash,
+        row.lineage,
+        row.at,
+      ),
+    catch: () => unavailable("recordInvited"),
+  });
+});
+
+/** Invited agents' lineage JSON by participant, for the participants listed. */
+/** The name and ID an invite chain shows once the person it began with deleted their account. */
+export const deletedOrigin = { userId: "deleted", name: "Deleted person" } as const;
+/** Invited agents whose chain began with this person stop naming them. */
+export const forgetInviteOrigin = Effect.fn("Sqlite.forgetInviteOrigin")(function* (
+  storage: DurableObjectStorage,
+  userId: string,
+) {
+  yield* Effect.try({
+    try: () =>
+      storage.sql.exec(
+        "UPDATE invited_agents SET lineage=json_set(lineage,'$.origin',?,'$.originUserId',?) WHERE json_extract(lineage,'$.originUserId')=?",
+        deletedOrigin.name,
+        deletedOrigin.userId,
+        userId,
+      ),
+    catch: () => unavailable("forgetInviteOrigin"),
+  });
+});
+/** Whether a participant on the server already has this name (any case), removed ones included. */
+export const nameTaken = Effect.fn("Sqlite.nameTaken")(function* (
+  storage: DurableObjectStorage,
+  name: string,
+) {
+  return yield* Effect.try({
+    try: () =>
+      storage.sql.exec("SELECT 1 FROM participants WHERE name=? COLLATE NOCASE", name).toArray()
+        .length > 0,
+    catch: () => unavailable("nameTaken"),
+  });
+});
+/** Whether a participant was removed from the server. */
+export const isRemoved = Effect.fn("Sqlite.isRemoved")(function* (
+  storage: DurableObjectStorage,
+  participantId: string,
+) {
+  return yield* Effect.try({
+    try: () =>
+      storage.sql
+        .exec("SELECT 1 FROM participant_removals WHERE participant_id=?", participantId)
+        .toArray().length > 0,
+    catch: () => unavailable("isRemoved"),
+  });
+});
+/** Whether an invited agent was already admitted (a second pickup rotates its key). */
+export const isAdmitted = Effect.fn("Sqlite.isAdmitted")(function* (
+  storage: DurableObjectStorage,
+  id: string,
+) {
+  return yield* Effect.try({
+    try: () => storage.sql.exec("SELECT 1 FROM invited_agents WHERE id=?", id).toArray().length > 0,
+    catch: () => unavailable("isAdmitted"),
+  });
+});
+/** The agents one agent invited directly that are still on the server. */
+export const invitedBy = Effect.fn("Sqlite.invitedBy")(function* (
+  storage: DurableObjectStorage,
+  participantId: string,
+) {
+  return yield* Effect.try({
+    try: () =>
+      storage.sql
+        .exec<{ participant_id: string }>(
+          `SELECT i.participant_id FROM invited_agents i
+           WHERE json_extract(i.lineage,'$.invitedBy.participantId')=?
+           AND NOT EXISTS (SELECT 1 FROM participant_removals r WHERE r.participant_id=i.participant_id)
+           ORDER BY i.admitted_at`,
+          participantId,
+        )
+        .toArray()
+        .map((row) => M.ParticipantId.make(row.participant_id)),
+    catch: () => unavailable("invitedBy"),
+  });
+});
+export const invitedLineage = Effect.fn("Sqlite.invitedLineage")(function* (
+  storage: DurableObjectStorage,
+) {
+  return yield* Effect.try({
+    try: () =>
+      new Map(
+        storage.sql
+          .exec<{ participant_id: string; lineage: string }>(
+            "SELECT participant_id,lineage FROM invited_agents",
+          )
+          .toArray()
+          .map((row) => [row.participant_id, row.lineage] as const),
+      ),
+    catch: () => unavailable("invitedLineage"),
+  });
+});
+
+/**
+ * The agent making an invite, if the caller may act as it: an agent (not a person's participant),
+ * not removed, registered through the caller's own principal (an invited agent only ever matches
+ * its own participant). Its stored lineage too when it was itself invited.
+ */
+export const inviter = Effect.fn("Sqlite.inviter")(function* (
+  storage: DurableObjectStorage,
+  principalKey: Access.PrincipalKey,
+  participantId: string,
+) {
+  return yield* Effect.try({
+    try: () => {
+      const row = storage.sql
+        .exec<{ id: string; name: string; principal: string | null; lineage: string | null }>(
+          `SELECT p.id,p.name,g.principal_key AS principal,i.lineage FROM participants p
+           LEFT JOIN server_grants g ON g.id=p.created_by_grant_id
+           LEFT JOIN invited_agents i ON i.participant_id=p.id
+           WHERE p.id=? AND p.kind IS NULL
+           AND NOT EXISTS (SELECT 1 FROM participant_removals r WHERE r.participant_id=p.id)`,
+          participantId,
+        )
+        .toArray()[0];
+      if (row === undefined) return null;
+      // Only the agent's own registrant invites as it; an agent with none recorded invites for
+      // nobody (its person invites as themselves instead).
+      const own = row.principal === principalKey;
+      return { id: row.id, name: row.name, own, lineage: row.lineage };
+    },
+    catch: () => unavailable("inviter"),
+  });
+});

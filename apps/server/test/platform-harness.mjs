@@ -390,6 +390,7 @@ export async function start(t, options = {}) {
         "0026.sql",
         "0027.sql",
         "0028.sql",
+        "0029.sql",
       ].map((file) =>
         readFile(new URL(`../src/platform/migrations/${file}`, import.meta.url), "utf8"),
       ),

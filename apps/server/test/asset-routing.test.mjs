@@ -194,3 +194,16 @@ test("the favicons, touch icon and manifest are served with their types and link
   assert.match(docs.text, /<link rel="icon" type="image\/svg\+xml" href="\/docs\/favicon\.svg">/);
   assert.deepEqual((await get("/docs/favicon.svg")).bytes, (await get("/favicon.svg")).bytes);
 });
+
+// Agent invites' join page (src/invites/page.ts) is the Worker's, not the site's: an invite `url`
+// opens it. Without it in run_worker_first, the assets layer answers 404 and the Worker never runs.
+// Staging and production route exactly as wrangler.jsonc does (production-config.private.test.mjs,
+// which stays in the private repository with those configs).
+test("every deployment routes the invite join page to the Worker", async () => {
+  const Page = await load("../src/invites/page.ts");
+  for (const name of ["wrangler.jsonc", "wrangler.selfhost.example.jsonc"])
+    assert.ok(
+      raw(name).assets.run_worker_first.includes(Page.path),
+      `${name}: run_worker_first lacks ${Page.path}`,
+    );
+});

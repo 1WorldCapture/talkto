@@ -1,6 +1,7 @@
 import { Clock, Context, Effect, Schema } from "effect";
 import type * as M from "@talkto/api/models";
 import * as E from "@talkto/api/errors";
+import * as Access from "./access.js";
 import type { AccessContext } from "./access.js";
 import type * as Store from "./persistence.js";
 import * as Telemetry from "./telemetry.js";
@@ -56,6 +57,13 @@ export const requireAgent = Effect.fn("Actors.requireAgent")(function* (
 });
 
 /** Refusal for an agent operation naming an agent another person's access registered. */
+/** An invited agent's key registering another agent (docs/agent-invites.md). */
+export const invitedRegistration = () =>
+  new E.AgentNotOwned({
+    message:
+      "An invited agent is one agent: its key can't register another. Each new agent joins with its own invite.",
+  });
+
 export const notOwnAgent = () =>
   new E.AgentNotOwned({
     message:
@@ -130,7 +138,15 @@ export const requireOwnAgent = Effect.fn("Actors.requireOwnAgent")(function* (
 ) {
   const item = yield* requireAgent(tx, id);
   const registrant = yield* tx.registeredBy(item.id);
-  if (registrant === null || registrant === access.principalKey) return item;
+  if (registrant === access.principalKey) return item;
+  // An invited agent is an outsider: it acts only as its own agent, and nobody else acts as it,
+  // whatever the deployment's mode, and even for an agent with no recorded registrant.
+  if (
+    Access.isInvited(access.principalKey) ||
+    (registrant !== null && Access.isInvited(registrant))
+  )
+    return yield* notOwnAgent();
+  if (registrant === null) return item;
   if ((yield* AgentOwnership).mode() === "enforce") return yield* notOwnAgent();
   yield* watch(access, item.id);
   return item;

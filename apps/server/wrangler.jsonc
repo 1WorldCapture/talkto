@@ -27,6 +27,7 @@
       "/llms-full.txt",
       "/robots.txt",
       "/openapi.json",
+      "/join/agent",
       "/webhooks/*",
       "/email/*",
     ],

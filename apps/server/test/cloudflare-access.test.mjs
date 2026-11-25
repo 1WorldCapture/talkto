@@ -88,6 +88,11 @@ test("Access mode signs people in only with a valid Access token that carries an
   // Nor does a personal API key: Access checks every request first, so this copy takes no keys.
   const key = await x.raw("/v1/me", { headers: { authorization: `Bearer tk_${"a".repeat(43)}` } });
   assert.equal(key.status, 401);
+  // Nor an invited agent's key: it is refused before anything else.
+  const invited = await x.raw("/v1/me", {
+    headers: { authorization: `Bearer tka_${randomUUID()}.${"a".repeat(43)}` },
+  });
+  assert.equal(invited.status, 403);
 });
 
 test("Access mode is refused outside a self-hosted copy", async (t) => {

@@ -98,6 +98,8 @@ export class Store extends Context.Service<
     readonly finishOrganization: (accountId: P.AccountId, at: M.Timestamp) => Operation<void>;
     /** Revocations of the person's access to surviving servers not yet confirmed by the server. */
     readonly pendingAccess: (userId: P.UserId) => Operation<ReadonlyArray<Model.AccessCommand>>;
+    /** Live servers with invite links whose chain began with the person (docs/agent-invites.md). */
+    readonly inviteOrigins: (userId: P.UserId) => Operation<ReadonlyArray<M.ServerId>>;
     /**
      * Remove the person's remaining rows, hand management of servers they created in other
      * organizations to each organization's owner, and mark the deletion complete. Changes
@@ -347,6 +349,13 @@ export const layer = Layer.effect(
           yield* servers.forgetPerson(command);
           yield* directory.applied(command);
         }),
+        { concurrency: 5, discard: true },
+      );
+      // Invited agents' lineage lives in each server object; scrub it there before D1 forgets
+      // which servers hold it.
+      yield* Effect.forEach(
+        yield* store.inviteOrigins(userId),
+        (serverId) => servers.forgetInviteOrigin(serverId, userId),
         { concurrency: 5, discard: true },
       );
       if (!(yield* store.finish(userId, yield* now))) return yield* unfinished();

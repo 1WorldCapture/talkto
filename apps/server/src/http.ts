@@ -2,6 +2,7 @@ import { Clock, Context, DateTime, Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http";
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi";
 import { Api } from "@talkto/api/api";
+import * as Access from "./access.js";
 import * as Envelope from "@talkto/api/envelope";
 import * as Security from "@talkto/api/security";
 import * as M from "@talkto/api/models";
@@ -111,6 +112,23 @@ const respond = Effect.fn("Http.respond")(function* <A, C, F extends Errors.Fail
     },
   };
 });
+/**
+ * A person's own route: an invited agent is never a person (docs/agent-invites.md), so it is
+ * refused before the route can create or act as a person's participant.
+ */
+const asPerson = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const { access, meta } = yield* RequestContext;
+    if (Access.isInvited(access.principalKey))
+      return yield* Effect.fail(
+        Envelope.makeFailure(
+          "forbidden",
+          "An invited agent acts only as its own agent, never as a person.",
+          meta,
+        ),
+      );
+    return yield* effect;
+  });
 const handlers = HttpApiBuilder.group(Api, "server", (routes) =>
   Effect.gen(function* () {
     const service = yield* TalkTo.Service;
@@ -346,8 +364,12 @@ const handlers = HttpApiBuilder.group(Api, "server", (routes) =>
           { operation: "renameParticipant", participantId: params.participantId, kind: "admin" },
         ),
       renameAgent: ({ params, payload }) =>
-        RequestContext.use(({ person }) =>
-          respond(reads, params.serverId, (access) => service.renameAgent(access, person, payload)),
+        asPerson(
+          RequestContext.use(({ person }) =>
+            respond(reads, params.serverId, (access) =>
+              service.renameAgent(access, person, payload),
+            ),
+          ),
         ),
       removeAgent: ({ params }) => removal(params.serverId, params.participantId, "removed"),
       restoreAgent: ({ params }) => removal(params.serverId, params.participantId, "restored"),
@@ -395,19 +417,25 @@ const handlers = HttpApiBuilder.group(Api, "server", (routes) =>
           },
         ),
       getPersonSelf: ({ params }) =>
-        respond(reads, params.serverId, (access) => service.getPersonSelf(access)),
+        asPerson(respond(reads, params.serverId, (access) => service.getPersonSelf(access))),
       joinAsPerson: ({ params }) =>
-        RequestContext.use(({ person }) =>
-          respond(reads, params.serverId, (access) => service.joinAsPerson(access, person)),
+        asPerson(
+          RequestContext.use(({ person }) =>
+            respond(reads, params.serverId, (access) => service.joinAsPerson(access, person)),
+          ),
         ),
       openPersonDirectChat: ({ params, payload }) =>
-        RequestContext.use(({ person }) =>
-          respond(reads, params.serverId, (access) =>
-            service.openPersonDirectChat(access, person, payload),
+        asPerson(
+          RequestContext.use(({ person }) =>
+            respond(reads, params.serverId, (access) =>
+              service.openPersonDirectChat(access, person, payload),
+            ),
           ),
         ),
       sendPersonMessage: ({ params, payload }) =>
-        respond(reads, params.serverId, (access) => service.sendPersonMessage(access, payload)),
+        asPerson(
+          respond(reads, params.serverId, (access) => service.sendPersonMessage(access, payload)),
+        ),
       listDirectConversations: ({ params, query }) =>
         respond(
           reads,

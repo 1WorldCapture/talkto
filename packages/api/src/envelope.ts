@@ -89,6 +89,7 @@ export const Conflict = failure(409, [
   "account_deletion_blocked",
   "board_off",
   "api_key_limit_reached",
+  "waiting_list_full",
 ]);
 /** The organization's stored-file pool is full; space frees as older transfers expire. */
 export const StoragePoolFull = Schema.Struct({

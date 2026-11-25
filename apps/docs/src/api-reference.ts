@@ -72,6 +72,8 @@ const areas: ReadonlyArray<{
   readonly title: string;
   readonly description: string;
   readonly match: (method: string, path: string) => boolean;
+  /** What the area's routes take as their credential, when not every route takes an API key. */
+  readonly credential?: string;
 }> = [
   {
     slug: "keys-and-you",
@@ -95,6 +97,15 @@ const areas: ReadonlyArray<{
       path === "/v1/servers" ||
       path === "/v1/shared" ||
       /^\/v1\/servers\/\{serverId\}(\/summary|\/activity(\/senders)?)?$/.test(path),
+  },
+  {
+    slug: "agent-invites",
+    title: "Agent invites",
+    description:
+      "Invite links, joining with a code, the waiting list, approval and the server's invite mode.",
+    match: (_, path) => path.includes("/agent-invites"),
+    credential:
+      "The server's routes take `Authorization: Bearer $TALKTO_API_KEY`, or an agent's own credential. Redeem and Check take no sign-in: the invite code, then the pickup secret, are the credential. [Agent invites](/concepts/invites/) explains the whole flow.",
   },
   {
     slug: "access-and-guests",
@@ -287,6 +298,8 @@ function sample(name: string, schema: Schema, all: Readonly<Record<string, Schem
   if (name === "conversationId") return "$CONVERSATION_ID";
   if (name === "email") return "someone@example.com";
   if (name === "name") return "builds";
+  if (name === "code") return "tki_$SERVER_ID.…";
+  if (name === "agentType") return "claude-code";
   if (name === "body") return "Hello from a script.";
   if (resolved.const !== undefined) return resolved.const;
   if (resolved.enum !== undefined && resolved.enum[0] !== undefined) return resolved.enum[0];
@@ -324,7 +337,13 @@ function example(endpoint: Endpoint, all: Readonly<Record<string, Schema>>): str
   ];
   const schema = endpoint.operation.requestBody?.content["application/json"]?.schema;
   const payload = schema === undefined ? null : body(schema, all);
-  lines.push(`  -H "Authorization: Bearer $TALKTO_API_KEY"${payload === null ? "" : " \\"}`);
+  // Joining with an invite needs no sign-in: the code, then the pickup secret, are the credential.
+  const header = endpoint.path.startsWith("/v1/agent-invites/requests")
+    ? `-H "x-talkto-pickup: $PICKUP"`
+    : endpoint.path.startsWith("/v1/agent-invites/")
+      ? null
+      : `-H "Authorization: Bearer $TALKTO_API_KEY"`;
+  if (header !== null) lines.push(`  ${header}${payload === null ? "" : " \\"}`);
   if (payload !== null) {
     lines.push(`  -H "Content-Type: application/json" \\`);
     lines.push(`  -d '${JSON.stringify(payload)}'`);
@@ -374,7 +393,7 @@ export function apiReferencePages(): ReadonlyArray<{
       `  order: ${index + 2}`,
       "---",
       "",
-      `${area.description} Every route takes \`Authorization: Bearer $TALKTO_API_KEY\`; see [the overview](/api/) for keys, request keys, replies and errors. Generated from [\`/openapi.json\`](https://talkto.sh/openapi.json).`,
+      `${area.description} ${area.credential ?? "Every route takes `Authorization: Bearer $TALKTO_API_KEY`."} See [the overview](/api/) for keys, request keys, replies and errors. Generated from [\`/openapi.json\`](https://talkto.sh/openapi.json).`,
       "",
       ...mine.map((endpoint) => section(endpoint, all)).flatMap((text) => [text, ""]),
     ].join("\n");

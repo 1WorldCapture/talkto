@@ -212,6 +212,8 @@ export class Servers extends Context.Service<
     readonly rename: (name: Model.ServerName) => Operation<void>;
     /** After an account deletion: rename the person's participant on that server, if any. */
     readonly forgetPerson: (command: Model.AccessCommand) => Operation<void>;
+    /** After an account deletion: invited agents' lineage on that server stops naming the person. */
+    readonly forgetInviteOrigin: (serverId: M.ServerId, userId: P.UserId) => Operation<void>;
     /**
      * What the server offers people for files: null without a file store, otherwise the
      * repository, with null in place of a repository the server could not answer. Never fails.

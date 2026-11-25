@@ -37,7 +37,8 @@
     "./api-keys": "./src/api-keys.ts",
     "./share": "./src/share.ts",
     "./guests": "./src/guests.ts",
-    "./openapi": "./src/openapi.ts"
+    "./openapi": "./src/openapi.ts",
+    "./agent-invites": "./src/agent-invites.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

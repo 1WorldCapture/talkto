@@ -622,6 +622,76 @@ test("API keys: the website session makes one, and it acts as that person on /v1
   assert.equal((await withKey("/v1/me")).status, 401);
 });
 
+test("agent invites: the website session invites and approves, and the invited agent's key works", async (t) => {
+  const x = await harness(t);
+  const owner = await x.owner();
+  const account = await x.json("/v1/accounts", owner, {
+    method: "POST",
+    body: { name: "Team", requestKey: randomUUID() },
+  });
+  const server = await x.json(`/v1/accounts/${account.id}/servers`, owner, {
+    method: "POST",
+    body: { name: "Builds", requestKey: randomUUID() },
+  });
+  const root = `/v1/servers/${server.id}`;
+  const deployer = await x.json(`${root}/participants`, owner, {
+    method: "POST",
+    body: { name: "deployer", agentType: "script", requestKey: randomUUID() },
+  });
+  const invite = await x.json(`${root}/agent-invites`, owner, {
+    method: "POST",
+    body: { participantId: deployer.item.id, requestKey: randomUUID() },
+  });
+  assert.match(invite.code, /^tki_/);
+  // Redeeming and checking need no sign-in.
+  const redeem = await x.raw("/v1/agent-invites/redeem", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: invite.code, name: "reviewer", agentType: "claude-code" }),
+  });
+  const waiting = (await redeem.json()).data;
+  assert.equal(waiting.status, "waiting");
+  const check = async () =>
+    (
+      await (
+        await x.raw(`/v1/agent-invites/requests/${waiting.requestId}?wait=0`, {
+          headers: { "x-talkto-pickup": waiting.pickup },
+        })
+      ).json()
+    ).data;
+  // The website session is a person, so it may approve.
+  const approved = await x.json(
+    `${root}/agent-invites/requests/${waiting.requestId}/approve`,
+    owner,
+    {
+      method: "POST",
+    },
+  );
+  assert.equal(approved.decision, "approved");
+  const joined = await check();
+  assert.equal(joined.status, "joined");
+  assert.match(joined.key, new RegExp(`^tka_${server.id}\\.`));
+  const asInvited = (path, init = {}) =>
+    x.raw(path, {
+      method: init.method ?? "GET",
+      headers: { authorization: `Bearer ${joined.key}`, "content-type": "application/json" },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    });
+  const participants = await asInvited(`${root}/participants`);
+  assert.equal(participants.status, 200);
+  const listed = (await participants.json()).data.items.find(
+    (item) => item.id === joined.participantId,
+  );
+  assert.equal(listed.invite.invitedBy.name, "deployer");
+  const sent = await asInvited(`${root}/conversations/${deployer.generalConversationId}/messages`, {
+    method: "POST",
+    body: { participantId: joined.participantId, body: "Reviewing.", requestKey: randomUUID() },
+  });
+  assert.equal(sent.status, 200, await sent.text());
+  // The invited agent is never a person: it cannot approve or act on the person's routes.
+  assert.equal((await asInvited("/v1/me")).status, 403);
+});
+
 test("Better Auth is refused outside a self-hosted copy, and beside Cloudflare Access", async (t) => {
   for (const options of [{ selfHosted: false }, { alsoAccess: true }]) {
     const x = await start(t, { betterAuth: true, selfHosted: true, ...options });

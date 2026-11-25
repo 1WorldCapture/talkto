@@ -30,6 +30,8 @@ import * as TalkTo from "./talkto.js";
 import * as Signal from "./update-signal.js";
 import * as Responses from "./responses.js";
 import * as Platform from "./platform/model.js";
+import * as InviteModel from "./invites/model.js";
+import type * as Inputs from "@talkto/api/inputs";
 import * as Projection from "./platform/activity-projection.js";
 import * as ActivitySearch from "./platform/activity-search.js";
 import * as Persistence from "./persistence.js";
@@ -79,6 +81,16 @@ const loggedServerId = (request: Request) =>
   );
 
 /** One independently authorized TalkTo server and its SQLite database. Only Worker bindings reach this class. */
+/** The registration an admitted agent's one participant is made from. */
+const registration = (admit: InviteModel.Admit): Inputs.RegisterParticipant => {
+  const input = {
+    requestKey: M.RequestKey.make(`invite:${admit.id}`),
+    name: admit.name,
+    agentType: admit.agentType,
+  };
+  return admit.note === null ? input : { ...input, joinedNote: admit.note };
+};
+
 export class TalkToServer extends DurableObject<Env> {
   private readonly ready;
   private readonly web;
@@ -866,6 +878,155 @@ export class TalkToServer extends DurableObject<Env> {
       () => ({ ok: false }),
     );
   }
+  /**
+   * Who is making an invite (docs/agent-invites.md): `participantId` is the inviting agent, which
+   * the caller must be able to act as; null when a person invites directly.
+   */
+  async inviter(
+    principal: Access.PrincipalKey,
+    participantId: string | null,
+  ): Promise<InviteModel.Inviter> {
+    return this.operation(
+      async (): Promise<InviteModel.Inviter> => {
+        if (Result.isFailure(await this.ready)) return { kind: "unavailable" };
+        const storage = this.ctx.storage;
+        const access = await run(this.resolveAccess(principal));
+        if (access === null) return { kind: "denied" };
+        // An invited agent always invites as its one participant.
+        if (participantId === null)
+          return Access.isInvited(access.principalKey)
+            ? { kind: "not_own_agent" }
+            : { kind: "inviter", invitedBy: null, chain: [], origin: null };
+        const found = await run(Sqlite.inviter(storage, access.principalKey, participantId));
+        if (found === null || !found.own) return { kind: "not_own_agent" };
+        const step = { participantId: M.ParticipantId.make(found.id), name: found.name };
+        if (found.lineage === null)
+          return { kind: "inviter", invitedBy: step, chain: [step], origin: null };
+        const stored = Schema.decodeUnknownSync(InviteModel.StoredLineage)(
+          JSON.parse(found.lineage),
+        );
+        return {
+          kind: "inviter",
+          invitedBy: step,
+          chain: [...stored.chain, step],
+          origin: { userId: stored.originUserId, name: stored.origin },
+        };
+      },
+      (): InviteModel.Inviter => ({ kind: "unavailable" }),
+    );
+  }
+  /**
+   * Admit an invited agent (docs/agent-invites.md): its one grant, its one participant, its key's
+   * hash and its lineage. Safe to repeat; a repeat replaces only the key's hash.
+   */
+  /**
+   * A person removes the agents one agent invited directly (docs/agent-invites.md), each as a
+   * removal on the dashboard would. The Worker checked that the caller is a person.
+   */
+  async removeInvitedBy(
+    principal: Access.PrincipalKey,
+    name: string,
+    participantId: string,
+  ): Promise<InviteModel.RemovedInvited> {
+    return this.operation(
+      async (): Promise<InviteModel.RemovedInvited> => {
+        if (Result.isFailure(await this.ready)) return { kind: "unavailable" };
+        const access = await run(this.resolveAccess(principal));
+        if (access === null || Access.isInvited(access.principalKey)) return { kind: "denied" };
+        const storage = this.ctx.storage;
+        const person = { name: Persons.fromHeader(name) };
+        return run(
+          Effect.gen(function* () {
+            const service = yield* TalkTo.Service;
+            const ids = yield* Sqlite.invitedBy(storage, participantId);
+            const removed: Array<M.ParticipantId> = [];
+            for (const id of ids) {
+              const result = yield* service
+                .setAgentRemoved(access, person, id, "removed")
+                .pipe(Effect.result);
+              if (Result.isSuccess(result) && result.success.data.changed) removed.push(id);
+            }
+            return { kind: "removed", participantIds: removed } as const;
+          }).pipe(
+            Effect.catch(() => Effect.succeed({ kind: "unavailable" } as const)),
+            Effect.provide(this.application),
+          ),
+        );
+      },
+      (): InviteModel.RemovedInvited => ({ kind: "unavailable" }),
+    );
+  }
+  /** Whether an agent redeeming an invite could join under this name: "taken" before a use is spent. */
+  async inviteName(name: string): Promise<"free" | "taken" | "unavailable"> {
+    return this.operation(
+      async () => {
+        if (Result.isFailure(await this.ready)) return "unavailable" as const;
+        const taken = await run(
+          Sqlite.nameTaken(this.ctx.storage, name).pipe(
+            Effect.map((value) => (value ? ("taken" as const) : ("free" as const))),
+            Effect.catch(() => Effect.succeed("unavailable" as const)),
+          ),
+        );
+        return taken;
+      },
+      () => "unavailable" as const,
+    );
+  }
+  async admitInvited(input: InviteModel.Admit): Promise<InviteModel.Admitted> {
+    return this.operation(
+      () => this.admit(input),
+      (): InviteModel.Admitted => ({ kind: "unavailable" }),
+    );
+  }
+  private async admit(input: InviteModel.Admit): Promise<InviteModel.Admitted> {
+    if (Result.isFailure(await this.ready)) return { kind: "unavailable" };
+    const parsed = Schema.decodeUnknownOption(InviteModel.Admit)(input);
+    if (parsed._tag === "None") return { kind: "unavailable" };
+    const admit = parsed.value;
+    const storage = this.ctx.storage;
+    return run(
+      Effect.gen(function* () {
+        const at = yield* Clock.currentTimeMillis;
+        // Removing an agent revokes its links in D1; should that have failed, no newcomer joins
+        // through a removed agent's link here either. One already in may still pick up its key.
+        const inviting = admit.lineage.invitedBy?.participantId ?? null;
+        if (
+          inviting !== null &&
+          (yield* Sqlite.isRemoved(storage, inviting)) &&
+          !(yield* Sqlite.isAdmitted(storage, admit.id))
+        )
+          return { kind: "revoked" } as const;
+        yield* Sqlite.grantInvited(storage, admit.id, at);
+        const access = yield* Sqlite.resolveAccess(
+          storage,
+          Access.invitedPrincipal(admit.id),
+          true,
+        );
+        if (access === null || access.serverId !== admit.serverId)
+          return { kind: "unavailable" } as const;
+        const service = yield* TalkTo.Service;
+        const registered = yield* service
+          .registerParticipant(access, registration(admit), true)
+          .pipe(Effect.result);
+        if (Result.isFailure(registered))
+          return registered.failure._tag === "NameTaken"
+            ? ({ kind: "name_taken", message: registered.failure.message } as const)
+            : ({ kind: "unavailable" } as const);
+        const participantId = registered.success.data.item.id;
+        yield* Sqlite.recordInvited(storage, {
+          id: admit.id,
+          participantId,
+          keyHash: admit.keyHash,
+          lineage: JSON.stringify(admit.lineage),
+          at,
+        });
+        return { kind: "joined", participantId } as const;
+      }).pipe(
+        Effect.catch(() => Effect.succeed({ kind: "unavailable" } as const)),
+        Effect.provide(this.application),
+      ),
+    );
+  }
   /** Take a new name from the platform directory (Platform.Servers.rename); stale ones are ignored. */
   async renameServer(input: Platform.ServerName) {
     return this.operation(
@@ -874,6 +1035,24 @@ export class TalkToServer extends DurableObject<Env> {
         return run(
           Schema.decodeUnknownEffect(Platform.ServerName)(input).pipe(
             Effect.flatMap((change) => Sqlite.renameServer(this.ctx.storage, change)),
+            Effect.match({ onFailure: () => ({ ok: false }), onSuccess: () => ({ ok: true }) }),
+          ),
+        );
+      },
+      () => ({ ok: false }),
+      true,
+    );
+  }
+  /**
+   * After a person deletes their account: invited agents whose chain began with them name a
+   * deleted person (docs/agent-invites.md). New links copy the scrubbed origin.
+   */
+  async forgetInviteOrigin(userId: string) {
+    return this.operation(
+      async () => {
+        if (Result.isFailure(await this.ready)) return { ok: false };
+        return run(
+          Sqlite.forgetInviteOrigin(this.ctx.storage, userId).pipe(
             Effect.match({ onFailure: () => ({ ok: false }), onSuccess: () => ({ ok: true }) }),
           ),
         );

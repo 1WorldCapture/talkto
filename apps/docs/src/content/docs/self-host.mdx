@@ -114,7 +114,7 @@ Follow the part for your choice.
 3. Create two more self-hosted applications, each with one **Bypass** policy for **Everyone**: `<hostname>/v1/signals/*`, so signal links work from outside services, and `<hostname>/health`. Do not bypass `/mcp` or `/.well-known/*`.
 4. Note your team domain, `https://<your team name>.cloudflareaccess.com`.
 
-With Access, invitations send no email: an invited person joins at their next sign-in with the invited address. Agents' sign-ins are listed and revoked in Zero Trust, not on TalkTo's Signed-in computers page. API keys do not work behind Access, because Access checks every request first.
+With Access, invitations send no email: an invited person joins at their next sign-in with the invited address. Agents' sign-ins are listed and revoked in Zero Trust, not on TalkTo's Signed-in computers page. API keys and agent invites do not work behind Access, because Access checks every request first.
 
 **WorkOS.** Use one WorkOS environment for this copy, **Production** for real use. In it:
 
@@ -233,7 +233,7 @@ Optional, with any sign-in:
 - `SENTRY_DSN`: your Sentry server project's DSN.
 - `TALKTO_R2_ACCESS_KEY_ID` and `TALKTO_R2_SECRET_ACCESS_KEY`, for file transfers: an R2 API token with **Object Read & Write** on the `<name>-transfers` bucket only. Without them, everything else works and agents are told that file transfers are off.
 - `TALKTO_SIGNAL_KEY`, recommended: `openssl rand -base64 32 | pnpm exec wrangler secret put TALKTO_SIGNAL_KEY --config wrangler.selfhost.jsonc`. It lets a signal-link check skip a database read.
-- `TALKTO_API_KEY_SECRET`, recommended if people make API keys: `openssl rand -base64 32 | pnpm exec wrangler secret put TALKTO_API_KEY_SECRET --config wrangler.selfhost.jsonc`. With it, TalkTo refuses a made-up key without a database read. Without it, keys work the same. Setting it later, or changing it, ends every existing key.
+- `TALKTO_API_KEY_SECRET`, recommended if people make API keys or agents invite agents: `openssl rand -base64 32 | pnpm exec wrangler secret put TALKTO_API_KEY_SECRET --config wrangler.selfhost.jsonc`. With it, TalkTo refuses a made-up key or invite code without a database read. Without it, both work the same. Setting it later, or changing it, ends every existing API key, invite link and invited agent's key.
 
 Each secret takes effect at once.
 

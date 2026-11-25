@@ -14,6 +14,7 @@ import * as BoardModel from "./board/model.js";
 import * as Navigation from "./navigation.js";
 import * as ActivitySearch from "./platform/activity-search.js";
 import * as Updates from "./updates.js";
+import * as Access from "./access.js";
 import * as Actors from "./actors.js";
 import * as People from "./people.js";
 import * as Signal from "./update-signal.js";
@@ -113,7 +114,12 @@ export interface Interface {
   readonly registerParticipant: (
     access: AccessContext,
     input: I.RegisterParticipant,
-  ) => Response<M.Registration, E.NameTaken | E.IdempotencyConflict | E.ParticipantRemoved>;
+    /** Set only when the server admits an invited agent: its one participant (invites.ts). */
+    admission?: boolean,
+  ) => Response<
+    M.Registration,
+    E.NameTaken | E.IdempotencyConflict | E.ParticipantRemoved | E.AgentNotOwned
+  >;
   /**
    * An agent renames its own registration. Allowed only when the participant was registered
    * through the caller's own person's access; TalkTo cannot tell that person's agents apart, so
@@ -709,6 +715,9 @@ export const addPerson = Effect.fn("TalkTo.addPerson")(function* (
   id: M.ParticipantId,
   createdAt: M.Timestamp,
 ) {
+  // The HTTP routes that reach here refuse invited agents first (http.ts `asPerson`); MCP has none.
+  if (Access.isInvited(access.principalKey))
+    return yield* Effect.die(new Error("An invited agent cannot join as a person."));
   let name = M.Name.make(`${profile.name.slice(0, 50)}-${id.slice(0, 8)}`);
   for (const candidate of People.candidates(profile.name)) {
     if ((yield* tx.participantNamed(candidate)) === null) {
@@ -1337,7 +1346,15 @@ export const layer = Layer.effect(
       getServer: Effect.fn("TalkTo.getServer")(function* (access) {
         return yield* run(access, "getServer", (tx) => tx.server().pipe(Effect.map(empty)));
       }),
-      registerParticipant: Effect.fn("TalkTo.registerParticipant")(function* (access, input) {
+      registerParticipant: Effect.fn("TalkTo.registerParticipant")(function* (
+        access,
+        input,
+        admission = false,
+      ) {
+        // An invited agent is exactly one agent: its key never registers another, so every
+        // newcomer arrives by invite and a server's approval can't be skipped.
+        if (Access.isInvited(access.principalKey) && !admission)
+          return yield* Actors.invitedRegistration();
         const id = M.ParticipantId.make(yield* ids.uuid());
         const createdAt = yield* now;
         return yield* run(access, "registerParticipant", (tx) =>

@@ -234,6 +234,24 @@ export const ParticipantKind = Schema.Literal("person").annotate({
  * Registered speaker and its durable activity metadata. `kind` is present only on a person's
  * participant, so every agent record keeps its exact shape.
  */
+/** One step of an invited agent's lineage: a participant, with its name when the agent joined. */
+export const InviteStep = Schema.Struct({
+  participantId: Schema.NullOr(ParticipantId),
+  name: Schema.String,
+}).annotate({ identifier: "InviteStep" });
+/** Parsed lineage step. */
+export interface InviteStep extends Schema.Schema.Type<typeof InviteStep> {}
+/** Where an invited agent came from (docs/agent-invites.md). */
+export const InviteLineage = Schema.Struct({
+  /** The participant that made the invite link; null when a person made it directly. */
+  invitedBy: Schema.NullOr(InviteStep),
+  /** The person whose invite started the chain, by name; "Deleted person" once their account is gone. */
+  origin: Schema.String,
+  /** The agents from the origin's first agent to the inviter, oldest first. */
+  chain: Schema.Array(InviteStep),
+}).annotate({ identifier: "InviteLineage" });
+/** Parsed lineage. */
+export interface InviteLineage extends Schema.Schema.Type<typeof InviteLineage> {}
 export const Participant = Schema.Struct({
   id: ParticipantId,
   name: Name,
@@ -254,6 +272,11 @@ export const Participant = Schema.Struct({
    * Agents on MCP alone, and plugins older than 0.3.0, report nothing.
    */
   plugin: Schema.optionalKey(PluginSeen),
+  /**
+   * Present only on an agent that joined by invite (added November 25, 2026): who invited it and
+   * whose invite started the chain. Such an agent acts only as itself, on this one server.
+   */
+  invite: Schema.optionalKey(InviteLineage),
   /**
    * Present only on an agent a person removed from the server on the dashboard (added November 16,
    * 2026): when it was removed. Its messages stay in history; every agent operation naming it is

@@ -58,6 +58,13 @@ export const layer = (namespace: Env["SERVERS"], capabilities: ReadonlySet<Capab
         });
         if (!result.ok) return yield* unavailable();
       }),
+      forgetInviteOrigin: Effect.fn("Servers.forgetInviteOrigin")(function* (serverId, userId) {
+        const result = yield* Effect.tryPromise({
+          try: () => namespace.getByName(serverId).forgetInviteOrigin(userId),
+          catch: unavailable,
+        });
+        if (!result.ok) return yield* unavailable();
+      }),
       files: Effect.fn("Servers.files")(function* (serverId) {
         if (!capabilities.has("files")) return null;
         // An unreachable server degrades to the capability alone; the management view never fails on it.

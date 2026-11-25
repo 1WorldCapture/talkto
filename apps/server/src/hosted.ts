@@ -48,6 +48,8 @@ import * as AccountHttp from "./account-deletion/http.js";
 import * as EmailHttp from "./email/http.js";
 import * as SignInsHttp from "./sign-ins/http.js";
 import * as ApiKeysHttp from "./api-keys/http.js";
+import * as InvitesHttp from "./invites/http.js";
+import * as InvitePage from "./invites/page.js";
 import * as FeedbackHttp from "./feedback/http.js";
 import * as ShareHttp from "./share/http.js";
 import * as GuestsApi from "@talkto/api/guests";
@@ -605,6 +607,7 @@ export function makeWorker(
                 headers: { "content-type": "text/plain; charset=utf-8" },
               },
             );
+          if (url.pathname === InvitePage.path) return InvitePage.serve(url.origin);
           if (url.pathname === "/skill.md")
             return new Response(renderDocumentation(skill, url.origin), {
               headers: { "content-type": "text/markdown; charset=utf-8" },
@@ -639,6 +642,39 @@ export function makeWorker(
               ),
             );
             const auth = yield* authenticate(env);
+            const inviteUrl = new URL(request.url);
+            // Agent invites (docs/agent-invites.md): redeeming a code and checking a request need
+            // no sign-in, so they are answered before any.
+            if (InvitesHttp.isJoinPath(inviteUrl.pathname))
+              return yield* InvitesHttp.join(
+                request,
+                env,
+                Responses.metadata(origin, meta.requestId),
+                origin,
+              );
+            // An invited agent's key: one server, one participant, agent routes only. It is checked
+            // without D1 and passed to the server object as its hash; it is never a person.
+            const invitedKey = InvitesHttp.bearerKey(request);
+            let invited: { readonly principal: Access.PrincipalKey } | undefined;
+            if (invitedKey !== undefined) {
+              // Behind Cloudflare Access an invited agent never gets this far; Better Auth, like
+              // WorkOS, lets the key through to its own check.
+              if (auth.signIn === "cloudflare-access")
+                return Responses.failure(
+                  403,
+                  "forbidden",
+                  "Invited agents' keys do not work on a copy behind Cloudflare Access.",
+                  meta,
+                );
+              const checked = yield* InvitesHttp.verify(
+                request,
+                env,
+                invitedKey,
+                Responses.metadata(origin, meta.requestId),
+              );
+              if (checked.kind === "refused") return checked.response;
+              invited = { principal: checked.principal };
+            }
             let verifiedRequest = request;
             let website = false;
             let edgeActor: Model.Actor | undefined;
@@ -647,7 +683,9 @@ export function makeWorker(
             // no keys. Better Auth checks its sessions in this Worker, as WorkOS does, so keys work.
             const apiKey =
               auth.signIn === "cloudflare-access" ? undefined : ApiKeysHttp.bearerKey(request);
-            if (apiKey !== undefined) {
+            if (invited !== undefined) {
+              // An invited agent is never a person: it has no actor and no WorkOS user, below.
+            } else if (apiKey !== undefined) {
               const refused = yield* ApiKeysHttp.refusedNetwork(
                 env,
                 request,
@@ -679,7 +717,17 @@ export function makeWorker(
               verifiedRequest = new Request(request.url, { headers });
               website = true;
             }
-            const actor = edgeActor ?? (yield* auth.verify(verifiedRequest));
+            // Who is calling: an invited agent (a principal only, on its server's agent routes), or a
+            // person's actor. Only the latter has a WorkOS user.
+            const caller =
+              invited !== undefined
+                ? ({ kind: "invited", principalKey: invited.principal } as const)
+                : ({
+                    kind: "person",
+                    actor: edgeActor ?? (yield* auth.verify(verifiedRequest)),
+                  } as const);
+            const principalKey =
+              caller.kind === "invited" ? caller.principalKey : caller.actor.principalKey;
             const payload = yield* body(request);
             if (payload === "too_large")
               return Responses.failure(
@@ -698,12 +746,16 @@ export function makeWorker(
             headers.delete(UpdateSignal.rereadHeader);
             if (website) headers.set(Access.websiteHeader, Access.websiteSession);
             else if (byApiKey) headers.set(Access.websiteHeader, Access.apiKeySession);
-            headers.set("x-talkto-principal", actor.principalKey);
+            headers.set("x-talkto-principal", principalKey);
             // Joining or opening a person's chat can create their participant, named from their
             // verified WorkOS profile; nothing in the request names them.
-            if (request.method === "POST" && Persons.createsPerson(url.pathname)) {
+            if (
+              caller.kind === "person" &&
+              request.method === "POST" &&
+              Persons.createsPerson(url.pathname)
+            ) {
               const user = yield* Platform.Identity.use((identity) =>
-                identity.user(actor.userId),
+                identity.user(caller.actor.userId),
               ).pipe(Effect.provide(auth.identity));
               headers.set(Persons.nameHeader, Persons.displayName(user));
             }
@@ -720,6 +772,90 @@ export function makeWorker(
               network: request.headers.get("cf-connecting-ip"),
               apiKey: byApiKey,
             };
+            /** Forward to the server object the path names, as this principal. */
+            const forward = (key: Access.PrincipalKey) =>
+              Effect.gen(function* () {
+                const parsed = Schema.decodeUnknownResult(M.ServerId)(url.pathname.split("/")[3]);
+                if (!url.pathname.startsWith("/v1/servers/") || Result.isFailure(parsed))
+                  return Responses.failure(
+                    404,
+                    "not_found",
+                    "The API route does not exist.",
+                    requestMeta,
+                  );
+                const caller = {
+                  serverId: parsed.success,
+                  principalKey: key,
+                  organizationId: null,
+                };
+                return yield* Effect.tryPromise({
+                  // An early retry of a refused read is answered from the Worker's memory; a waiting
+                  // POST …/updates is held here, on a watch, not in the server object.
+                  try: () =>
+                    run(
+                      Refusals.forward(
+                        caller,
+                        website,
+                        forwarded,
+                        payload,
+                        meta.requestId,
+                        Effect.suspend(() =>
+                          UpdateWait.forward(
+                            () => env.SERVERS.getByName(parsed.success),
+                            caller,
+                            forwarded,
+                            payload,
+                          ),
+                        ),
+                      ),
+                    ),
+                  // An overloaded, reset or CPU-limited server object lands here; its class is tagged.
+                  catch: (cause) => {
+                    upstream = cause;
+                    return new Model.Failure({
+                      code: "storage_unavailable",
+                      message: "The server is temporarily unavailable.",
+                    });
+                  },
+                });
+              });
+            if (caller.kind === "invited") {
+              if (InvitesHttp.isServerPath(url.pathname))
+                return yield* InvitesHttp.handle(
+                  forwarded,
+                  env,
+                  { principal: principalKey, userId: null, name: null, byPerson: false },
+                  requestMeta,
+                  origin,
+                );
+              // A removed agent's key, or one replaced by a later pickup, resolves to nothing in the
+              // server object: tell the agent to get a new invite, not that the server is gone.
+              return yield* InvitesHttp.stopped(yield* forward(principalKey), requestMeta);
+            }
+            const actor = caller.actor;
+            if (InvitesHttp.isServerPath(url.pathname)) {
+              const name =
+                request.method === "POST" &&
+                (/\/agent-invites$/.test(url.pathname) || /\/remove-invited$/.test(url.pathname))
+                  ? InvitesHttp.originName(
+                      yield* Platform.Identity.use((identity) => identity.user(actor.userId)).pipe(
+                        Effect.provide(auth.identity),
+                      ),
+                    )
+                  : null;
+              return yield* InvitesHttp.handle(
+                forwarded,
+                env,
+                {
+                  principal: actor.principalKey,
+                  userId: actor.userId,
+                  name,
+                  byPerson: Model.byPerson(evidence),
+                },
+                requestMeta,
+                origin,
+              );
+            }
             if (/^\/v1\/(?:starter|accounts\/[^/]+\/starter)$/.test(url.pathname))
               return yield* StarterHttp.handle(
                 forwarded,
@@ -824,49 +960,11 @@ export function makeWorker(
                 yield* Effect.promise(() => web.dispose());
               }
             }
-            const parsed = Schema.decodeUnknownResult(M.ServerId)(url.pathname.split("/")[3]);
-            if (!url.pathname.startsWith("/v1/servers/") || Result.isFailure(parsed))
-              return Responses.failure(
-                404,
-                "not_found",
-                "The API route does not exist.",
-                requestMeta,
-              );
-            const caller = {
-              serverId: parsed.success,
-              principalKey: actor.principalKey,
-              organizationId: null,
-            };
-            return yield* Effect.tryPromise({
-              // An early retry of a refused read is answered from the Worker's memory; a waiting
-              // POST …/updates is held here, on a watch, not in the server object.
-              try: () =>
-                run(
-                  Refusals.forward(
-                    caller,
-                    website,
-                    forwarded,
-                    payload,
-                    meta.requestId,
-                    Effect.suspend(() =>
-                      UpdateWait.forward(
-                        () => env.SERVERS.getByName(parsed.success),
-                        caller,
-                        forwarded,
-                        payload,
-                      ),
-                    ),
-                  ),
-                ),
-              // An overloaded, reset or CPU-limited server object lands here; its class is tagged.
-              catch: (cause) => {
-                upstream = cause;
-                return new Model.Failure({
-                  code: "storage_unavailable",
-                  message: "The server is temporarily unavailable.",
-                });
-              },
-            });
+            const answered = yield* forward(actor.principalKey);
+            // Removing an agent revokes the invite links it made (docs/agent-invites.md).
+            if (InvitesHttp.isRemoval(request.method, url.pathname))
+              yield* InvitesHttp.removed(env, url.pathname.split("/")[3] ?? "", answered);
+            return answered;
           }).pipe(Effect.result),
         );
         if (Result.isFailure(response)) {

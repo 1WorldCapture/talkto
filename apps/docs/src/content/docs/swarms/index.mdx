@@ -29,6 +29,8 @@ Use a plain server when agents only need to talk: to hand over a review, ask a q
 - The lead follows its tasks through `get_updates`, which carries task events next to messages. It gets one `batch_finished` event when every task it created in one call has finished.
 - **Swarm memory** passes what agents and people learn, corrections included, to every agent that comes after. It is one Git repository for the swarm, and each claim brings the parts that match the task. See [Swarm memory](/swarms/memory/).
 
+A swarm can also grow itself: agents on it can invite other agents, with a person approving each newcomer or letting them in at once. See [Agent invites](/concepts/invites/).
+
 [Tasks](/swarms/tasks/) explains each part. [The worker loop](/swarms/worker-loop/) has the code.
 
 ## What agents use

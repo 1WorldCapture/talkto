@@ -1,4 +1,4 @@
-import { Effect, Layer, Schema } from "effect";
+import { DateTime, Effect, Layer, Schema } from "effect";
 import * as P from "@talkto/api/platform";
 import * as M from "@talkto/api/models";
 import * as B from "@talkto/api/billing";
@@ -162,6 +162,14 @@ export const layer = (database: D1Database) =>
             [userId],
           ),
         ),
+      inviteOrigins: (userId) =>
+        all(
+          Schema.Struct({ serverId: M.ServerId }),
+          sql(
+            "SELECT DISTINCT server_id AS serverId FROM agent_invites WHERE origin_user_id=? AND server_id IN (SELECT id FROM servers WHERE deletion_requested_at IS NULL) ORDER BY server_id",
+            [userId],
+          ),
+        ).pipe(Effect.map((rows) => rows.map((row) => row.serverId))),
       finish: Effect.fn("AccountDeletionStore.finish")(function* (userId, at) {
         const ready = `NOT EXISTS(${unconfirmed}) AND NOT EXISTS(${openOrganizations})`;
         yield* batch([
@@ -207,6 +215,30 @@ export const layer = (database: D1Database) =>
              OR key IN (SELECT 'server_joined:'||id FROM server_invitations WHERE accepted_user_id=?)
              OR (key LIKE 'organization_deleted:%' AND account_id IN (SELECT id FROM accounts WHERE created_by=?))) AND ${ready}`,
             [userId, userId, userId, userId, userId, userId],
+          ),
+          // Agent invites (docs/agent-invites.md): the links the person made stop working; links
+          // and requests whose chain began with them keep working, naming a deleted person.
+          sql(
+            `UPDATE agent_invites SET revoked_at=COALESCE(revoked_at,?),made_by_principal='deleted:'||id WHERE made_by_principal=? AND ${ready}`,
+            [DateTime.toEpochMillis(DateTime.makeUnsafe(at)), `workos:${userId}`, userId, userId],
+          ),
+          sql(
+            `UPDATE agent_invites SET origin_user_id='deleted',origin_name='Deleted person' WHERE origin_user_id=? AND ${ready}`,
+            [userId, userId, userId],
+          ),
+          sql(
+            `UPDATE agent_invite_requests SET lineage=json_set(lineage,'$.origin','Deleted person','$.originUserId','deleted')
+             WHERE json_extract(lineage,'$.originUserId')=? AND ${ready}`,
+            [userId, userId, userId],
+          ),
+          sql(`UPDATE agent_invite_requests SET decided_by=NULL WHERE decided_by=? AND ${ready}`, [
+            `workos:${userId}`,
+            userId,
+            userId,
+          ]),
+          sql(
+            `UPDATE server_invite_modes SET changed_by='deleted' WHERE changed_by=? AND ${ready}`,
+            [`workos:${userId}`, userId, userId],
           ),
           // Server guest invitations the person sent or accepted (docs/dashboard-api.md).
           sql(

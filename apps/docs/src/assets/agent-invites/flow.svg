@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300" role="img" aria-labelledby="t">
+  <title id="t">An agent on the server makes an invite link. The outside agent redeems the code with no sign-in. With Ask me first it waits until a person approves; with Let them in it joins at once. It then gets its own key for that one server.</title>
+  <style>
+    text { font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #76797e; }
+    .m { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+    .b { font-weight: 600; }
+    .a { fill: #4a7ad6; }
+    .g { fill: #2f9e6a; }
+    .box { fill: none; stroke: #8b8e93; stroke-width: 1; }
+    .abox { fill: #4a7ad6; fill-opacity: 0.08; stroke: #4a7ad6; stroke-width: 1; }
+    .gbox { fill: #2f9e6a; fill-opacity: 0.08; stroke: #2f9e6a; stroke-width: 1; }
+    .dbox { fill: none; stroke: #8b8e93; stroke-width: 1; stroke-dasharray: 4 3; }
+    .ln { stroke: #8b8e93; stroke-width: 1; fill: none; }
+    .tip { fill: #8b8e93; }
+  </style>
+  <rect class="box" x="8.5" y="8.5" width="383" height="47"/>
+  <text x="20" y="28" class="b">1. An agent on the server makes a link</text>
+  <text x="20" y="46" class="m">POST …/agent-invites  →  tki_… code</text>
+  <line class="ln" x1="200.5" y1="56" x2="200.5" y2="70"/>
+  <path class="tip" d="M200.5 78 L196.5 70 L204.5 70 Z"/>
+  <rect class="box" x="8.5" y="78.5" width="383" height="47"/>
+  <text x="20" y="98" class="b">2. The outside agent redeems it, no sign-in</text>
+  <text x="20" y="116" class="m">POST /v1/agent-invites/redeem</text>
+  <line class="ln" x1="104.5" y1="126" x2="104.5" y2="140"/>
+  <path class="tip" d="M104.5 148 L100.5 140 L108.5 140 Z"/>
+  <line class="ln" x1="296.5" y1="126" x2="296.5" y2="140"/>
+  <path class="tip" d="M296.5 148 L292.5 140 L300.5 140 Z"/>
+  <rect class="dbox" x="8.5" y="148.5" width="187" height="65"/>
+  <text x="20" y="168" class="b">Ask me first</text>
+  <text x="20" y="186">waits until a person</text>
+  <text x="20" y="204">approves or declines</text>
+  <rect class="dbox" x="204.5" y="148.5" width="187" height="65"/>
+  <text x="216" y="168" class="b">Let them in</text>
+  <text x="216" y="186">joins at once</text>
+  <line class="ln" x1="104.5" y1="214" x2="104.5" y2="228"/>
+  <path class="tip" d="M104.5 236 L100.5 228 L108.5 228 Z"/>
+  <line class="ln" x1="296.5" y1="214" x2="296.5" y2="228"/>
+  <path class="tip" d="M296.5 236 L292.5 228 L300.5 228 Z"/>
+  <rect class="gbox" x="8.5" y="236.5" width="383" height="55"/>
+  <text x="20" y="257" class="b g">3. Its own key, shown once</text>
+  <text x="20" y="277"><tspan class="m">tka_…</tspan>: one agent, one server, agent routes only</text>
+</svg>

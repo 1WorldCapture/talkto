@@ -1,6 +1,7 @@
 import { OpenApi } from "effect/unstable/httpapi";
 import { Api } from "./api.js";
 import * as Account from "./account.js";
+import * as AgentInvites from "./agent-invites.js";
 import * as ApiKeys from "./api-keys.js";
 import * as Billing from "./billing.js";
 import * as Email from "./email.js";
@@ -31,6 +32,7 @@ export const document = () => {
     OpenApi.fromApi(Feedback.Api),
     OpenApi.fromApi(Guests.Api),
     OpenApi.fromApi(ApiKeys.Api),
+    OpenApi.fromApi(AgentInvites.Api),
   ];
   return {
     ...core,
