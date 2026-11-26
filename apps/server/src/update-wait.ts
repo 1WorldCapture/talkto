@@ -9,6 +9,7 @@ import { atStep, describeFailure, runtimeFlags, type Step } from "./failure-log.
 import * as Telemetry from "./telemetry.js";
 import * as Updates from "./updates.js";
 import * as Signal from "./update-signal.js";
+import * as ReadRetry from "./read-retry.js";
 
 /**
  * The Worker half of a waiting get_updates call (see update-signal.ts), and of a claim_task for
@@ -319,7 +320,7 @@ export const invokeAgent = (
   command: A.Command,
   meta: A.Meta,
 ): Effect.Effect<A.UncheckedReply> => {
-  const call = (server: Server, current: A.Command, reread: boolean) =>
+  const attempt = (server: Server, current: A.Command, reread: boolean) =>
     Effect.promise(
       async () =>
         await server.invokeAgent(
@@ -334,6 +335,21 @@ export const invokeAgent = (
       Effect.flatMap(Schema.decodeUnknownEffect(A.UncheckedReply)),
       Effect.orDie,
     );
+  // A read that failed transiently is tried once more on a fresh stub (read-retry.ts); twice, and
+  // the agent is told the server is briefly unavailable, not that something broke.
+  const call = (server: Server, current: A.Command, reread: boolean) =>
+    ReadRetry.readTools.has(current.tool)
+      ? ReadRetry.twice((fresh) => attempt(fresh ? connect() : server, current, reread)).pipe(
+          Effect.map((retried): A.UncheckedReply => {
+            if (retried.kind === "answered") return retried.value;
+            Telemetry.readUnavailable(retried.defect, current.tool);
+            return {
+              error: { code: "storage_unavailable", message: ReadRetry.unavailableMessage },
+              meta,
+            };
+          }),
+        )
+      : attempt(server, current, reread);
   const answered = (response: Response) =>
     Effect.promise(() => response.text()).pipe(
       at("first_read"),
@@ -423,7 +439,33 @@ export const forward = (
   request: Request,
   payload: Uint8Array | null,
 ): Effect.Effect<Response> => {
-  const once = Effect.promise(() => connect().fetch(request));
+  const direct = Effect.promise(() => connect().fetch(request));
+  // A read (GET, or a get_updates that does not wait) that failed transiently is sent once more,
+  // rebuilt from its body, on a fresh stub; twice, and it fails as before (503).
+  const read =
+    request.method === "GET" ||
+    (request.method === "POST" && updatesPath.test(new URL(request.url).pathname))
+      ? ReadRetry.twice((fresh) =>
+          fresh
+            ? Effect.promise(() =>
+                connect().fetch(
+                  new Request(request.url, {
+                    method: request.method,
+                    headers: request.headers,
+                    body: payload,
+                  }),
+                ),
+              )
+            : direct,
+        ).pipe(
+          Effect.flatMap((retried) =>
+            retried.kind === "answered"
+              ? Effect.succeed(retried.value)
+              : Effect.die(retried.defect),
+          ),
+        )
+      : null;
+  const once = read ?? direct;
   if (request.method !== "POST" || payload === null) return once;
   const pathname = new URL(request.url).pathname;
   const claimed = claimPath.exec(pathname);

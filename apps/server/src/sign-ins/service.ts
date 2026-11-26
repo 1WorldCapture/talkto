@@ -11,7 +11,8 @@ import * as Store from "./store.js";
   checks after a resource token verifies, what it records, the person's list, and sign-out.
 
   Cost on the MCP path, per Worker isolate: at most one indexed D1 read of the person's
-  revocations every `revocationCacheMs` (30 s), on the request path; and at most one D1 upsert per
+  revocations every `revocationCacheMs` (30 s), on the request path, and one every
+  `revocationBackoffMs` (5 s) while D1 fails; and at most one D1 upsert per
   sign-in every `recordInterval` (5 minutes), after the response through waitUntil. The upsert's
   own condition keeps the row written at most once per interval across isolates.
 */
@@ -20,6 +21,12 @@ import * as Store from "./store.js";
 export const recordInterval = 5 * 60_000;
 /** How long an isolate trusts the revocations it read. A sign-out reaches every isolate within it. */
 export const revocationCacheMs = 30_000;
+/**
+ * After a failed read of the revocations, how long the isolate keeps the list it had (or none)
+ * before reading again; also how long one read keeps the isolate's other requests from reading.
+ * Sentry TALKTO-SERVER-C (November 26, 2026): an overloaded D1 got one query per MCP request.
+ */
+export const revocationBackoffMs = 5_000;
 /** Rows unseen this long are deleted by the minute cron. */
 export const retentionDays = 90;
 /** How long a per-`sid` sign-out stays in force after the sign-in last tried to connect. */
@@ -105,11 +112,19 @@ export const admit = Effect.fn("SignIns.admit")(function* (
   const cached = revocations.get(userId);
   let items = cached?.items ?? [];
   if (cached === undefined || now - cached.at >= revocationCacheMs) {
+    // Lease: until this read ends, or for `revocationBackoffMs` if it fails, the isolate's other
+    // requests use the list it already has instead of querying too. A cold isolate has no list,
+    // so each of its first requests reads for itself rather than admit with none.
+    const leased = { at: now - revocationCacheMs + revocationBackoffMs, items };
+    if (cached !== undefined) remember(revocations, userId, leased);
     const read = yield* store.revocations(userId, now).pipe(Effect.result);
     if (Result.isSuccess(read)) {
       items = read.success;
       remember(revocations, userId, { at: now, items });
-    } else report(read.failure, "signins.revocations");
+    } else {
+      if (cached === undefined) remember(revocations, userId, leased);
+      report(read.failure, "signins.revocations");
+    }
   }
   const sid = client.sid ?? null;
   const key = sessionKey(userId, client.clientId, sid);
