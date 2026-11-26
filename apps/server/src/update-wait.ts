@@ -441,7 +441,8 @@ export const forward = (
 ): Effect.Effect<Response> => {
   const direct = Effect.promise(() => connect().fetch(request));
   // A read (GET, or a get_updates that does not wait) that failed transiently is sent once more,
-  // rebuilt from its body, on a fresh stub; twice, and it fails as before (503).
+  // rebuilt from its body, on a fresh stub. Unavailable (overloaded, or transient twice) fails as
+  // before: hosted answers 503 storage_unavailable.
   const read =
     request.method === "GET" ||
     (request.method === "POST" && updatesPath.test(new URL(request.url).pathname))

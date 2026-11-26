@@ -43,16 +43,45 @@ test("a read that fails transiently twice is unavailable, never a third try", as
   assert.deepEqual(tries, [false, true]);
 });
 
-test("an overloaded object, or a failure Cloudflare does not mark retryable, is not tried again", async () => {
-  for (const flags of [{ retryable: true, overloaded: true }, { retryable: false }, {}]) {
+test("an overloaded object is unavailable at once: one attempt, no pause", async () => {
+  const failed = rejection({ retryable: true, overloaded: true, remote: true });
+  const { tries, attempt } = attempts(failed);
+  let paused = 0;
+  const outcome = await Effect.runPromise(
+    R.twice(
+      attempt,
+      Effect.sync(() => (paused += 1)),
+    ),
+  );
+  assert.equal(outcome.kind, "unavailable");
+  assert.equal(outcome.defect, failed);
+  assert.deepEqual(tries, [false]);
+  assert.equal(paused, 0);
+  // Overloaded without `retryable` is the same.
+  const bare = attempts(rejection({ overloaded: true }));
+  assert.equal((await Effect.runPromise(R.twice(bare.attempt, noPause))).kind, "unavailable");
+  assert.deepEqual(bare.tries, [false]);
+});
+
+test("a transient failure, then an overloaded object on the second try, is unavailable", async () => {
+  const second = rejection({ overloaded: true });
+  const { tries, attempt } = attempts(rejection({ retryable: true }), second);
+  const outcome = await Effect.runPromise(R.twice(attempt, noPause));
+  assert.equal(outcome.kind, "unavailable");
+  assert.equal(outcome.defect, second);
+  assert.deepEqual(tries, [false, true]);
+});
+
+test("a failure Cloudflare does not mark transient or overloaded still dies, untried", async () => {
+  for (const flags of [{ retryable: false }, {}]) {
     const failed = rejection(flags);
     const { tries, attempt } = attempts(failed);
     const exit = await Effect.runPromiseExit(R.twice(attempt, noPause));
     assert.ok(Exit.isFailure(exit), JSON.stringify(flags));
     assert.deepEqual(tries, [false], JSON.stringify(flags));
   }
-  // A second failure that is not transient fails as it did before.
-  const { attempt } = attempts(rejection({ retryable: true }), rejection({ overloaded: true }));
+  // A plain defect on the second try dies too.
+  const { attempt } = attempts(rejection({ retryable: true }), new Error("bug"));
   assert.ok(Exit.isFailure(await Effect.runPromiseExit(R.twice(attempt, noPause))));
 });
 
