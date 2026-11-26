@@ -21,6 +21,7 @@ import * as OnboardingHttp from "./onboarding/http.js";
 import { Identifiers } from "./talkto.js";
 import * as M from "@talkto/api/models";
 import * as Envelope from "@talkto/api/envelope";
+import * as AI from "@talkto/api/agent-invites";
 import * as Responses from "./responses.js";
 import * as Configuration from "./configuration.js";
 import { capabilities } from "./capabilities.js";
@@ -49,6 +50,8 @@ import * as EmailHttp from "./email/http.js";
 import * as SignInsHttp from "./sign-ins/http.js";
 import * as ApiKeysHttp from "./api-keys/http.js";
 import * as InvitesHttp from "./invites/http.js";
+import * as InvitesMcp from "./invites/mcp.js";
+import * as McpEvents from "./wakes/mcp-events.js";
 import * as InvitePage from "./invites/page.js";
 import * as FeedbackHttp from "./feedback/http.js";
 import * as ShareHttp from "./share/http.js";
@@ -188,11 +191,58 @@ const onboardingApplication = (
 
 const mcpPath = (path: string) =>
   path === "/mcp" || path === "/.well-known/oauth-protected-resource/mcp";
+/**
+ * `/mcp/join`: an agent redeems an invite code and checks its request, with no sign-in. Each tool
+ * call is the join route it stands for (InvitesHttp.join), so the same limits apply.
+ */
+const joinIngress = Effect.fn("Hosted.mcpJoin")(function* (
+  request: Request,
+  env: Env,
+  meta: Envelope.Meta,
+) {
+  const origin = yield* Configuration.readOrigin(env).pipe(Effect.result);
+  if (Result.isFailure(origin))
+    return Responses.failure(503, "identity_unavailable", "The service is not configured.", meta);
+  if (request.method === "GET" || request.method === "DELETE")
+    return new Response(null, { status: 405, headers: { allow: "POST" } });
+  const payload = yield* body(request).pipe(Effect.result);
+  if (Result.isFailure(payload))
+    return Responses.failure(400, "invalid_input", "The request body could not be read.", meta);
+  if (payload.success === "too_large")
+    return Responses.failure(
+      413,
+      "request_too_large",
+      "The maximum request body is 128 KiB.",
+      meta,
+    );
+  const at = origin.success;
+  return yield* Effect.promise(() =>
+    Mcp.join(
+      new Request(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: payload.success,
+      }),
+      (command, toolMeta) =>
+        run(
+          InvitesHttp.join(
+            InvitesMcp.joinRequest(request, at, command),
+            env,
+            Responses.metadata(at, toolMeta.requestId),
+            at,
+          ),
+        ).then((response) => InvitesMcp.reply(response, toolMeta)),
+      at,
+    ),
+  );
+});
 const mcpIngress = Effect.fn("Hosted.mcp")(function* (
   request: Request,
   env: Env,
   auth: Authentication,
   waitUntil: (task: Promise<unknown>) => void,
+  /** An invited agent's checked key (`InvitesHttp.genuine`): its one server and its principal. */
+  invited?: { readonly serverId: string; readonly principal: Access.PrincipalKey },
 ) {
   const origin = yield* Configuration.readOrigin(env).pipe(
     Effect.mapError(
@@ -208,7 +258,12 @@ const mcpIngress = Effect.fn("Hosted.mcp")(function* (
   const mcpAuth = auth.mcp;
   // A copy's own sign-in answers agents only when TalkTo runs no OAuth server: Access does.
   const edge = mcpAuth === undefined ? auth.edge : undefined;
-  if (edge === undefined && (issuer === undefined || mcpAuth === undefined))
+  // An invited agent's key needs no sign-in, so a deployment's sign-in setup does not gate it.
+  if (
+    invited === undefined &&
+    edge === undefined &&
+    (issuer === undefined || mcpAuth === undefined)
+  )
     return Responses.failure(
       503,
       "identity_unavailable",
@@ -260,6 +315,88 @@ const mcpIngress = Effect.fn("Hosted.mcp")(function* (
       }),
     );
   }
+  if (invited !== undefined) {
+    const payload = yield* body(request);
+    if (payload === "too_large")
+      return finish(
+        Responses.failure(413, "request_too_large", "The maximum request body is 128 KiB.", meta),
+      );
+    // No feedback (a signed-in person's), no discovery: every call names its one server, and the
+    // server object decides each operation for the invited principal (`Actors.mayRun`).
+    const app: Mcp.Application = {
+      events: async (command) =>
+        command.arguments.serverId === invited.serverId
+          ? env.SERVERS.getByName(invited.serverId).invokeEvents(invited.principal, null, command)
+          : {
+              error: {
+                code: McpEvents.codes.forbidden,
+                message: InvitesMcp.otherServer(invited.serverId),
+              },
+            },
+      invoke: async (command, requestMeta) => {
+        const serverId = command.input.serverId;
+        if (serverId !== invited.serverId)
+          return {
+            error: { code: "forbidden", message: InvitesMcp.otherServer(invited.serverId) },
+            meta: requestMeta,
+          };
+        const caller = { serverId, principalKey: invited.principal, organizationId: null };
+        const reply = await run(
+          Refusals.invokeAgent(
+            caller,
+            command,
+            requestMeta,
+            Effect.suspend(() =>
+              UpdateWait.invokeAgent(
+                () => env.SERVERS.getByName(serverId),
+                caller,
+                command,
+                requestMeta,
+              ),
+            ),
+          ),
+        );
+        // A removed agent's key: "ask for a new invite", never a retryable unavailable server.
+        return Option.isSome(InvitesMcp.unavailable(reply))
+          ? { ...reply, error: { code: "forbidden", message: InvitesMcp.removed } }
+          : reply;
+      },
+      invites: async (command, requestMeta) => {
+        if (command.input.serverId !== invited.serverId)
+          return {
+            error: { code: "forbidden", message: InvitesMcp.otherServer(invited.serverId) },
+            meta: requestMeta,
+          };
+        const reply = await run(
+          InvitesHttp.handle(
+            InvitesMcp.inviteRequest(request, origin, command),
+            env,
+            { principal: invited.principal, userId: null, name: null, byPerson: false },
+            Responses.metadata(origin, requestMeta.requestId),
+            origin,
+          ),
+        ).then((response) => InvitesMcp.reply(response, requestMeta));
+        return Option.isSome(InvitesMcp.unavailable(reply))
+          ? { ...reply, error: { code: "forbidden", message: InvitesMcp.removed } }
+          : reply;
+      },
+    };
+    return yield* Effect.promise(() =>
+      Mcp.fetch(
+        new Request(request.url, {
+          method: request.method,
+          headers: request.headers,
+          body: payload,
+        }),
+        app,
+        origin,
+        capabilities(env),
+        BoardSettings.fromEnv(env),
+        BoardSettings.memoryFromEnv(env),
+        InvitesMcp.tools,
+      ).then(finish),
+    );
+  }
   const refuse = (failure: Model.Failure) => {
     const response = Responses.failure(status(failure.code), failure.code, failure.message, meta);
     if (failure.code === "unauthenticated" && edge === undefined) {
@@ -303,6 +440,27 @@ const mcpIngress = Effect.fn("Hosted.mcp")(function* (
   const app: Mcp.Application = {
     feedback: (input, requestMeta) =>
       FeedbackHttp.agent(request, actor, input, requestMeta, env, application(env, auth.identity)),
+    // An agent of the signed-in person's acts here, never the person: approving stays theirs.
+    invites: (command, requestMeta) =>
+      run(
+        Effect.gen(function* () {
+          const name =
+            command.tool === AI.createToolName
+              ? InvitesHttp.originName(
+                  yield* Platform.Identity.use((identity) => identity.user(actor.userId)).pipe(
+                    Effect.provide(auth.identity),
+                  ),
+                )
+              : null;
+          return yield* InvitesHttp.handle(
+            InvitesMcp.inviteRequest(request, origin, command),
+            env,
+            { principal: actor.principalKey, userId: actor.userId, name, byPerson: false },
+            Responses.metadata(origin, requestMeta.requestId),
+            origin,
+          );
+        }),
+      ).then((response) => InvitesMcp.reply(response, requestMeta)),
     events: (command) =>
       env.SERVERS.getByName(command.arguments.serverId).invokeEvents(
         actor.principalKey,
@@ -579,11 +737,16 @@ export function makeWorker(
             (serverId) => env.SERVERS.getByName(serverId),
             SignalGuard.make(env, request),
           );
-        if (mcpPath(url.pathname)) {
+        // Joining with an invite code over MCP: no sign-in and no protected-resource metadata.
+        if (url.pathname === "/mcp/join") {
           const result = await run(
             authenticate(env).pipe(
+              // Behind Cloudflare Access an outside agent cannot reach this; Better Auth, like
+              // WorkOS, lets it join.
               Effect.flatMap((auth) =>
-                mcpIngress(request, env, auth, (task) => context?.waitUntil(task)),
+                auth.signIn === "cloudflare-access"
+                  ? Effect.succeed(InvitesHttp.hostedOnly(meta))
+                  : joinIngress(request, env, meta),
               ),
               Effect.result,
             ),
@@ -597,6 +760,47 @@ export function makeWorker(
                 meta,
               );
         }
+        if (mcpPath(url.pathname)) {
+          // An invited agent's key on /mcp: checked like on the HTTP API, and refused with 403,
+          // never the 401 that would send an MCP client to sign-in (docs/agent-invites.md).
+          const invitedKey = url.pathname === "/mcp" ? InvitesHttp.bearerKey(request) : undefined;
+          const waitUntil = (task: Promise<unknown>) => context?.waitUntil(task);
+          const result = await run(
+            authenticate(env).pipe(
+              Effect.flatMap((auth) =>
+                invitedKey === undefined
+                  ? mcpIngress(request, env, auth, waitUntil)
+                  : auth.signIn === "cloudflare-access"
+                    ? Effect.succeed(
+                        Responses.failure(
+                          403,
+                          "forbidden",
+                          "Invited agents' keys do not work on a copy behind Cloudflare Access.",
+                          meta,
+                        ),
+                      )
+                    : InvitesHttp.genuine(request, env, invitedKey, meta).pipe(
+                        Effect.flatMap((checked) =>
+                          checked.kind === "refused"
+                            ? Effect.succeed(checked.response)
+                            : mcpIngress(request, env, auth, waitUntil, checked),
+                        ),
+                      ),
+              ),
+              Effect.result,
+            ),
+          );
+          return Result.isSuccess(result)
+            ? result.success
+            : Responses.failure(
+                status(result.failure.code),
+                result.failure.code,
+                result.failure.message,
+                meta,
+              );
+        }
+        // The invite join page answers HEAD with GET's headers, no body.
+        if (request.method === "HEAD" && url.pathname === InvitePage.path) return InvitePage.head();
         if (request.method === "GET") {
           if (url.pathname === "/health") return Response.json({ status: "ok", meta });
           if (url.pathname === "/v1/offers") return await run(StarterHttp.offers(env, meta));
@@ -645,6 +849,8 @@ export function makeWorker(
             const inviteUrl = new URL(request.url);
             // Agent invites (docs/agent-invites.md): redeeming a code and checking a request need
             // no sign-in, so they are answered before any.
+            if (InvitesHttp.isJoinPath(inviteUrl.pathname) && auth.signIn === "cloudflare-access")
+              return InvitesHttp.hostedOnly(meta);
             if (InvitesHttp.isJoinPath(inviteUrl.pathname))
               return yield* InvitesHttp.join(
                 request,

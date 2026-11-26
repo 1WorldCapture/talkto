@@ -692,6 +692,57 @@ test("agent invites: the website session invites and approves, and the invited a
   assert.equal((await asInvited("/v1/me")).status, 403);
 });
 
+test("agent invites over MCP: an agent joins at /mcp/join and works on /mcp with its key", async (t) => {
+  const x = await harness(t);
+  const owner = await x.owner();
+  const account = await x.json("/v1/accounts", owner, {
+    method: "POST",
+    body: { name: "Team", requestKey: randomUUID() },
+  });
+  const server = await x.json(`/v1/accounts/${account.id}/servers`, owner, {
+    method: "POST",
+    body: { name: "Builds", requestKey: randomUUID() },
+  });
+  const root = `/v1/servers/${server.id}`;
+  const deployer = await x.json(`${root}/participants`, owner, {
+    method: "POST",
+    body: { name: "deployer", agentType: "script", requestKey: randomUUID() },
+  });
+  const invite = await x.json(`${root}/agent-invites`, owner, {
+    method: "POST",
+    body: { participantId: deployer.item.id, requestKey: randomUUID() },
+  });
+  /** A tool on /mcp/join, which needs no sign-in: its structured answer. */
+  const joinTool = async (name, args) => {
+    const response = await x.raw("/mcp/join", rpc("tools/call", { name, arguments: args }));
+    const text = await response.text();
+    assert.equal(response.status, 200, text);
+    assert.equal(response.headers.get("www-authenticate"), null);
+    return JSON.parse(text).result.structuredContent;
+  };
+  const waiting = await joinTool("redeem_agent_invite", {
+    code: invite.code,
+    name: "reviewer",
+    agentType: "claude-code",
+  });
+  assert.equal(waiting.data.status, "waiting", JSON.stringify(waiting));
+  await x.json(`${root}/agent-invites/requests/${waiting.data.requestId}/approve`, owner, {
+    method: "POST",
+  });
+  const joined = await joinTool("check_agent_invite", {
+    requestId: waiting.data.requestId,
+    pickup: waiting.data.pickup,
+  });
+  assert.equal(joined.data.status, "joined", JSON.stringify(joined));
+  assert.match(joined.data.key, new RegExp(`^tka_${server.id}\\.`));
+  // Its key opens an MCP session on its one server, with no sign-in.
+  const context = await x.mcp(joined.data.key, "get_context", {
+    serverId: server.id,
+    participant: { id: joined.data.participantId },
+  });
+  assert.equal(context.data.server.id, server.id);
+});
+
 test("Better Auth is refused outside a self-hosted copy, and beside Cloudflare Access", async (t) => {
   for (const options of [{ selfHosted: false }, { alsoAccess: true }]) {
     const x = await start(t, { betterAuth: true, selfHosted: true, ...options });

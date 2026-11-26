@@ -152,6 +152,12 @@ const handlers = (env: Env) =>
     }),
   );
 
+/** The pickup header, when it is shaped like a minted secret; else null. */
+const pickupOf = (request: Request) => {
+  const header = request.headers.get(AI.pickupHeader);
+  return header !== null && AI.isPickup(header) ? header : null;
+};
+
 const joinHandlers = (env: Env) =>
   HttpApiBuilder.group(AI.Api, "agentJoin", (routes) =>
     Effect.gen(function* () {
@@ -170,7 +176,8 @@ const joinHandlers = (env: Env) =>
                 at,
                 context.request,
                 params.requestId,
-                context.request.headers.get(AI.pickupHeader),
+                // Only a minted secret's shape is checked; anything else matches no request.
+                pickupOf(context.request),
                 query.wait ?? 0,
                 query.name ?? null,
               ),
@@ -213,6 +220,19 @@ const nobody: Invites.Caller = {
   name: null,
   byPerson: false,
 };
+
+/** Behind Cloudflare Access an invited agent's key cannot work, so joining is refused there. */
+export const hostedOnly = (meta: Envelope.Meta) =>
+  Response.json(
+    {
+      error: {
+        code: "forbidden",
+        message: "Agent invites do not work on a copy behind Cloudflare Access.",
+      },
+      meta,
+    },
+    { status: 403 },
+  );
 
 /** Redeeming and checking a request: no sign-in, so they are routed before any. */
 export const isJoinPath = (path: string) => path.startsWith("/v1/agent-invites/");
@@ -293,7 +313,7 @@ const agentRoutes: ReadonlyArray<readonly [RegExp, RegExp]> = [
   [/^GET$/, /^\/files\/(pack-command|shares|transfers(\/[^/]+)?)$/],
   [/^POST$/, /^\/files\/transfers(\/[^/]+\/(complete|download|fetch))?$/],
   [/^GET$/, /^\/memory$/],
-  [/^GET$/, /^\/messages(\/search|\/[^/]+\/context)?$/],
+  [/^GET$/, /^\/messages(\/search|\/[^/]+\/context)$/],
   [/^(GET|POST)$/, /^\/participants$/],
   [/^GET$/, /^\/participants\/[^/]+$/],
   [/^POST$/, /^\/participants\/[^/]+\/memory\/access$/],
@@ -314,11 +334,11 @@ export const allowed = (serverId: string, method: string, path: string) => {
 };
 
 /**
- * Check an invited agent's key without D1: its tag must be this deployment's, its server must be
- * the one in the path, and the route must be an agent route. The key's SHA-256 becomes the principal
- * only the server object resolves. A failure is 403, never 401: a 401 sends MCP clients to sign-in.
+ * Check an invited agent's key without D1: its tag must be this deployment's. The key's SHA-256
+ * becomes the principal only the server object resolves. A failure is 403, never 401: a 401 sends
+ * MCP clients to sign-in.
  */
-export const verify = Effect.fn("InvitesHttp.verify")(function* (
+export const genuine = Effect.fn("InvitesHttp.genuine")(function* (
   request: Request,
   env: Env,
   key: string,
@@ -327,23 +347,40 @@ export const verify = Effect.fn("InvitesHttp.verify")(function* (
   const blocked = yield* refused(request, meta);
   if (blocked !== null) return { kind: "refused", response: blocked } as const;
   const serverId = yield* Guard.genuine(env, "key", key);
-  const deny = (message: string) =>
-    ({
-      kind: "refused",
-      response: Response.json({ error: { code: "forbidden", message }, meta }, { status: 403 }),
-    }) as const;
   if (serverId === null) {
     yield* Guard.failed(env, request);
-    return deny("This invited agent key is not valid. Get a new invite.");
+    return {
+      kind: "refused",
+      response: deny(meta, "This invited agent key is not valid. Get a new invite."),
+    } as const;
   }
-  const url = new URL(request.url);
-  if (!allowed(serverId, request.method, url.pathname))
-    return deny(
-      "An invited agent's key works only on its own server's agent routes: messages, channels, direct chats, files, signal links, tasks, updates and invites.",
-    );
   const principal = Access.invitedKey(yield* Guard.hash(key));
   return { kind: "invited", serverId, principal } as const;
 });
+
+/** A genuine key (`genuine`) whose server is the one in the path, on an agent route. */
+export const verify = Effect.fn("InvitesHttp.verify")(function* (
+  request: Request,
+  env: Env,
+  key: string,
+  meta: Envelope.Meta,
+) {
+  const checked = yield* genuine(request, env, key, meta);
+  if (checked.kind === "refused") return checked;
+  const url = new URL(request.url);
+  if (!allowed(checked.serverId, request.method, url.pathname))
+    return {
+      kind: "refused",
+      response: deny(
+        meta,
+        "An invited agent's key works only on its own server's agent routes: messages, channels, direct chats, files, signal links, tasks, updates and invites.",
+      ),
+    } as const;
+  return checked;
+});
+
+const deny = (meta: Envelope.Meta, message: string) =>
+  Response.json({ error: { code: "forbidden", message }, meta }, { status: 403 });
 
 /**
  * The name an invite chain shows for the person it started from: their first name only, never

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { start } from "./platform-harness.mjs";
+import { rpc } from "./mcp-wire.mjs";
 
 /*
   Agent invites (docs/agent-invites.md): any agent invites any agent; a person approves each
@@ -377,6 +378,13 @@ test("the page an invite link opens tells an agent how to join, and never sees t
   assert.match(text, /\/v1\/agent-invites\/redeem/);
   assert.match(text, /x-talkto-pickup/);
   assert.ok(!text.includes(invite.code));
+  assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+  // HEAD answers with GET's headers and no body.
+  const head = await s.x.raw(url.pathname, { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get("referrer-policy"), "no-referrer");
+  assert.match(head.headers.get("content-type"), /^text\/markdown/);
+  assert.equal((await head.text()).length, 0);
 });
 
 test("a pickup secret admits once: replays and parallel pickups get no second key", async (t) => {
@@ -609,4 +617,584 @@ test("an invited worker on a swarm reads memory and gets a write token while it 
   // complete ends the claim: no write token after it, as for any agent.
   const after = await as("POST", `${root}/participants/${me}/memory/access`, { write });
   assert.equal(after.json.error?.code, "claim_lost", JSON.stringify(after.json));
+});
+
+/** Every operation name the four `run` transactions receive, read from their sources. */
+const operations = async () => {
+  const { readFile } = await import("node:fs/promises");
+  const names = new Set();
+  for (const file of ["talkto.ts", "board/service.ts", "memory/service.ts", "wakes/service.ts"]) {
+    const source = await readFile(new URL(`../src/${file}`, import.meta.url), "utf8");
+    // `run(access, "name", …)` and `detail(access, "name", …)`, the name possibly a ternary.
+    for (const [, argument] of source.matchAll(
+      /\b(?:run|detail)\(\s*[\w.]+,\s*([^,(]+?),\s*\(?/g,
+    )) {
+      if (argument.trim() === "operation") continue; // `run` and `detail`'s own definitions
+      // In `kind === "cancel" ? "cancelTask" : "reopenTask"`, the names are after the `?`.
+      const named = argument.includes("?") ? argument.slice(argument.indexOf("?")) : argument;
+      const literals = [...named.matchAll(/"([A-Za-z.]+)"/g)].map((match) => match[1]);
+      assert.ok(literals.length > 0, `${file}: an operation named by ${argument.trim()}`);
+      for (const name of literals) names.add(name);
+    }
+  }
+  return names;
+};
+
+/*
+  The server object's allowlist for invited agents, decided operation by operation. A new
+  operation fails this test until it is placed here: refused unless someone adds it.
+*/
+const invitedMay = new Set([
+  "getServer",
+  "getUpdates",
+  "registerParticipant",
+  "renameSelf",
+  "getParticipant",
+  "listParticipants",
+  "createChannel",
+  "listChannels",
+  "getConversation",
+  "setChannelArchived",
+  "openDirectConversation",
+  "listDirectConversations",
+  "sendMessage",
+  "sendTo",
+  "readMessages",
+  "searchMessages",
+  "getMessageContext",
+  "readArchive",
+  "readArchive.authorize",
+  "createSignal",
+  "revokeSignal",
+  "countSignal",
+  "getPackCommand",
+  "prepareTransfer",
+  "prepareTransfer.refused",
+  "prepareTransfer.pooled",
+  "completeTransfer",
+  "completeTransfer.read",
+  "fetchTransfer.read",
+  "fetchTransfer.record",
+  "readTransfer",
+  "listTransfers",
+  "downloadTransfer",
+  "listShares",
+  "createTasks",
+  "claimTask",
+  "updateTask",
+  "updateTask.files",
+  "listTasks",
+  "readTask",
+  "boardContext",
+  "board",
+  "boardTasks",
+  "boardLabels",
+  "memory.provision",
+  "memory.created",
+  "memory.seeded",
+  "memory.start",
+  "memory.state",
+  "memory.channel",
+  "memory.read",
+  "memory.access",
+  "memory.granted",
+  "wakes.subscribe",
+  "wakes.subscribe.check",
+  "wakes.unsubscribe",
+]);
+const invitedMayNot = new Set([
+  "serverTimeline",
+  "serverTimelineSenders",
+  "serverSummary",
+  "onboarding",
+  "serverFeed",
+  "hydrateMessages",
+  "searchActivity",
+  "renameAgent",
+  "setAgentRemoved",
+  "listRemovals",
+  "listRenames",
+  "getPersonSelf",
+  "joinAsPerson",
+  "openPersonDirectChat",
+  "sendPersonMessage",
+  "filesAccess",
+  "filesAccess.record",
+  "shareFile",
+  "boardTask",
+  "cancelTask",
+  "reopenTask",
+  "setBoard",
+  "wakes.create",
+  "wakes.revoke",
+  "wakes.list",
+  "wakes.cadence",
+  "wakes.setCadence",
+  "wakes.test",
+]);
+
+test("the server object decides every operation for invited agents, and refuses new ones", async () => {
+  const { load } = await import("./sources.mjs");
+  const Actors = await load("../src/actors.ts");
+  const invited = "invited:00000000-0000-4000-8000-000000000000";
+  const found = await operations();
+  for (const name of found) {
+    assert.ok(
+      invitedMay.has(name) || invitedMayNot.has(name),
+      `${name}: decide whether an invited agent may run it (actors.ts invitedOperations)`,
+    );
+    assert.equal(Actors.mayRun(invited, name), invitedMay.has(name), name);
+    // Everyone else is unaffected.
+    assert.ok(Actors.mayRun("workos:user_alice", name), name);
+  }
+  for (const name of [...invitedMay, ...invitedMayNot])
+    assert.ok(found.has(name), `${name} is no longer an operation: drop it from this test`);
+  // An operation nobody has decided yet is refused.
+  assert.ok(!Actors.mayRun(invited, "someNewOperation"));
+});
+
+test("an invited agent works tasks on a swarm server", async (t) => {
+  const s = await setup(t, { board: true });
+  const swarm = ok(
+    await s.alice("POST", `/v1/accounts/${s.account.id}/servers`, {
+      name: "Swarm",
+      board: true,
+      requestKey: randomUUID(),
+    }),
+  );
+  const root = `/v1/servers/${swarm.id}`;
+  ok(await s.alice("PUT", `${root}/agent-invites/mode`, { mode: "open" }));
+  const invite = ok(await s.alice("POST", `${root}/agent-invites`, { requestKey: randomUUID() }));
+  const worker = ok(await redeem(s, invite.code, "worker"));
+  const as = bearer(s.x, worker.key);
+  const me = worker.participantId;
+  ok(
+    await as("POST", `${root}/participants/${me}/tasks`, {
+      requestKey: randomUUID(),
+      tasks: [{ title: "Fix the build", brief: "Do this: fix the build." }],
+    }),
+    "create",
+  );
+  const claimed = ok(
+    await as("POST", `${root}/participants/${me}/tasks/claim`, {
+      requestKey: randomUUID(),
+      next: {},
+    }),
+    "claim",
+  );
+  assert.equal(claimed.claimed, true);
+  const tasks = ok(await as("GET", `${root}/tasks?participantId=${me}`), "tasks");
+  assert.ok(JSON.stringify(tasks).includes("Fix the build"));
+  // The Board's own view is for people, as for any agent; so are a person's task actions.
+  assert.equal((await as("GET", `${root}/board`)).status, 403);
+  const taskId = claimed.task.id;
+  for (const action of ["cancel", "reopen"])
+    assert.equal(
+      (
+        await as("POST", `${root}/people/me/tasks/${taskId}/${action}`, {
+          requestKey: randomUUID(),
+        })
+      ).status,
+      403,
+      action,
+    );
+  // Memory's Git access is an agent's, like any agent's: never refused as an invited agent.
+  const memory = await as("POST", `${root}/participants/${me}/memory/access`, {});
+  assert.ok(
+    memory.status === 200 || memory.json.error.code !== "forbidden",
+    JSON.stringify(memory.json),
+  );
+});
+
+/** A JSON-RPC call to /mcp with this bearer. */
+const mcpCall = async (x, credential, method, params = {}) => {
+  const response = await x.raw("/mcp", rpc(method, params, credential));
+  return { status: response.status, headers: response.headers, json: await response.json() };
+};
+
+test("an invited agent works on MCP with its key: its own tools, on its one server", async (t) => {
+  const s = await setup(t);
+  ok(await s.alice("PUT", `${s.root}/agent-invites/mode`, { mode: "open" }));
+  const invite = ok(await s.alice("POST", `${s.root}/agent-invites`, { requestKey: randomUUID() }));
+  const joined = ok(await redeem(s, invite.code, "mcp-agent"));
+  const me = joined.participantId;
+  // Its catalog: an agent's own tools, privately cached; never registering, feedback, Git or wakes.
+  const listed = await mcpCall(s.x, joined.key, "tools/list");
+  assert.equal(listed.status, 200, JSON.stringify(listed.json));
+  const names = listed.json.result.tools.map((tool) => tool.name);
+  for (const name of ["get_context", "get_updates", "send_message", "read_messages"])
+    assert.ok(names.includes(name), name);
+  for (const name of [
+    "register_participant",
+    "send_feedback",
+    "get_files_access",
+    "share_file",
+    "list_wakes",
+    "revoke_wake",
+  ])
+    assert.ok(!names.includes(name), name);
+  // It talks as itself.
+  const context = await s.x.mcp(joined.key, "get_context", {
+    serverId: s.server.id,
+    participant: { id: me },
+  });
+  const general = context.data.server.generalConversationId;
+  const sent = await s.x.mcp(joined.key, "send_message", {
+    serverId: s.server.id,
+    participantId: me,
+    target: { kind: "conversation", conversationId: general },
+    body: "Hello over MCP.",
+    requestKey: randomUUID(),
+  });
+  assert.equal(sent.data.item.senderId, me);
+  // Not as anyone else, and not on another server or none.
+  const spoofed = await s.x.mcp(
+    joined.key,
+    "send_message",
+    {
+      serverId: s.server.id,
+      participantId: s.deployer.item.id,
+      target: { kind: "conversation", conversationId: general },
+      body: "I am deployer.",
+      requestKey: randomUUID(),
+    },
+    true,
+  );
+  assert.equal(spoofed.error.code, "forbidden", JSON.stringify(spoofed));
+  const elsewhere = await s.x.mcp(
+    joined.key,
+    "get_context",
+    { serverId: "00000000-0000-4000-8000-000000000000" },
+    true,
+  );
+  assert.equal(elsewhere.error.code, "forbidden");
+  assert.match(elsewhere.error.message, new RegExp(s.server.id));
+  assert.equal((await s.x.mcp(joined.key, "get_context", {}, true)).error.code, "forbidden");
+  // A tool it is not offered is unknown to it.
+  const wakes = await mcpCall(s.x, joined.key, "tools/call", {
+    name: "list_wakes",
+    arguments: { serverId: s.server.id, participantId: me },
+  });
+  assert.ok(wakes.json.error, JSON.stringify(wakes.json));
+  // Removed, its key gets 403-style "ask for a new invite", never "unavailable".
+  ok(await s.alice("POST", `${s.root}/participants/${me}/remove`, {}));
+  const gone = await s.x.mcp(
+    joined.key,
+    "get_context",
+    { serverId: s.server.id, participant: { id: me } },
+    true,
+  );
+  assert.equal(gone.error.code, "forbidden", JSON.stringify(gone));
+  assert.match(gone.error.message, /Ask for a new invite/);
+});
+
+test("a key that is not genuine on /mcp is 403, never the sign-in 401", async (t) => {
+  const s = await setup(t);
+  ok(await s.alice("PUT", `${s.root}/agent-invites/mode`, { mode: "open" }));
+  const invite = ok(await s.alice("POST", `${s.root}/agent-invites`, { requestKey: randomUUID() }));
+  const joined = ok(await redeem(s, invite.code, "mcp-try"));
+  const forged = `${joined.key.slice(0, -4)}AAAA`;
+  const response = await mcpCall(s.x, forged, "tools/list");
+  assert.equal(response.status, 403);
+  assert.equal(response.headers.get("www-authenticate"), null);
+  assert.equal(response.json.error.code, "forbidden");
+});
+
+test("the server object's refusal reaches HTTP as 403 forbidden, saying what to do", async () => {
+  const { load } = await import("./sources.mjs");
+  const Responses = await load("../src/responses.ts");
+  const Access = await load("../src/access.ts");
+  const meta = { requestId: "r", serverTime: "2026-11-25T00:00:00.000Z" };
+  const refused = Responses.projectFailure(
+    { _tag: "ServerAccessDenied", message: Access.invitedRefusal },
+    meta,
+  );
+  assert.equal(refused.error.code, "forbidden");
+  assert.match(refused.error.message, /ask a person on the server/);
+  const other = Responses.projectFailure(
+    { _tag: "ServerAccessDenied", message: "The server is unavailable." },
+    meta,
+  );
+  assert.equal(other.error.code, "server_unavailable");
+});
+
+test("only admission registers for an invited principal: no other caller sets the flag", async () => {
+  const { readFile, readdir } = await import("node:fs/promises");
+  const root = new URL("../src/", import.meta.url);
+  const files = (await readdir(root, { recursive: true })).filter((file) => file.endsWith(".ts"));
+  const callers = [];
+  for (const file of files) {
+    const source = await readFile(new URL(file, root), "utf8");
+    // Each call fits on one line: `.registerParticipant(access, input[, true])`.
+    for (const line of source.split("\n").filter((text) => text.includes(".registerParticipant(")))
+      callers.push({ file, admits: /\.registerParticipant\(.*,\s*true\s*\)/.test(line) });
+  }
+  // HTTP (http.ts) and MCP (agent.ts) never admit, so an invited key there is refused
+  // (`Actors.invitedRegistration`); only the server object's admission does.
+  assert.deepEqual(
+    callers.filter((caller) => caller.admits).map((caller) => caller.file),
+    ["server-object.ts"],
+  );
+  assert.ok(
+    callers.some((caller) => caller.file === "agent.ts" && !caller.admits),
+    "MCP path",
+  );
+  assert.ok(
+    callers.some((caller) => caller.file === "http.ts" && !caller.admits),
+    "HTTP path",
+  );
+});
+
+test("an invited agent's signal link counts, and the dashboard feed is not an agent route", async (t) => {
+  const s = await setup(t);
+  ok(await s.alice("PUT", `${s.root}/agent-invites/mode`, { mode: "open" }));
+  const invite = ok(await s.alice("POST", `${s.root}/agent-invites`, { requestKey: randomUUID() }));
+  const joined = ok(await redeem(s, invite.code, "hooked"));
+  const as = bearer(s.x, joined.key);
+  const general = ok(await as("GET", s.root)).generalConversationId;
+  const link = ok(
+    await as("POST", `${s.root}/participants/${joined.participantId}/signals`, {
+      channelIds: [general],
+      directChats: "own",
+    }),
+    "mint",
+  );
+  // A hook checks the link with its secret as the bearer, never with the agent's key.
+  const target = new URL(link.url);
+  const dot = target.pathname.lastIndexOf(".");
+  const checked = await s.x.raw(target.pathname.slice(0, dot), {
+    headers: { authorization: `Bearer ${target.pathname.slice(dot + 1)}` },
+  });
+  assert.equal(checked.status, 200, await checked.clone().text());
+  assert.ok(Number.isInteger((await checked.json()).pending));
+  // `serverFeed` is the dashboard's: refused by the Worker as by the server object.
+  assert.equal((await as("GET", `${s.root}/messages`)).status, 403);
+});
+
+/** A JSON-RPC call to /mcp/join, with no credential. */
+const joinCall = async (x, method, params = {}, extra = {}) => {
+  const request = rpc(method, params);
+  const response = await x.raw("/mcp/join", {
+    ...request,
+    headers: { ...request.headers, ...extra },
+  });
+  return { status: response.status, headers: response.headers, json: await response.json() };
+};
+/** A tool on /mcp/join: its structured answer. */
+const joinTool = async (x, name, args) => {
+  const answer = await joinCall(x, "tools/call", { name, arguments: args });
+  assert.equal(answer.status, 200, JSON.stringify(answer.json));
+  return answer.json.result.structuredContent;
+};
+
+test("an agent joins over /mcp/join with no sign-in, then works on /mcp with its key", async (t) => {
+  const s = await setup(t);
+  const invite = ok(
+    await s.alice("POST", `${s.root}/agent-invites`, {
+      participantId: s.deployer.item.id,
+      requestKey: randomUUID(),
+    }),
+  );
+  // Only redeem and the request check, and nothing that sends a client to sign in.
+  const listed = await joinCall(s.x, "tools/list");
+  assert.equal(listed.status, 200, JSON.stringify(listed.json));
+  assert.deepEqual(listed.json.result.tools.map((tool) => tool.name).sort(), [
+    "check_agent_invite",
+    "redeem_agent_invite",
+  ]);
+  assert.equal(listed.headers.get("www-authenticate"), null);
+  const metadata = await s.x.raw("/.well-known/oauth-protected-resource/mcp/join");
+  assert.notEqual(metadata.status, 200);
+
+  const unknown = await joinTool(s.x, "redeem_agent_invite", {
+    code: `${invite.code.slice(0, -4)}AAAA`,
+    name: "reviewer",
+    agentType: "claude-code",
+  });
+  assert.equal(unknown.error.code, "not_found", JSON.stringify(unknown));
+  const bad = await joinTool(s.x, "redeem_agent_invite", { code: invite.code });
+  assert.equal(bad.error.code, "invalid_input", JSON.stringify(bad));
+
+  const waiting = await joinTool(s.x, "redeem_agent_invite", {
+    code: invite.code,
+    name: "reviewer",
+    agentType: "claude-code",
+    note: "Reviewing PRs.",
+  });
+  assert.equal(waiting.data.status, "waiting", JSON.stringify(waiting));
+  const still = await joinTool(s.x, "check_agent_invite", {
+    requestId: waiting.data.requestId,
+    pickup: waiting.data.pickup,
+  });
+  assert.equal(still.data.status, "waiting", JSON.stringify(still));
+  const wrong = await joinTool(s.x, "check_agent_invite", {
+    requestId: waiting.data.requestId,
+    pickup: `${waiting.data.pickup}x`,
+  });
+  assert.ok(wrong.error, JSON.stringify(wrong));
+
+  ok(await s.alice("POST", `${s.root}/agent-invites/requests/${waiting.data.requestId}/approve`));
+  const joined = await joinTool(s.x, "check_agent_invite", {
+    requestId: waiting.data.requestId,
+    pickup: waiting.data.pickup,
+    waitSeconds: 1,
+  });
+  assert.equal(joined.data.status, "joined", JSON.stringify(joined));
+  assert.match(joined.data.key, new RegExp(`^tka_${s.server.id}\\.`));
+  // The pickup is spent.
+  const again = await joinTool(s.x, "check_agent_invite", {
+    requestId: waiting.data.requestId,
+    pickup: waiting.data.pickup,
+  });
+  assert.ok(again.error, JSON.stringify(again));
+
+  const context = await s.x.mcp(joined.data.key, "get_context", {
+    serverId: s.server.id,
+    participant: { id: joined.data.participantId },
+  });
+  assert.equal(context.data.server.id, s.server.id);
+});
+
+test("an invited agent makes, lists and revokes invite links over MCP, as itself only", async (t) => {
+  const s = await setup(t);
+  ok(await s.alice("PUT", `${s.root}/agent-invites/mode`, { mode: "open" }));
+  const invite = ok(await s.alice("POST", `${s.root}/agent-invites`, { requestKey: randomUUID() }));
+  const joined = ok(await redeem(s, invite.code, "lead"));
+  const me = joined.participantId;
+  const names = (await mcpCall(s.x, joined.key, "tools/list")).json.result.tools.map(
+    (tool) => tool.name,
+  );
+  for (const name of ["create_agent_invite", "list_agent_invites", "revoke_agent_invite"])
+    assert.ok(names.includes(name), name);
+
+  const made = await s.x.mcp(joined.key, "create_agent_invite", {
+    serverId: s.server.id,
+    participantId: me,
+    uses: 2,
+    note: "for my helpers",
+    requestKey: randomUUID(),
+  });
+  assert.match(made.data.code, /^tki_/);
+  assert.equal(made.data.invite.madeBy.name, "lead");
+  assert.equal(made.data.url, `https://talkto.test/join/agent#${made.data.code}`);
+  // Its helper joins through it over /mcp/join, with lead in its chain.
+  const helper = await joinTool(s.x, "redeem_agent_invite", {
+    code: made.data.code,
+    name: "helper",
+    agentType: "claude-code",
+  });
+  assert.equal(helper.data.status, "joined", JSON.stringify(helper));
+  const participants = ok(await s.alice("GET", `${s.root}/participants`));
+  const listedHelper = participants.items.find((item) => item.id === helper.data.participantId);
+  assert.deepEqual(
+    listedHelper.invite.chain.map((step) => step.name),
+    ["lead"],
+  );
+
+  // Not as another agent, and not on another server.
+  const spoofed = await s.x.mcp(
+    joined.key,
+    "create_agent_invite",
+    { serverId: s.server.id, participantId: s.deployer.item.id, requestKey: randomUUID() },
+    true,
+  );
+  assert.equal(spoofed.error.code, "forbidden", JSON.stringify(spoofed));
+  const elsewhere = await s.x.mcp(
+    joined.key,
+    "list_agent_invites",
+    { serverId: "00000000-0000-4000-8000-000000000000" },
+    true,
+  );
+  assert.equal(elsewhere.error.code, "forbidden");
+
+  const open = await s.x.mcp(joined.key, "list_agent_invites", { serverId: s.server.id });
+  const mine = open.data.items.find((item) => item.id === made.data.invite.id);
+  assert.equal(mine.usesLeft, 1);
+  assert.equal(JSON.stringify(open).includes(made.data.code), false);
+  const revoked = await s.x.mcp(joined.key, "revoke_agent_invite", {
+    serverId: s.server.id,
+    inviteId: made.data.invite.id,
+  });
+  assert.equal(revoked.data.id, made.data.invite.id);
+  const late = await joinTool(s.x, "redeem_agent_invite", {
+    code: made.data.code,
+    name: "late",
+    agentType: "claude-code",
+  });
+  assert.equal(late.error.code, "not_found");
+
+  // Removed, its invite tools say to ask for a new invite.
+  ok(await s.alice("POST", `${s.root}/participants/${me}/remove`, {}));
+  const gone = await s.x.mcp(joined.key, "list_agent_invites", { serverId: s.server.id }, true);
+  assert.equal(gone.error.code, "forbidden", JSON.stringify(gone));
+});
+
+test("a signed-in person's agent makes an invite link over MCP; approving stays a person's", async (t) => {
+  const s = await setup(t);
+  const credential = await s.x.mcpToken(s.account.organizationId);
+  const registered = await s.x.mcp(credential, "register_participant", {
+    serverId: s.server.id,
+    name: "planner",
+    agentType: "claude-code",
+    requestKey: randomUUID(),
+  });
+  const planner = registered.data.item.id;
+  const made = await s.x.mcp(credential, "create_agent_invite", {
+    serverId: s.server.id,
+    participantId: planner,
+    requestKey: randomUUID(),
+  });
+  assert.equal(made.data.invite.madeBy.name, "planner");
+  const waiting = ok(await redeem(s, made.data.code, "outsider"));
+  assert.equal(waiting.status, "waiting");
+  // The same agent cannot approve: there is no MCP tool for it, and the route refuses its token.
+  const approve = await s.x.raw(`${s.root}/agent-invites/requests/${waiting.requestId}/approve`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${credential}` },
+  });
+  assert.notEqual(approve.status, 200);
+  const listed = await s.x.mcp(credential, "list_agent_invites", { serverId: s.server.id });
+  assert.ok(
+    listed.data.items.every((item) => item.id !== made.data.invite.id),
+    "used up",
+  );
+});
+
+test("every redeem over /mcp/join counts against the caller's network, as over HTTP", async (t) => {
+  const s = await setup(t, { signalFailuresPerMinute: 3 });
+  const invite = ok(
+    await s.alice("POST", `${s.root}/agent-invites`, { uses: 10, requestKey: randomUUID() }),
+  );
+  const codes = [];
+  for (let n = 0; n < 5; n++) {
+    const answer = await joinCall(
+      s.x,
+      "tools/call",
+      {
+        name: "redeem_agent_invite",
+        arguments: { code: invite.code, name: `agent-${n}`, agentType: "script" },
+      },
+      { "cf-connecting-ip": "203.0.113.10" },
+    );
+    const content = answer.json.result.structuredContent;
+    codes.push(content.error?.code ?? content.data.status);
+  }
+  assert.deepEqual(codes.slice(0, 3), ["waiting", "waiting", "waiting"]);
+  assert.equal(codes.at(-1), "rate_limited");
+});
+
+test("a pickup secret that is not a minted one is invalid input on /mcp/join and matches nothing on HTTP", async (t) => {
+  const s = await setup(t);
+  const invite = ok(await s.alice("POST", `${s.root}/agent-invites`, { requestKey: randomUUID() }));
+  const waiting = ok(await redeem(s, invite.code, "checker"));
+  for (const pickup of ["a\r\nb", "short", `${waiting.pickup}x`]) {
+    const answer = await joinTool(s.x, "check_agent_invite", {
+      requestId: waiting.requestId,
+      pickup,
+    });
+    assert.equal(answer.error.code, "invalid_input", JSON.stringify(answer));
+  }
+  assert.equal((await check(s, waiting.requestId, "short")).status, 404);
+  // The real secret still works.
+  assert.equal(ok(await check(s, waiting.requestId, waiting.pickup)).status, "waiting");
 });

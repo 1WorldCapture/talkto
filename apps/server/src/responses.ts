@@ -4,6 +4,7 @@ import * as Envelope from "@talkto/api/envelope";
 import * as M from "@talkto/api/models";
 import * as Telemetry from "./telemetry.js";
 import { present } from "./present.js";
+import * as Access from "./access.js";
 
 /** Report timestamp fields without exposing caller data or a whole schema failure. */
 export function timestampError(issue: SchemaIssue.Issue): string | undefined {
@@ -106,7 +107,10 @@ export const projectFailure = (error: Errors.Failure, meta: Envelope.Meta) => {
     case "InvalidInput":
       return failure("invalid_input");
     case "ServerAccessDenied":
-      return failure("server_unavailable");
+      // An invited agent refused an operation is told so; everyone else learns nothing more.
+      return error.message === Access.invitedRefusal
+        ? failure("forbidden")
+        : failure("server_unavailable");
     case "ParticipantNotFound":
       return failure("participant_not_found");
     case "ConversationNotFound":

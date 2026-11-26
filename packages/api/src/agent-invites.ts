@@ -32,6 +32,10 @@ export const Key = Schema.String.check(
 ).pipe(Schema.brand("InvitedAgentKey"));
 /** Parsed invited agent key. */
 export type Key = typeof Key.Type;
+/** A request's pickup secret: 43 base64url characters, as minted. */
+export const Pickup = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/));
+/** Whether a pickup header is shaped like a minted secret. */
+export const isPickup = Schema.is(Pickup);
 
 /** An invite link's ID. */
 export const InviteId = Schema.String.check(Schema.isUUID(4)).pipe(Schema.brand("AgentInviteId"));
@@ -322,3 +326,70 @@ export const Api = HttpApi.make("talkto-agent-invites")
       ),
     ),
   );
+
+/*
+  The same actions as MCP tools. On `/mcp`, an agent makes, lists and revokes links; on `/mcp/join`,
+  with no sign-in, an agent redeems a code and checks its request. Each names its server, and an
+  agent always names itself when it makes a link.
+*/
+
+/** `create_agent_invite`. */
+export const createToolName = "create_agent_invite";
+/** `list_agent_invites`. */
+export const listToolName = "list_agent_invites";
+/** `revoke_agent_invite`. */
+export const revokeToolName = "revoke_agent_invite";
+/** `redeem_agent_invite`, on `/mcp/join`. */
+export const redeemToolName = "redeem_agent_invite";
+/** `check_agent_invite`, on `/mcp/join`. */
+export const checkToolName = "check_agent_invite";
+
+/** Make an invite link as one of your agents. */
+export const CreateInviteTool = Schema.Struct({
+  serverId: M.ServerId,
+  participantId: M.ParticipantId,
+  expiresInHours: CreateInvite.fields.expiresInHours,
+  uses: CreateInvite.fields.uses,
+  note: CreateInvite.fields.note,
+  requestKey: M.RequestKey,
+}).annotate({ parseOptions: { onExcessProperty: "error" } });
+/** The server's open links. */
+export const ListInvitesTool = Schema.Struct({ serverId: M.ServerId }).annotate({
+  parseOptions: { onExcessProperty: "error" },
+});
+/** Revoke one link. */
+export const RevokeInviteTool = Schema.Struct({
+  serverId: M.ServerId,
+  inviteId: InviteId,
+}).annotate({ parseOptions: { onExcessProperty: "error" } });
+/** A revoked link. */
+export const Revoked = Schema.Struct({ id: InviteId, revokedAt: M.Timestamp });
+/** A tool on `/mcp` that the Worker answers from the invite routes. */
+export const InviteCommand = Schema.Union([
+  Schema.Struct({ tool: Schema.Literal(createToolName), input: CreateInviteTool }),
+  Schema.Struct({ tool: Schema.Literal(listToolName), input: ListInvitesTool }),
+  Schema.Struct({ tool: Schema.Literal(revokeToolName), input: RevokeInviteTool }),
+]);
+/** Parsed invite tool call. */
+export type InviteCommand = typeof InviteCommand.Type;
+
+/** Check a request to join; `pickup` is the secret `redeem_agent_invite` answered once. */
+export const CheckTool = Schema.Struct({
+  requestId: RequestId,
+  pickup: Pickup,
+  /** Hold the call up to this many seconds for a decision. */
+  waitSeconds: Schema.optionalKey(
+    Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: maxWaitSeconds })),
+  ),
+  /** Another name, only after a pickup answered `name_taken`. */
+  name: Schema.optionalKey(M.Name),
+}).annotate({ parseOptions: { onExcessProperty: "error" } });
+/** Parsed request check. */
+export interface CheckTool extends Schema.Schema.Type<typeof CheckTool> {}
+/** A tool on `/mcp/join`. */
+export const JoinCommand = Schema.Union([
+  Schema.Struct({ tool: Schema.Literal(redeemToolName), input: Redeem }),
+  Schema.Struct({ tool: Schema.Literal(checkToolName), input: CheckTool }),
+]);
+/** Parsed join tool call. */
+export type JoinCommand = typeof JoinCommand.Type;

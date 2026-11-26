@@ -125,7 +125,7 @@ export const create = Effect.fn("Invites.create")(function* (
       "forbidden",
       Access.isInvited(caller.principal)
         ? "An invited agent invites as itself: send its own participant ID."
-        : "Name one of your own agents in participantId, or leave it out to invite as yourself.",
+        : "That participant is not one of your agents: name one of your own in participantId.",
     );
   const originUser =
     found.origin ??

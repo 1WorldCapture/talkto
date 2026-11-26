@@ -9,6 +9,7 @@ import {
 import type { Tool, CallToolResult } from "@modelcontextprotocol/server";
 import * as A from "@talkto/api/agent";
 import * as F from "@talkto/api/feedback";
+import * as AI from "@talkto/api/agent-invites";
 import * as M from "@talkto/api/models";
 import { agentTypeInstructions } from "@talkto/api/agent-types";
 import * as Responses from "./responses.js";
@@ -37,13 +38,18 @@ export interface Application {
    * no platform database (TalkTo Local), so the tool is not offered there.
    */
   readonly feedback?: (input: F.AgentFeedback, meta: A.Meta) => Promise<A.UncheckedReply>;
+  /**
+   * The invite tools, answered by the Worker from the invite routes (invites/http.ts); absent where
+   * the ingress has no invites (TalkTo Local), so they are not offered there.
+   */
+  readonly invites?: (command: AI.InviteCommand, meta: A.Meta) => Promise<A.UncheckedReply>;
   /** MCP events for an explicitly named server; absent where the ingress offers none. */
   readonly events?: (command: McpEvents.Command) => Promise<McpEvents.Answer>;
 }
 const { jsonSchema, replyJsonSchema } = ToolInput;
 const decodeArguments = Schema.decodeUnknownResult(Schema.JsonObject);
 const tool = <O extends Schema.Top>(
-  name: typeof A.ToolName.Type,
+  name: typeof A.ToolName.Type | typeof AI.redeemToolName | typeof AI.checkToolName,
   description: string,
   input: Schema.Top,
   replySchema: O,
@@ -284,7 +290,35 @@ const definitions = [
     A.reply(F.SentFeedback),
     false,
   ),
+  tool(
+    AI.createToolName,
+    `Make an invite link that lets another agent, anywhere, join this server as its own participant. Name yourself in participantId: the link records you as the inviter. Give the agent the answer's url (the code is after the #); it joins with no TalkTo account. In mode ask a person on the server approves each newcomer; in mode open it joins at once. code and url are shown once; retrying with the same requestKey returns the link without them. Links last ${AI.defaultHours} hours unless expiresInHours says otherwise (1 to ${AI.maxHours}) and admit 1 agent unless uses says otherwise (1 to ${AI.maxUses}). Never post the url in a channel others can read unless anyone there may join.`,
+    AI.CreateInviteTool,
+    A.reply(AI.CreatedInvite),
+    false,
+  ),
+  tool(
+    AI.listToolName,
+    "List this server's open invite links: who made each, when it expires and how many agents it still admits. Never the codes.",
+    AI.ListInvitesTool,
+    A.reply(AI.Invites),
+    true,
+  ),
+  tool(
+    AI.revokeToolName,
+    "Revoke an open invite link at once, by its id from list_agent_invites. Agents who already joined through it stay.",
+    AI.RevokeInviteTool,
+    A.reply(AI.Revoked),
+    false,
+    true,
+  ),
 ];
+/** The invite tools, offered where the ingress answers them. */
+const inviteTools: ReadonlySet<string> = new Set([
+  AI.createToolName,
+  AI.listToolName,
+  AI.revokeToolName,
+]);
 /**
  * The task-board tools, listed on every connection once the deployment offers boards
  * (`TALKTO_BOARD=on`): one connection spans servers, so listing cannot follow one server's board.
@@ -306,6 +340,7 @@ const memoryTools: ReadonlySet<string> = new Set([T.readMemoryToolName, T.memory
 const available = (
   capabilities: ReadonlySet<A.Capability>,
   feedback: boolean,
+  invites: boolean,
   board: boolean,
   memory: boolean,
 ) =>
@@ -313,6 +348,7 @@ const available = (
     (tool) =>
       (tool.capability === null || capabilities.has(tool.capability)) &&
       (feedback || tool.name !== F.toolName) &&
+      (invites || !inviteTools.has(tool.name)) &&
       (board || !boardTools.has(tool.name)) &&
       ((board && memory) || !memoryTools.has(tool.name)),
   );
@@ -508,8 +544,18 @@ export async function fetch(
   board = false,
   /** Swarm memory is offered: its tools are listed and the guide describes it (guide.ts). */
   memory = false,
+  /** Only these tools, for an invited agent's key (invites/mcp.ts); null for every tool. */
+  only: ReadonlySet<string> | null = null,
 ): Promise<Response> {
-  const offered = available(capabilities, application.feedback !== undefined, board, memory);
+  const offered = available(
+    capabilities,
+    application.feedback !== undefined,
+    application.invites !== undefined,
+    board,
+    memory,
+  ).filter((tool) => only === null || only.has(tool.name));
+  // A catalog narrowed for one caller is never a shared cache's answer.
+  const scope = only === null ? "public" : "private";
   const catalog = offered.map((tool) => tool.definition);
   const handler = createMcpHandler(
     () => {
@@ -518,7 +564,7 @@ export async function fetch(
         {
           cacheHints: {
             "server/discover": { ttlMs: 300000, cacheScope: "public" },
-            "tools/list": { ttlMs: 300000, cacheScope: "public" },
+            "tools/list": { ttlMs: 300000, cacheScope: scope },
             "resources/list": { ttlMs: 300000, cacheScope: "public" },
             "resources/templates/list": { ttlMs: 300000, cacheScope: "public" },
             "resources/read": { ttlMs: 300000, cacheScope: "public" },
@@ -611,7 +657,18 @@ export async function fetch(
             meta,
           }) satisfies A.Reply;
         const feedback = application.feedback;
+        const invites = application.invites;
         const answer = async (): Promise<A.UncheckedReply> => {
+          // The invite tools are the Worker's too, answered from the invite routes.
+          if (inviteTools.has(selected.name) && invites !== undefined) {
+            const decoded = Schema.decodeUnknownResult(AI.InviteCommand)(
+              { tool: selected.name, input },
+              { errors: "all" },
+            );
+            return Result.isFailure(decoded)
+              ? invalid(decoded.failure.issue)
+              : invoke(selected.name, () => invites(decoded.success, meta));
+          }
           // send_feedback is the Worker's own tool; every other tool is a server command.
           if (selected.name === F.toolName && feedback !== undefined) {
             const decoded = Schema.decodeUnknownResult(F.AgentFeedback)(input, { errors: "all" });
@@ -660,6 +717,121 @@ export async function fetch(
     const result = new Response(response.body, response);
     result.headers.set("cache-control", "no-store");
     result.headers.set("link", `<${origin}/instructions>; rel="help"`);
+    return result;
+  } finally {
+    await handler.close();
+  }
+}
+
+/** `/mcp/join`'s two tools. */
+const joinDefinitions = [
+  tool(
+    AI.redeemToolName,
+    "Join a TalkTo server with an invite code someone gave you (a link to /join/agent#tki_…: the code is everything after the #). Needs no TalkTo account. Choose a name (letters, digits, - and _, starting with a letter) and say what kind of agent you are. status joined carries your key and participantId: the key is shown once, so keep it where only you can read it, never in a message or a file others read. status waiting means a person approves each newcomer: keep requestId and pickup (shown once) and call check_agent_invite. not_found means the code is unknown, used up, expired or revoked; name_taken means redeem again with another name.",
+    AI.Redeem,
+    A.reply(AI.Admission),
+    false,
+  ),
+  tool(
+    AI.checkToolName,
+    `Check a request to join, with the requestId and pickup secret redeem_agent_invite answered. waitSeconds (0 to ${AI.maxWaitSeconds}) holds the call until a person decides; call again every few seconds while waiting. Once approved, status joined carries your key, shown once, and the pickup is spent. name chooses another name, only after a pickup answered name_taken.`,
+    AI.CheckTool,
+    A.reply(AI.Admission),
+    true,
+  ),
+];
+
+/**
+ * `/mcp/join`: redeem an invite code and check the request, with no sign-in and no
+ * protected-resource metadata, so no client is sent to sign in (docs/agent-invites.md). Once
+ * joined, the agent connects to `/mcp` with its key.
+ */
+export async function join(
+  request: Request,
+  answer: (command: AI.JoinCommand, meta: A.Meta) => Promise<A.UncheckedReply>,
+  origin: string,
+): Promise<Response> {
+  const catalog = joinDefinitions.map((entry) => entry.definition);
+  const handler = createMcpHandler(
+    () => {
+      const mcp = new McpServer(
+        { name: "TalkTo join", version: "0.1.0" },
+        {
+          cacheHints: { "tools/list": { ttlMs: 300000, cacheScope: "public" } },
+          instructions: `Join a TalkTo server with an invite code: call ${AI.redeemToolName}, and while it is waiting, ${AI.checkToolName}. Once joined, connect to ${origin}/mcp with the header Authorization: Bearer <your key>, and name serverId and your participantId in every call. Guide: ${origin}/join/agent.`,
+        },
+      );
+      mcp.server.registerCapabilities({ tools: {} });
+      mcp.server.setRequestHandler("tools/list", () => ({ tools: catalog }));
+      mcp.server.setRequestHandler("tools/call", async (call) => {
+        const meta = metadata(origin);
+        const selected = joinDefinitions.find((entry) => entry.name === call.params.name);
+        if (selected === undefined)
+          throw new ProtocolError(
+            ProtocolErrorCode.InvalidParams,
+            `Unknown tool. /mcp/join offers ${AI.redeemToolName} and ${AI.checkToolName}.`,
+          );
+        const input = call.params.arguments ?? {};
+        const decoded = Schema.decodeUnknownResult(AI.JoinCommand)(
+          { tool: selected.name, input },
+          { errors: "all" },
+        );
+        let raw: A.UncheckedReply;
+        if (Result.isFailure(decoded))
+          raw = {
+            error: {
+              code: "invalid_input",
+              message: ToolInput.describe(
+                selected.name,
+                decoded.failure.issue,
+                Result.getOrElse(decodeArguments(input), () => ({})),
+                selected.published,
+              ),
+            },
+            meta,
+          };
+        else {
+          try {
+            raw = await answer(decoded.success, meta);
+          } catch (cause) {
+            console.error("TalkTo MCP join failed", {
+              requestId: meta.requestId,
+              tool: selected.name,
+              ...describeFailure(cause),
+            });
+            raw = {
+              error: {
+                code: "internal_error",
+                message: "An internal error occurred. Use the request ID for diagnosis.",
+              },
+              meta,
+            };
+          }
+        }
+        const checked = Schema.decodeUnknownResult(selected.replySchema)(raw);
+        const reply: A.Reply = Result.isSuccess(checked)
+          ? checked.success
+          : {
+              error: {
+                code: "internal_error",
+                message: "The join response could not be prepared. Try again.",
+              },
+              meta,
+            };
+        return mcp.server.projectCallToolResult(
+          toolResult(reply),
+          selected.definition.outputSchema,
+        );
+      });
+      return mcp;
+    },
+    { responseMode: "auto", maxSubscriptions: 0, legacy: "stateless" },
+  );
+  try {
+    const response = await handler.fetch(request);
+    const result = new Response(response.body, response);
+    result.headers.set("cache-control", "no-store");
+    result.headers.set("link", `<${origin}/join/agent>; rel="help"`);
     return result;
   } finally {
     await handler.close();

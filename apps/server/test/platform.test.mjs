@@ -1174,6 +1174,9 @@ test("MCP authentication discovery, catalog, instructions and protocol compatibi
       "create_signal",
       "revoke_signal",
       "send_feedback",
+      "create_agent_invite",
+      "list_agent_invites",
+      "revoke_agent_invite",
     ],
   );
   const feedbackTool = catalog.result.tools.find((tool) => tool.name === "send_feedback");
@@ -1724,7 +1727,7 @@ test("SDK v2 validates schemas and tools independently in modern and legacy mode
     });
     try {
       await client.connect(transport);
-      assert.equal((await client.listTools()).tools.length, 11);
+      assert.equal((await client.listTools()).tools.length, 14);
       const result = await client.callTool({ name: "get_context", arguments: {} });
       assert.equal(result.structuredContent.data.kind, "servers");
       assert.match(result.structuredContent.meta.instructions.text, /talkto:\/\/instructions/);

@@ -489,6 +489,12 @@ const agentFlow = async (x, credential, accountId, check, version) => {
     }),
   );
 
+  const made = await call(
+    "create_agent_invite",
+    at({ participantId: ana, note: "for a reviewer", requestKey: randomUUID() }),
+  );
+  await call("list_agent_invites", at({}));
+  await call("revoke_agent_invite", at({ inviteId: made.data.invite.id }));
   await call("create_signal", at(scope));
   await call("revoke_signal", at({ participantId: ana }));
   await call("list_wakes", at({ participantId: ana }));

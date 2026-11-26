@@ -271,3 +271,23 @@ test("emails outside ASCII are refused, so lowercasing never merges two people",
   const response = await x.send("/v1/me", { email: "\u212Aelvin@example.com" });
   assert.equal(response.status, 401);
 });
+
+test("behind Access, joining with an invite code is refused: an invited key cannot work there", async (t) => {
+  const x = await start(t, { access: true, selfHosted: true });
+  const code = `tki_${randomUUID()}.${"A".repeat(43)}`;
+  const redeemed = await x.raw("/v1/agent-invites/redeem", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code, name: "outsider", agentType: "script" }),
+  });
+  assert.equal(redeemed.status, 403);
+  assert.match((await redeemed.json()).error.message, /behind Cloudflare Access/);
+  const joined = await x.raw("/mcp/join", rpc("tools/list"));
+  assert.equal(joined.status, 403);
+  assert.equal(joined.headers.get("www-authenticate"), null);
+  // An invited agent's key on /mcp is refused the same way, never sent to sign in.
+  const key = `tka_${randomUUID()}.${"a".repeat(43)}`;
+  const mcp = await x.raw("/mcp", rpc("tools/list", {}, key));
+  assert.equal(mcp.status, 403);
+  assert.match((await mcp.json()).error.message, /behind Cloudflare Access/);
+});

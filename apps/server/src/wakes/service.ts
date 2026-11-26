@@ -229,6 +229,8 @@ export const layer = Layer.effect(
               grant.revokedAt !== null
             )
               return yield* new E.ServerAccessDenied({ message: "The server is unavailable." });
+            if (!Actors.mayRun(access.principalKey, operation))
+              return yield* new E.ServerAccessDenied({ message: Actors.invitedRefusal });
             return yield* body(tx);
           }),
         )

@@ -9,6 +9,7 @@ import * as W from "./wake.js";
 import * as R from "./renames.js";
 import * as F from "./feedback.js";
 import * as T from "./tasks.js";
+import * as AI from "./agent-invites.js";
 
 const strict = { parseOptions: { onExcessProperty: "error" } } as const;
 const server = { serverId: M.ServerId };
@@ -291,8 +292,8 @@ export const Capability = Schema.Literals(["files", "transfers", "wakes", "wake_
 /** Parsed capability name. */
 export type Capability = typeof Capability.Type;
 /**
- * Stable names, scoped to this MCP server by the client. `send_feedback` is answered by the Worker
- * and is not a server-object `Command`.
+ * Stable names, scoped to this MCP server by the client. `send_feedback` and the invite tools are
+ * answered by the Worker and are not server-object `Command`s.
  */
 export const ToolName = Schema.Literals([
   "get_context",
@@ -321,6 +322,9 @@ export const ToolName = Schema.Literals([
   T.readToolName,
   T.readMemoryToolName,
   T.memoryAccessToolName,
+  AI.createToolName,
+  AI.listToolName,
+  AI.revokeToolName,
 ]);
 /** Validated commands shared by the protocol adapter and private server binding. */
 export const Command = Schema.Union([
@@ -446,6 +450,10 @@ const standardReply = reply(
     T.ReadTasksData,
     T.MemoryRead,
     T.MemoryAccess,
+    AI.CreatedInvite,
+    AI.Invites,
+    AI.Revoked,
+    AI.Admission,
   ]),
 );
 /** Updates use compact context while retaining the shared failure and metadata contract. */

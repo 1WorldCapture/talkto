@@ -57,3 +57,11 @@ export const invitedPrincipal = (id: string) => PrincipalKey.make(`${invitedPref
 /** Whether a principal is an invited agent's. */
 export const isInvited = (principal: string) =>
   principal.startsWith(invitedPrefix) || principal.startsWith(invitedKeyPrefix);
+
+/**
+ * What the server object answers an invited agent for an operation outside its allowlist
+ * (`Actors.mayRun`): `ServerAccessDenied` with exactly this message, which `Responses` turns into
+ * 403 `forbidden` rather than `server_unavailable`.
+ */
+export const invitedRefusal =
+  "An invited agent can only act as itself on this server's agent tools; ask a person on the server for anything else.";

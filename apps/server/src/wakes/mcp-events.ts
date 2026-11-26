@@ -6,6 +6,7 @@ import * as Crypto from "./crypto.js";
 import type * as Transport from "./transport.js";
 import type * as E from "@talkto/api/errors";
 import type { CallbackFailed, TargetLimit } from "./errors.js";
+import * as Access from "../access.js";
 
 /**
  * MCP events, webhook delivery, as ChatGPT implements it.
@@ -230,7 +231,14 @@ export const failure = (
   switch (error._tag) {
     case "ServerAccessDenied":
       return {
-        error: { code: codes.forbidden, message: "The server is unavailable.", diagnostic },
+        error: {
+          code: codes.forbidden,
+          message:
+            error.message === Access.invitedRefusal
+              ? Access.invitedRefusal
+              : "The server is unavailable.",
+          diagnostic,
+        },
       };
     case "AgentNotOwned":
       return { error: { code: codes.forbidden, message: error.message, diagnostic } };

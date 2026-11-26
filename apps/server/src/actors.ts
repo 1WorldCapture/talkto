@@ -151,3 +151,80 @@ export const requireOwnAgent = Effect.fn("Actors.requireOwnAgent")(function* (
   yield* watch(access, item.id);
   return item;
 });
+
+/**
+ * The operations an invited agent's principal may run (docs/agent-invites.md), by the name each
+ * service's `run` gives them, whatever the path: HTTP, MCP or a watch. Everything else (people's
+ * routes, removals, renaming others, managing wakes, server settings, the dashboard's reads) is refused here, behind the Worker's own route allowlist.
+ */
+const invitedOperations: ReadonlySet<string> = new Set([
+  // Context, participants and updates. Registering is refused for invited callers except at
+  // admission (`registerParticipant`'s own check).
+  "getServer",
+  "getUpdates",
+  "registerParticipant",
+  "renameSelf",
+  "getParticipant",
+  "listParticipants",
+  // Channels, direct chats and messages.
+  "createChannel",
+  "listChannels",
+  "getConversation",
+  "setChannelArchived",
+  "openDirectConversation",
+  "listDirectConversations",
+  "sendMessage",
+  "sendTo",
+  "readMessages",
+  "searchMessages",
+  "getMessageContext",
+  "readArchive",
+  "readArchive.authorize",
+  // Signal links and file transfers.
+  "createSignal",
+  "revokeSignal",
+  "countSignal",
+  "getPackCommand",
+  "prepareTransfer",
+  "prepareTransfer.refused",
+  "prepareTransfer.pooled",
+  "completeTransfer",
+  "completeTransfer.read",
+  "fetchTransfer.read",
+  "fetchTransfer.record",
+  "readTransfer",
+  "listTransfers",
+  "downloadTransfer",
+  "listShares",
+  // A swarm server's tasks and its memory, Git access included: the token is scoped to the one
+  // repository, writes only with a live claim, and ends with it, as for any agent.
+  "createTasks",
+  "claimTask",
+  "updateTask",
+  "updateTask.files",
+  "listTasks",
+  "readTask",
+  "boardContext",
+  "board",
+  "boardTasks",
+  "boardLabels",
+  "memory.provision",
+  "memory.created",
+  "memory.seeded",
+  "memory.start",
+  "memory.state",
+  "memory.channel",
+  "memory.read",
+  "memory.access",
+  "memory.granted",
+  // Its own event subscription (each checks the agent is its own).
+  "wakes.subscribe",
+  "wakes.subscribe.check",
+  "wakes.unsubscribe",
+]);
+
+/** Whether this principal may run this operation: always, unless it is an invited agent's. */
+export const mayRun = (principalKey: Access.PrincipalKey, operation: string) =>
+  !Access.isInvited(principalKey) || invitedOperations.has(operation);
+/** The refusal an invited agent gets for any other operation (403 forbidden, `Responses`). */
+export const invitedRefusal = Access.invitedRefusal;
