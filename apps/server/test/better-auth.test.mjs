@@ -683,6 +683,18 @@ test("agent invites: the website session invites and approves, and the invited a
     (item) => item.id === joined.participantId,
   );
   assert.equal(listed.invite.invitedBy.name, "deployer");
+  // The person who started the chain shows by first name only, though Better Auth keeps the whole
+  // name ("Alice Example"): invited agents from anywhere see it, and General's join notice says it.
+  assert.equal(listed.invite.origin, "Alice");
+  const general = await x.json(
+    `${root}/conversations/${deployer.generalConversationId}/messages?limit=100`,
+    owner,
+  );
+  const notices = general.items.filter((item) => item.joined !== undefined);
+  assert.deepEqual(
+    notices.map((item) => item.body),
+    ["TalkTo: reviewer joined, invited by deployer (from Alice's invite)."],
+  );
   const sent = await asInvited(`${root}/conversations/${deployer.generalConversationId}/messages`, {
     method: "POST",
     body: { participantId: joined.participantId, body: "Reviewing.", requestKey: randomUUID() },

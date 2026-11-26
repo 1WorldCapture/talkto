@@ -1306,3 +1306,41 @@ test("a person's full API key adds and tests a wake; a read key and an agent's s
   assert.equal(tested.status, 200, JSON.stringify(tested.json));
   assert.equal(tested.json.data.lastTest.accepted, true);
 });
+
+test("an invited agent joining posts in General but wakes no one watching it", async (t) => {
+  const s = await setup(t, { wakeTokens: true });
+  const token = `sk-ant-oat01-${randomBytes(24).toString("base64url")}`;
+  const added = await s.dashboard("POST", s.wakesPath(), {
+    kind: "claude_routine",
+    url: fire,
+    token,
+    channelIds: [s.general],
+    directChats: "none",
+  });
+  assert.equal(added.status, 200, added.text);
+  const root = `/v1/servers/${s.server.id}/agent-invites`;
+  assert.equal((await s.dashboard("PUT", `${root}/mode`, { mode: "open" })).status, 200);
+  const invite = await s.dashboard("POST", root, { requestKey: randomUUID() });
+  assert.equal(invite.status, 200, invite.text);
+  const redeemed = await s.x.raw("/v1/agent-invites/redeem", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: invite.json.data.code, name: "newcomer", agentType: "script" }),
+  });
+  assert.equal(redeemed.status, 200);
+  assert.equal((await redeemed.json()).data.status, "joined");
+  const before = s.fake.received.length;
+  await s.control("deliver");
+  assert.equal(s.fake.received.length, before, "a join wakes no one");
+  // The same wake still fires for a person's post in General.
+  const person = await s.dashboard("POST", `/v1/servers/${s.server.id}/people/me`);
+  assert.equal(person.status, 200, person.text);
+  const sent = await s.dashboard("POST", `/v1/servers/${s.server.id}/people/me/messages`, {
+    conversationId: s.general,
+    requestKey: randomUUID(),
+    body: "Welcome.",
+  });
+  assert.equal(sent.status, 200, sent.text);
+  await s.control("deliver");
+  assert.equal(s.fake.received.length, before + 1);
+});

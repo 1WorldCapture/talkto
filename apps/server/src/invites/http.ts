@@ -384,10 +384,21 @@ const deny = (meta: Envelope.Meta, message: string) =>
 
 /**
  * The name an invite chain shows for the person it started from: their first name only, never
- * their email (invited agents from anywhere see it). "Person" when they gave none.
+ * their email (invited agents from anywhere see it). "Person" when they gave none. A name given in
+ * one field, with no last name (Better Auth keeps the whole name the person typed there), shows its
+ * first word only.
  */
-export const originName = (user: { readonly firstName: string | null }) =>
-  Persons.displayName({ firstName: user.firstName, email: "" });
+export const originName = (user: {
+  readonly firstName: string | null;
+  readonly lastName?: string | null;
+}) =>
+  Persons.displayName({
+    firstName:
+      user.lastName === null || user.lastName === undefined
+        ? (user.firstName?.trim().split(/\s+/)[0] ?? null)
+        : user.firstName,
+    email: "",
+  });
 
 /**
  * An invited agent's call the server object answered `server_unavailable`: its participant was

@@ -115,7 +115,7 @@ export interface Interface {
     access: AccessContext,
     input: I.RegisterParticipant,
     /** Set only when the server admits an invited agent: its one participant (invites.ts). */
-    admission?: boolean,
+    admission?: Admission,
   ) => Response<
     M.Registration,
     E.NameTaken | E.IdempotencyConflict | E.ParticipantRemoved | E.AgentNotOwned
@@ -852,6 +852,53 @@ export const channelNotice = Effect.fn("TalkTo.channelNotice")(function* (
   if (item === null) return yield* Effect.die("Appended notice is missing");
   return yield* describeMessages(tx, { item, created: true }, [item]);
 });
+/** An invited agent's admission: who made the link it joined through, for General's notice. */
+export interface Admission {
+  /** The agent that made the link, or null when a person did. */
+  readonly invitedBy: string | null;
+  /** The person whose invite started the chain, by first name. */
+  readonly origin: string;
+}
+/**
+ * TalkTo's notice in General that an agent joined by invite, written with its participant in the
+ * same transaction, so it exists once however often a pickup is retried. Its sender is the agent
+ * that joined. It names the inviting agent and the person whose invite started the chain, by first
+ * name, as the owner chose (November 25, 2026): a message is never rewritten, so that name stays in
+ * General's history after the person deletes their account, while the participant's lineage then
+ * says "Deleted person". It is never metered and wakes no one.
+ */
+const joinNotice = Effect.fn("TalkTo.joinNotice")(function* (
+  tx: Store.Session,
+  access: AccessContext,
+  agent: M.Participant,
+  admission: Admission,
+  messageId: M.MessageId,
+) {
+  const general = yield* tx.channelNamed(M.Name.make("General"));
+  if (general === null) return yield* Effect.die("Initialized server is missing General");
+  const latest = yield* tx.latestMessage();
+  const createdAt =
+    [agent.createdAt, general.createdAt, latest?.createdAt ?? agent.createdAt].sort().at(-1) ??
+    agent.createdAt;
+  const appended = yield* tx.append({
+    id: messageId,
+    conversationId: general.id,
+    senderId: agent.id,
+    body: M.MessageBody.make(
+      admission.invitedBy === null
+        ? `TalkTo: ${agent.name} joined, invited by ${admission.origin}.`
+        : `TalkTo: ${agent.name} joined, invited by ${admission.invitedBy} (from ${admission.origin}'s invite).`,
+    ),
+    createdAt,
+    grantId: access.grantId,
+    // Outside what agents choose in practice, and unique per participant.
+    requestKey: M.RequestKey.make(`talkto.joined:${agent.id}`),
+  });
+  yield* tx.addJoinNotice(appended, agent.id);
+  const item = yield* tx.message(appended.id);
+  if (item === null) return yield* Effect.die("Appended notice is missing");
+  return yield* describeMessages(tx, { item, created: true }, [item]);
+});
 /** The notice's text: who created which channel, its description, and how to follow it. */
 const channelNoticeBody = (
   channel: Pick<M.Channel, "id" | "name" | "description">,
@@ -1348,63 +1395,73 @@ export const layer = Layer.effect(
       getServer: Effect.fn("TalkTo.getServer")(function* (access) {
         return yield* run(access, "getServer", (tx) => tx.server().pipe(Effect.map(empty)));
       }),
-      registerParticipant: Effect.fn("TalkTo.registerParticipant")(function* (
-        access,
-        input,
-        admission = false,
-      ) {
-        // An invited agent is exactly one agent: its key never registers another, so every
-        // newcomer arrives by invite and a server's approval can't be skipped.
-        if (Access.isInvited(access.principalKey) && !admission)
-          return yield* Actors.invitedRegistration();
-        const id = M.ParticipantId.make(yield* ids.uuid());
-        const createdAt = yield* now;
-        return yield* run(access, "registerParticipant", (tx) =>
-          Effect.gen(function* () {
-            const prior = yield* tx.registration(access.grantId, input.requestKey);
-            if (prior !== null) {
-              const p = prior.item;
-              // After a rename, a retry of the original registration still names the original
-              // name; it recovers the same participant under its current name.
-              const registered = (yield* tx.registeredName(p.id)) ?? p.name;
-              if (
-                registered !== input.name ||
-                p.agentType !== input.agentType ||
-                p.workingDirectory !== (input.workingDirectory ?? null) ||
-                p.joinedNote !== (input.joinedNote ?? null)
-              )
-                return yield* conflict();
-              // A removed agent retrying its registration learns why it cannot continue.
-              if (p.removedAt !== undefined) return yield* Actors.removed(p);
-              return yield* registration(tx, { item: p, created: false });
-            }
-            const holder = yield* tx.participantNamed(input.name);
-            if (holder !== null)
-              return yield* new E.NameTaken({
-                message:
-                  holder.removedAt === undefined
-                    ? "A participant with that name already exists."
-                    : "An agent a person removed from this server keeps that name. Choose another name, or ask a person to rename or restore that agent on the TalkTo dashboard.",
+      registerParticipant: Effect.fn("TalkTo.registerParticipant")(
+        function* (access, input, admission) {
+          // An invited agent is exactly one agent: its key never registers another, so every
+          // newcomer arrives by invite and a server's approval can't be skipped.
+          if (Access.isInvited(access.principalKey) && admission === undefined)
+            return yield* Actors.invitedRegistration();
+          const id = M.ParticipantId.make(yield* ids.uuid());
+          const noticeId = M.MessageId.make(yield* ids.uuid());
+          const createdAt = yield* now;
+          const result = yield* run(access, "registerParticipant", (tx) =>
+            Effect.gen(function* () {
+              const prior = yield* tx.registration(access.grantId, input.requestKey);
+              if (prior !== null) {
+                const p = prior.item;
+                // After a rename, a retry of the original registration still names the original
+                // name; it recovers the same participant under its current name.
+                const registered = (yield* tx.registeredName(p.id)) ?? p.name;
+                if (
+                  registered !== input.name ||
+                  p.agentType !== input.agentType ||
+                  p.workingDirectory !== (input.workingDirectory ?? null) ||
+                  p.joinedNote !== (input.joinedNote ?? null)
+                )
+                  return yield* conflict();
+                // A removed agent retrying its registration learns why it cannot continue.
+                if (p.removedAt !== undefined) return yield* Actors.removed(p);
+                return {
+                  outcome: yield* registration(tx, { item: p, created: false }),
+                  notice: null,
+                };
+              }
+              const holder = yield* tx.participantNamed(input.name);
+              if (holder !== null)
+                return yield* new E.NameTaken({
+                  message:
+                    holder.removedAt === undefined
+                      ? "A participant with that name already exists."
+                      : "An agent a person removed from this server keeps that name. Choose another name, or ask a person to rename or restore that agent on the TalkTo dashboard.",
+                });
+              const item = M.Participant.make({
+                id,
+                name: input.name,
+                agentType: input.agentType,
+                workingDirectory: input.workingDirectory ?? null,
+                joinedNote: input.joinedNote ?? null,
+                createdAt,
+                messageCount: 0,
+                lastMessageAt: null,
               });
-            const item = M.Participant.make({
-              id,
-              name: input.name,
-              agentType: input.agentType,
-              workingDirectory: input.workingDirectory ?? null,
-              joinedNote: input.joinedNote ?? null,
-              createdAt,
-              messageCount: 0,
-              lastMessageAt: null,
-            });
-            yield* tx.addParticipant({
-              item,
-              grantId: access.grantId,
-              requestKey: input.requestKey,
-            });
-            return yield* registration(tx, { item, created: true });
-          }),
-        );
-      }),
+              yield* tx.addParticipant({
+                item,
+                grantId: access.grantId,
+                requestKey: input.requestKey,
+              });
+              const notice =
+                admission === undefined
+                  ? null
+                  : yield* joinNotice(tx, access, item, admission, noticeId);
+              return { outcome: yield* registration(tx, { item, created: true }), notice };
+            }),
+          );
+          // General's readers see the newcomer once its admission has committed. A join wakes no
+          // one (a wake is for what needs the agent), so only waiting reads are told.
+          if (result.notice !== null) yield* signal.notify(arrival(result.notice));
+          return result.outcome;
+        },
+      ),
       renameSelf: Effect.fn("TalkTo.renameSelf")(function* (access, participantId, input) {
         const id = R.RenameId.make(yield* ids.uuid());
         const at = yield* now;

@@ -90,6 +90,11 @@ const registration = (admit: InviteModel.Admit): Inputs.RegisterParticipant => {
   };
   return admit.note === null ? input : { ...input, joinedNote: admit.note };
 };
+/** What General's join notice names: the agent that made the link, and whose invite began it. */
+const admission = (admit: InviteModel.Admit): TalkTo.Admission => ({
+  invitedBy: admit.lineage.invitedBy?.name ?? null,
+  origin: admit.lineage.origin,
+});
 
 export class TalkToServer extends DurableObject<Env> {
   private readonly ready;
@@ -1006,7 +1011,7 @@ export class TalkToServer extends DurableObject<Env> {
           return { kind: "unavailable" } as const;
         const service = yield* TalkTo.Service;
         const registered = yield* service
-          .registerParticipant(access, registration(admit), true)
+          .registerParticipant(access, registration(admit), admission(admit))
           .pipe(Effect.result);
         if (Result.isFailure(registered))
           return registered.failure._tag === "NameTaken"

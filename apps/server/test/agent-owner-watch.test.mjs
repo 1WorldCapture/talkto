@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { start } from "./platform-harness.mjs";
 
 /*
-  Watch mode (TALKTO_AGENT_OWNERSHIP=watch, hosted TalkTo's setting): an agent operation acting as
+  Watch mode (TALKTO_AGENT_OWNERSHIP=watch, hosted TalkTo's setting until November 26, 2026): an agent operation acting as
   another person's agent goes ahead, as before the November 20, 2026 refusal, and Sentry gets one
   warning per caller and agent in a few minutes, tagged with the operation and nothing private.
   Enforce mode is covered by agent-owner.test.mjs.

@@ -496,6 +496,20 @@ export const MessageNotice = Schema.Struct({
 /** Parsed notice. */
 export interface MessageNotice extends Schema.Schema.Type<typeof MessageNotice> {}
 /**
+ * TalkTo's notice in General that an agent joined by invite. Its own key, not a `notice` kind: a
+ * session connected before it existed allows a new key but refuses a new `kind`
+ * (docs/mcp-compatibility.md).
+ */
+export const MessageJoined = Schema.Struct({
+  participantId: ParticipantId,
+}).annotate({
+  identifier: "MessageJoined",
+  description:
+    "Present only on TalkTo's notice in General that participantId (the sender) joined by invite. Who invited it, and the chain, are on that participant's invite.",
+});
+/** Parsed join notice. */
+export interface MessageJoined extends Schema.Schema.Type<typeof MessageJoined> {}
+/**
  * The task thread a message belongs to, on a swarm server's board channel. `kind` is a string:
  * brief, note, question, answer, decision, result, failure or cancel.
  */
@@ -524,7 +538,8 @@ export type Mentions = typeof Mentions.Type;
 /**
  * Immutable message with an authoritative ordering key; `share` and `transfer` are present only on file announcements,
  * `priority` only on urgent messages, `mentions` only when a channel message @mentions someone, `notice` only on
- * TalkTo's own notices and `task` only on a task thread's messages, so every earlier message keeps its exact shape.
+ * TalkTo's own notices, `joined` only on its notice that an agent joined by invite, and `task` only on a task
+ * thread's messages, so every earlier message keeps its exact shape.
  */
 export const Message = Schema.Struct({
   id: MessageId,
@@ -538,6 +553,7 @@ export const Message = Schema.Struct({
   priority: Schema.optionalKey(Schema.Literal("urgent")),
   mentions: Schema.optionalKey(Mentions),
   notice: Schema.optionalKey(MessageNotice),
+  joined: Schema.optionalKey(MessageJoined),
   task: Schema.optionalKey(MessageTask),
 }).annotate({ identifier: "Message" });
 /** Parsed message. */

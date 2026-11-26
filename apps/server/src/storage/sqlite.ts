@@ -49,6 +49,7 @@ import taskHoldersExtension from "../migrations/task-holders.sql";
 import taskResultsExtension from "../migrations/task-results.sql";
 import memoryExtension from "../migrations/memory-repository.sql";
 import invitedExtension from "../migrations/invited.sql";
+import joinNoticesExtension from "../migrations/join-notices.sql";
 import * as Board from "./board.js";
 import * as Memory from "./memory.js";
 import type * as Platform from "../platform/model.js";
@@ -87,6 +88,7 @@ const extensions: ReadonlyArray<string> = [
   // Swarm memory's ledger beside its Git repository: no triggers and no foreign keys.
   memoryExtension,
   invitedExtension,
+  joinNoticesExtension,
 ];
 
 const epoch = (timestamp: M.Timestamp): number =>
@@ -263,6 +265,17 @@ const noticeColumn = Schema.NullOr(Schema.fromJsonString(M.MessageNotice)).pipe(
     ),
   }),
 );
+// Storage yields NULL for every message but a join notice; the model omits the key instead.
+const joinedColumn = Schema.NullOr(Schema.fromJsonString(M.MessageJoined)).pipe(
+  Schema.decodeTo(Schema.optionalKey(M.MessageJoined), {
+    decode: SchemaGetter.transformOptional<typeof M.MessageJoined.Encoded, M.MessageJoined | null>(
+      Option.flatMap(Option.fromNullOr),
+    ),
+    encode: SchemaGetter.forbidden<M.MessageJoined | null, typeof M.MessageJoined.Encoded>(
+      () => "Message rows are decoded from storage, never encoded",
+    ),
+  }),
+);
 // Storage yields NULL for messages outside a task's thread; the model omits the key instead.
 const taskColumn = Schema.NullOr(Schema.fromJsonString(M.MessageTask)).pipe(
   Schema.decodeTo(Schema.optionalKey(M.MessageTask), {
@@ -282,6 +295,7 @@ const messageRow = Schema.Struct({
   priority: priorityColumn,
   mentions: mentionsColumn,
   notice: noticeColumn,
+  joined: joinedColumn,
   task: taskColumn,
 });
 const historyRow = Schema.Struct({
@@ -366,6 +380,7 @@ const messageColumns = `id, seq AS sequence, conversation_id AS conversationId, 
    WHERE seq=messages.seq ORDER BY position) x) END AS mentions,
  (SELECT json_object('kind',n.kind,'channelId',n.channel_id,'channelName',k.name)
   FROM message_notices n JOIN conversations k ON k.id=n.channel_id WHERE n.message_id=messages.id) AS notice,
+ (SELECT json_object('participantId',j.participant_id) FROM join_notices j WHERE j.message_id=messages.id) AS joined,
  (SELECT json_object('id',tm.task_id,'number',tk.number,'kind',tm.kind)
   FROM task_messages tm JOIN tasks tk ON tk.id=tm.task_id WHERE tm.message_id=messages.id) AS task`;
 const transferColumns = `id, sender_id AS senderId, grant_id AS grantId, request_key AS requestKey, name, kind, bytes,
@@ -1650,6 +1665,12 @@ export function layer(storage: DurableObjectStorage) {
           message.sequence,
           notice.kind,
           notice.channelId,
+        ]).pipe(Effect.asVoid),
+      addJoinNotice: (message, participantId) =>
+        execute("INSERT INTO join_notices(message_id,seq,participant_id) VALUES(?,?,?)", [
+          message.id,
+          message.sequence,
+          participantId,
         ]).pipe(Effect.asVoid),
       addMentions: Effect.fn("Sqlite.addMentions")(function* (message, participantIds) {
         for (const [position, participantId] of participantIds.entries())

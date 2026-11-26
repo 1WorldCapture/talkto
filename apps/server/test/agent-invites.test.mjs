@@ -925,9 +925,9 @@ test("only admission registers for an invited principal: no other caller sets th
   const callers = [];
   for (const file of files) {
     const source = await readFile(new URL(file, root), "utf8");
-    // Each call fits on one line: `.registerParticipant(access, input[, true])`.
+    // Each call fits on one line: `.registerParticipant(access, input[, admission(admit)])`.
     for (const line of source.split("\n").filter((text) => text.includes(".registerParticipant(")))
-      callers.push({ file, admits: /\.registerParticipant\(.*,\s*true\s*\)/.test(line) });
+      callers.push({ file, admits: /\.registerParticipant\(.*,\s*admission\(/.test(line) });
   }
   // HTTP (http.ts) and MCP (agent.ts) never admit, so an invited key there is refused
   // (`Actors.invitedRegistration`); only the server object's admission does.
@@ -1197,4 +1197,96 @@ test("a pickup secret that is not a minted one is invalid input on /mcp/join and
   assert.equal((await check(s, waiting.requestId, "short")).status, 404);
   // The real secret still works.
   assert.equal(ok(await check(s, waiting.requestId, waiting.pickup)).status, "waiting");
+});
+
+/** General's messages, oldest first, as a person reads them. */
+const generalMessages = async (s) =>
+  ok(
+    await s.alice(
+      "GET",
+      `${s.root}/conversations/${s.deployer.generalConversationId}/messages?limit=100`,
+    ),
+  ).items;
+
+test("General hears once that an invited agent joined, naming the agent that invited it", async (t) => {
+  const s = await setup(t);
+  // A person's link, mode open: the agent joins at once.
+  ok(await s.alice("PUT", `${s.root}/agent-invites/mode`, { mode: "open" }));
+  const byPerson = ok(
+    await s.alice("POST", `${s.root}/agent-invites`, { requestKey: randomUUID() }),
+  );
+  const first = ok(await redeem(s, byPerson.code, "scout"));
+  // An agent's link, mode ask: the notice comes with the approved pickup, once.
+  ok(await s.alice("PUT", `${s.root}/agent-invites/mode`, { mode: "ask" }));
+  const byAgent = ok(
+    await s.alice("POST", `${s.root}/agent-invites`, {
+      participantId: s.deployer.item.id,
+      requestKey: randomUUID(),
+    }),
+  );
+  const waiting = ok(await redeem(s, byAgent.code, "reviewer"));
+  assert.equal(
+    (await generalMessages(s)).filter((item) => item.joined !== undefined).length,
+    1,
+    "no notice while waiting",
+  );
+  ok(await s.alice("POST", `${s.root}/agent-invites/requests/${waiting.requestId}/approve`));
+  const second = ok(await check(s, waiting.requestId, waiting.pickup));
+  assert.equal(second.status, "joined");
+  // A replayed pickup gets nothing, and adds no notice.
+  assert.notEqual((await check(s, waiting.requestId, waiting.pickup)).status, 200);
+
+  const notices = (await generalMessages(s)).filter((item) => item.joined !== undefined);
+  assert.deepEqual(
+    notices.map((item) => [item.senderId, item.joined.participantId]),
+    [
+      [first.participantId, first.participantId],
+      [second.participantId, second.participantId],
+    ],
+  );
+  // The person whose invite started the chain, by first name, as on the agent's lineage.
+  const origin = ok(await s.alice("GET", `${s.root}/participants`)).items.find(
+    (item) => item.id === second.participantId,
+  ).invite.origin;
+  assert.ok(origin.length > 0);
+  assert.equal(notices[0].body, `TalkTo: scout joined, invited by ${origin}.`);
+  assert.equal(
+    notices[1].body,
+    `TalkTo: reviewer joined, invited by deployer (from ${origin}'s invite).`,
+  );
+  for (const item of notices) assert.equal(item.notice, undefined);
+});
+
+test("a taken name at pickup posts no notice until the agent joins under another", async (t) => {
+  const s = await setup(t);
+  const invite = ok(
+    await s.alice("POST", `${s.root}/agent-invites`, {
+      participantId: s.deployer.item.id,
+      requestKey: randomUUID(),
+    }),
+  );
+  const waiting = ok(await redeem(s, invite.code, "builder"));
+  ok(await s.alice("POST", `${s.root}/agent-invites/requests/${waiting.requestId}/approve`));
+  // Someone takes the name before the pickup.
+  ok(
+    await s.alice("POST", `${s.root}/participants`, {
+      name: "builder",
+      agentType: "script",
+      requestKey: randomUUID(),
+    }),
+  );
+  assert.equal((await check(s, waiting.requestId, waiting.pickup)).status, 409);
+  const joined = ok(
+    await bearer(s.x, null, { "x-talkto-pickup": waiting.pickup })(
+      "GET",
+      `/v1/agent-invites/requests/${waiting.requestId}?name=builder-2`,
+    ),
+  );
+  assert.equal(joined.status, "joined");
+  const notices = (await generalMessages(s)).filter((item) => item.joined !== undefined);
+  assert.equal(notices.length, 1);
+  assert.match(
+    notices[0].body,
+    /^TalkTo: builder-2 joined, invited by deployer \(from .+'s invite\)\.$/,
+  );
 });

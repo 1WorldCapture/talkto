@@ -378,6 +378,8 @@ export interface Session {
     message: M.Message,
     notice: Pick<M.MessageNotice, "kind" | "channelId">,
   ) => Read<void>;
+  /** Mark a message appended in this same transaction as the notice that an agent joined by invite. */
+  readonly addJoinNotice: (message: M.Message, participantId: M.ParticipantId) => Read<void>;
   /** Record whom a channel message appended in this same transaction @mentions, in order. */
   readonly addMentions: (
     message: M.Message,
