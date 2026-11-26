@@ -491,24 +491,25 @@ export function watchFallback(cause: unknown) {
   });
 }
 
-/** Thrown nowhere: names the Sentry issue for a read that failed transiently twice. */
+/** Thrown nowhere: names the Sentry issue for a read the server object could not answer: overloaded, or failing transiently twice. */
 class ReadUnavailable extends Error {
   override readonly name = "ReadUnavailable";
 }
 
 /**
- * Report a read whose server-object call failed transiently twice (read-retry.ts). A warning: the
- * agent was told to call again, and nothing was lost. Tags carry the tool and runtime flags only.
+ * Report a read the server object could not answer: overloaded, or failing transiently twice
+ * (read-retry.ts), at its invoke or its watch's open (`step`). A warning: the agent was told to
+ * call again, and nothing was lost. Tags carry the tool, step and runtime flags only.
  */
-export function readUnavailable(cause: unknown, tool: string) {
-  Sentry.captureException(new ReadUnavailable("A read failed transiently twice"), {
+export function readUnavailable(cause: unknown, tool: string, step: "invoke" | "watch" = "invoke") {
+  Sentry.captureException(new ReadUnavailable("A read was briefly unavailable"), {
     level: "warning",
     fingerprint: ["talkto-read-unavailable"],
     tags: {
       "talkto.code": "storage_unavailable",
       "talkto.operation": `mcp.${tool}`,
       ...runtimeTags(Predicate.isError(cause) ? cause : undefined),
-      "talkto.step": "invoke",
+      "talkto.step": step,
     },
   });
 }

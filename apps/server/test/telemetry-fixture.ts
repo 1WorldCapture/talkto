@@ -29,7 +29,9 @@ function options(env: Env): Sentry.CloudflareOptions {
 }
 
 /** The get_updates step a server object fails at, set by `/__telemetry/server-fault`. */
-const ServerFault = Schema.Literals(["invoke", "watch", "first_read", "reset"]);
+const ServerFault = Schema.Literals(["invoke", "watch", "overloaded", "first_read", "reset"]);
+/** How many reads and watch opens this object served, for `/__telemetry/served`. */
+const servedKey = "telemetry-served";
 const serverFaultKey = "telemetry-server-fault";
 class Unserializable {}
 
@@ -40,13 +42,26 @@ class TelemetryTestServer extends Server {
   override async invokeAgent(
     ...args: Parameters<Server["invokeAgent"]>
   ): ReturnType<Server["invokeAgent"]> {
+    await this.serve();
     const reply = await super.invokeAgent(...args);
     // A reply RPC cannot serialize fails in the runtime, after this method returned.
     if (await this.fault("invoke")) return Object.assign(new Unserializable(), reply);
     return reply;
   }
+  private async serve() {
+    await this.ctx.storage.put(
+      servedKey,
+      ((await this.ctx.storage.get<number>(servedKey)) ?? 0) + 1,
+    );
+  }
   override async fetch(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
+    if (path === "/__telemetry/served")
+      return Response.json({ served: (await this.ctx.storage.get<number>(servedKey)) ?? 0 });
+    // Cloudflare refuses a request to an overloaded object before it runs, flagging it overloaded.
+    if (path === Signal.watchPath && (await this.fault("overloaded")))
+      throw Object.assign(new Error("PRIVATE_OVERLOADED"), { overloaded: true });
+    if (path === Signal.watchPath || path.endsWith("/updates")) await this.serve();
     if (path === "/__telemetry/server-fault") {
       const step = Schema.decodeUnknownOption(ServerFault)(
         new URL(request.url).searchParams.get("step"),

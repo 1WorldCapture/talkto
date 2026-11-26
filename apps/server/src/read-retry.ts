@@ -20,6 +20,7 @@ export const retryable = (flags: RuntimeFlags) =>
 /** Whether the object is busy: answered as unavailable, never tried again. */
 export const overloaded = (flags: RuntimeFlags) => flags.overloaded === true;
 
+/** MCP tools that only read, so a second try changes nothing an agent sees. */
 export const readTools: ReadonlySet<string> = new Set([
   "get_updates",
   "read_messages",

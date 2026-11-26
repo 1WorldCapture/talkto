@@ -252,6 +252,58 @@ for (const traceRate of [1, 0])
       assert.equal(fallback.tags["talkto.operation"], "TalkTo.getUpdates");
       assert.equal(fallback.tags["talkto.cf_remote"], "true");
       assert.doesNotMatch(JSON.stringify(fallback), /PRIVATE_/);
+      assert.equal(
+        fallback.tags["talkto.cf_overloaded"],
+        undefined,
+        "a polled watch is not overloaded",
+      );
+      // An overloaded object at the watch's open is neither read nor polled: the agent is told to
+      // call again (storage_unavailable), at once, and Sentry gets a warning, not an error.
+      const served = async () =>
+        (await (await x.raw(`/__telemetry/served?server=${server.id}`)).json()).served;
+      await x.raw(`/__telemetry/server-fault?server=${server.id}&step=overloaded`);
+      const servedBefore = await served();
+      const busyStarted = Date.now();
+      const busy = await x.mcp(
+        organization,
+        "get_updates",
+        {
+          serverId: server.id,
+          participantId: registered.item.id,
+          mode: "start",
+          startAt: "now",
+          channelIds: [],
+          directChats: "own",
+          waitSeconds: 4,
+        },
+        true,
+      );
+      assert.equal(busy.error.code, "storage_unavailable", JSON.stringify(busy));
+      assert.equal(
+        busy.error.message,
+        "The server is briefly unavailable. Nothing was lost: call again in a few seconds.",
+      );
+      assert.ok(Date.now() - busyStarted < 2_000, "answered at once, not held or polled");
+      assert.equal(await served(), servedBefore, "no read and no poll of the busy object");
+      assert.doesNotMatch(JSON.stringify(busy), /PRIVATE_/);
+      const unavailable = await received(
+        (event) =>
+          event.fingerprint?.[0] === "talkto-read-unavailable" &&
+          event.tags?.["talkto.step"] === "watch",
+      );
+      assert.equal(unavailable.level, "warning");
+      assert.deepEqual(unavailable.fingerprint, ["talkto-read-unavailable"]);
+      assert.equal(unavailable.tags["talkto.operation"], "mcp.get_updates");
+      assert.equal(unavailable.tags["talkto.cf_overloaded"], "true");
+      assert.equal(unavailable.tags["talkto.code"], "storage_unavailable");
+      assert.equal(
+        events.filter(
+          (event) =>
+            event.tags?.["talkto.request_id"] === busy.meta.requestId &&
+            event.tags?.["talkto.code"] === "internal_error",
+        ).length,
+        0,
+      );
       // A reset while the call is held closes the watch; its last read goes to a new stub, since
       // the old one fails every call after a reset, and the call answers with a page.
       const failures = () =>

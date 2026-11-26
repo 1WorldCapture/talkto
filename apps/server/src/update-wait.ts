@@ -161,8 +161,10 @@ interface Opened {
   readonly answer: Response | null;
   /** The empty first page an opened watch holds. */
   readonly page: string | null;
+  /** The object was overloaded: the call answers `First.busy` without reading. */
+  readonly busy: boolean;
 }
-const nothing: Opened = { watcher: null, answer: null, page: null };
+const nothing: Opened = { watcher: null, answer: null, page: null, busy: false };
 
 /**
  * Register a watch and read once, in that order, in one request to the server object. An object
@@ -192,6 +194,7 @@ const open = (server: Server, authority: Authority, watch: Signal.Watch, first: 
           watcher: new Watcher(socket),
           answer: null,
           page: response.headers.get(Signal.pageHeader),
+          busy: false,
         };
       void response.body?.cancel();
       return nothing;
@@ -205,6 +208,11 @@ interface First<R, P extends Held> {
   readonly answered: (response: Response) => Effect.Effect<R>;
   /** The empty page an opened watch holds. */
   readonly held: (page: string) => Effect.Effect<Read<R, P>>;
+  /**
+   * The answer when the object is overloaded at the watch's open, for the tool Sentry names; absent,
+   * the call fails (HTTP answers it 503 storage_unavailable).
+   */
+  readonly busy?: { readonly tool: string; readonly reply: R };
 }
 /** What one held call waits on, for how long, and what it reads again. */
 interface Plan<I, P extends Held> {
@@ -231,8 +239,10 @@ const continuation = (input: U.Input, checkpoint: M.Cursor): U.Input => {
  *
  * A watch that fails to open does not fail the call: it reads on a new stub, since Cloudflare
  * may break a stub after a failure, and then polls (`poller`). If the object did read before
- * failing, that call counts two reads. An object Cloudflare reports overloaded still fails the
- * call, so polling never adds load to it.
+ * failing, that call counts two reads. An object Cloudflare reports overloaded is neither read
+ * nor polled, so the call adds no load to it: it answers `first.busy` (MCP: storage_unavailable,
+ * call again), or fails. Overloaded means Cloudflare refused the request before the object ran
+ * it, so a claim's first read claimed nothing. Sentry TALKTO-SERVER-Y (November 26, 2026).
  */
 const hold = Effect.fn("UpdateWait.hold")(function* <I, R, P extends Held>(
   connect: () => Server,
@@ -249,19 +259,26 @@ const hold = Effect.fn("UpdateWait.hold")(function* <I, R, P extends Held>(
   return yield* Effect.acquireUseRelease(
     // The watch is registered before the first read: a send that commits after that read wakes it.
     open(server, authority, watch, first.request).pipe(
-      Effect.catchDefect((defect) =>
-        runtimeFlags(defect).overloaded === true
-          ? Effect.die(defect)
-          : Effect.sync((): Opened => {
-              console.warn("update-wait: watch failed to open; polling", describeFailure(defect));
-              Telemetry.watchFallback(defect);
-              server = connect();
-              return { ...nothing, watcher: poller };
-            }),
-      ),
+      Effect.catchDefect((defect) => {
+        const busy = first.busy;
+        if (runtimeFlags(defect).overloaded === true)
+          return busy === undefined
+            ? Effect.die(defect)
+            : Effect.sync((): Opened => {
+                Telemetry.readUnavailable(defect, busy.tool, "watch");
+                return { ...nothing, busy: true };
+              });
+        return Effect.sync((): Opened => {
+          console.warn("update-wait: watch failed to open; polling", describeFailure(defect));
+          Telemetry.watchFallback(defect);
+          server = connect();
+          return { ...nothing, watcher: poller };
+        });
+      }),
     ),
     (opened) =>
       Effect.gen(function* () {
+        if (opened.busy && first.busy !== undefined) return first.busy.reply;
         if (opened.answer !== null) return yield* first.answered(opened.answer);
         const watcher = opened.watcher;
         let step =
@@ -335,6 +352,14 @@ export const invokeAgent = (
       Effect.flatMap(Schema.decodeUnknownEffect(A.UncheckedReply)),
       Effect.orDie,
     );
+  // What an agent is told when the object is briefly unavailable: call again, nothing is wrong.
+  const busy = {
+    tool: command.tool,
+    reply: {
+      error: { code: "storage_unavailable", message: ReadRetry.unavailableMessage },
+      meta,
+    } satisfies A.UncheckedReply,
+  };
   // A read that failed transiently is tried once more on a fresh stub (read-retry.ts); twice, and
   // the agent is told the server is briefly unavailable, not that something broke.
   const call = (server: Server, current: A.Command, reread: boolean) =>
@@ -343,10 +368,7 @@ export const invokeAgent = (
           Effect.map((retried): A.UncheckedReply => {
             if (retried.kind === "answered") return retried.value;
             Telemetry.readUnavailable(retried.defect, current.tool);
-            return {
-              error: { code: "storage_unavailable", message: ReadRetry.unavailableMessage },
-              meta,
-            };
+            return busy.reply;
           }),
         )
       : attempt(server, current, reread);
@@ -373,6 +395,7 @@ export const invokeAgent = (
         answered,
         held: (page) =>
           Schema.decodeUnknownEffect(Signal.AgentPage)(page).pipe(Effect.orDie, Effect.map(toRead)),
+        busy,
       },
       (server, current, reread) => call(server, current, reread).pipe(Effect.map(toRead)),
     );
@@ -390,6 +413,7 @@ export const invokeAgent = (
     answered,
     held: (page) =>
       Schema.decodeUnknownEffect(Signal.AgentPage)(page).pipe(Effect.orDie, Effect.map(toRead)),
+    busy,
   };
   return updatesPlan(input).pipe(
     Effect.flatMap((plan) =>
