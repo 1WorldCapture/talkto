@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "wrangler dev --config wrangler.local.jsonc --ip 127.0.0.1",
     "build": "pnpm --filter @talkto/web build && wrangler deploy --dry-run --outdir dist",
-    "build:render": "node tools/render-config.mjs config && wrangler deploy --config ../../.runtime/wrangler.render.json --dry-run && node tools/render-config.mjs runtime",
+    "build:render": "node tools/render-config.mjs config && wrangler deploy --config ../../.runtime/wrangler.render.json --dry-run --outdir ../../.runtime/dist/render && node tools/render-config.mjs runtime",
     "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit",
     "build:local": "wrangler deploy --config wrangler.local.jsonc --dry-run --outdir dist/local",

@@ -19,7 +19,6 @@ if (process.argv[2] === "config") {
     ...config,
     name: "talkto-render",
     main: "../apps/server/src/worker.ts",
-    out_dir: "../apps/server/dist/render",
     assets: { ...config.assets, directory: "../apps/web/dist" },
     d1_databases: config.d1_databases.map((database) => ({
       ...database,
