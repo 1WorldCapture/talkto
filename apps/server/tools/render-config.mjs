@@ -37,7 +37,7 @@ if (process.argv[2] === "config") {
   );
 } else {
   await writeFile(
-    here("../../../.runtime/dist/render/runtime.json"),
+    here("../dist/render/runtime.json"),
     `${JSON.stringify(
       {
         compatibilityDate: config.compatibility_date,

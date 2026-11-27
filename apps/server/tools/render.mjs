@@ -6,7 +6,7 @@ import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { migratePlatform } from "./platform-migrations.mjs";
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url));
-const build = resolve(here("../../../.runtime/dist/render"));
+const build = resolve(here("../dist/render"));
 const config = JSON.parse(await readFile(resolve(build, "runtime.json"), "utf8"));
 const origin = process.env.RENDER_EXTERNAL_URL ?? process.env.TALKTO_SERVICE_ORIGIN;
 const port = Number(process.env.PORT ?? 10000);
