@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: talkto
+    runtime: node
+    repo: https://github.com/1WorldCapture/talkto.git
+    branch: main
+    plan: 0.5c-512mb
+    region: oregon
+    numInstances: 1
+    buildCommand: corepack pnpm install --frozen-lockfile && corepack pnpm build:render
+    startCommand: corepack pnpm start:render
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    disk:
+      name: talkto-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: TALKTO_AUTH_PROVIDER
+        value: better-auth
+      - key: TALKTO_OWNER_EMAILS
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: TALKTO_SIGNAL_KEY
+        generateValue: true
+      - key: TALKTO_API_KEY_SECRET
+        generateValue: true

@@ -14,6 +14,7 @@ worker-configuration.d.ts
 # Written by pnpm selfhost:config; holds deployment IDs, no secrets.
 apps/server/wrangler.selfhost.jsonc
 .talkto/
+.runtime/
 
 # Docs site: Astro's generated types, Nimbus's build cache, and the pages generated from instructions.md and pricing.ts
 apps/docs/.astro/

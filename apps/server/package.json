@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "wrangler dev --config wrangler.local.jsonc --ip 127.0.0.1",
     "build": "pnpm --filter @talkto/web build && wrangler deploy --dry-run --outdir dist",
+    "build:render": "node tools/render-config.mjs config && wrangler deploy --config ../../.runtime/wrangler.render.json --dry-run && node tools/render-config.mjs runtime",
     "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit",
     "build:local": "wrangler deploy --config wrangler.local.jsonc --dry-run --outdir dist/local",
@@ -25,6 +26,7 @@
     "better-auth": "1.7.27",
     "effect": "catalog:",
     "jose": "6.2.12",
+    "miniflare": "5.20260908.0-alpha",
     "stripe": "22.6.2"
   },
   "devDependencies": {
@@ -32,7 +34,6 @@
     "@types/node": "24.13.3",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
-    "miniflare": "5.20260908.0-alpha",
     "wrangler": "4.130.0"
   }
 }

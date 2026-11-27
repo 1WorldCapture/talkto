@@ -14,6 +14,8 @@
     "dev:web": "pnpm --filter @talkto/web dev",
     "build:web": "pnpm --filter @talkto/web build",
     "build": "pnpm --filter @talkto/server build",
+    "build:render": "pnpm build:selfhost && pnpm --filter @talkto/server build:render",
+    "start:render": "node apps/server/tools/render.mjs",
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
