@@ -88,7 +88,7 @@ const runtime = new Miniflare(
       TALKTO_INVITATION_RECIPIENT_DAILY_LIMIT: "3",
       TALKTO_READ_LIMITS: "on",
       TALKTO_PARTICIPANT_READS_PER_MINUTE: "300",
-      TALKTO_BOARD: "off",
+      TALKTO_BOARD: "on",
       SENTRY_ENVIRONMENT: "render",
     },
   }),
