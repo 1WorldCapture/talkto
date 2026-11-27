@@ -34,7 +34,7 @@ export async function migratePlatform(database) {
         .bind(name, new Date().toISOString()),
     ]);
     count++;
-    console.info(`Applied platform migration ${name}`);
+    console.error(`Applied platform migration ${name}`);
   }
   return count;
 }

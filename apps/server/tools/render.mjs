@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,7 @@ import { migratePlatform } from "./platform-migrations.mjs";
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url));
 const build = resolve(here("../dist/render"));
+const assetsDirectory = here("../../web/dist");
 const config = JSON.parse(await readFile(resolve(build, "runtime.json"), "utf8"));
 const origin = process.env.RENDER_EXTERNAL_URL ?? process.env.TALKTO_SERVICE_ORIGIN;
 const persistence = process.env.TALKTO_DATA_DIR ?? "/var/data/talkto";
@@ -28,6 +29,7 @@ if (!/^https:\/\/[^\s/]+$/.test(origin ?? "")) {
 }
 if (required.length > 0) throw new Error(`Missing required environment: ${required.join(", ")}`);
 
+await access(join(assetsDirectory, "index.html"));
 await mkdir(persistence, { recursive: true });
 const debugPath = join(tmpdir(), `talkto-workerd-${process.pid}.json`);
 process.env.MINIFLARE_WORKERD_CONFIG_DEBUG = debugPath;
@@ -58,7 +60,7 @@ const runtime = new Miniflare(
     d1Databases: { PLATFORM: "talkto-platform" },
     ratelimits: config.ratelimits,
     assets: {
-      directory: resolve(here("../../web/dist")),
+      directory: assetsDirectory,
       binding: "ASSETS",
       routerConfig: { has_user_worker: true },
       run_worker_first: config.assets.run_worker_first,
@@ -92,9 +94,14 @@ try {
   await runtime.ready;
   const applied = await migratePlatform(await runtime.getD1Database("PLATFORM"));
   console.error(`Platform migrations ready (${applied} applied)`);
-  workerdConfig = JSON.parse(await readFile(debugPath, "utf8"), (key, value) =>
-    value?.type === "Buffer" && Array.isArray(value.data) ? Buffer.from(value.data) : value,
-  );
+  workerdConfig = JSON.parse(await readFile(debugPath, "utf8"), (_key, value) => {
+    if (value?.type === "Buffer" && Array.isArray(value.data)) return Buffer.from(value.data);
+    // Miniflare writes the Uint8Array manifest to JSON as an object with numeric keys.
+    if (value?.name === "ASSETS_MANIFEST" && !ArrayBuffer.isView(value.data)) {
+      return { ...value, data: Uint8Array.from(Object.values(value.data)) };
+    }
+    return value;
+  });
 } finally {
   await runtime.dispose();
   await rm(debugPath, { force: true });
