@@ -74,6 +74,11 @@ const runtime = new Miniflare(
       BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
       TALKTO_SIGNAL_KEY: process.env.TALKTO_SIGNAL_KEY,
       TALKTO_API_KEY_SECRET: process.env.TALKTO_API_KEY_SECRET,
+      // Wake secrets are supplied by Render at runtime. TALKTO_WAKE_KEY seals
+      // third-party webhook credentials, while TALKTO_WAKE_TOKENS enables the
+      // dashboard form used by Grok Bot, Claude routines and Town.
+      TALKTO_WAKE_KEY: process.env.TALKTO_WAKE_KEY,
+      TALKTO_WAKE_TOKENS: process.env.TALKTO_WAKE_TOKENS,
       TALKTO_UNPAID_SERVER_LIMIT: "1",
       TALKTO_SERVER_CREATIONS_PER_HOUR: "20",
       TALKTO_ORGANIZATION_CREATIONS_PER_HOUR: "5",
