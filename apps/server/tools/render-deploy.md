@@ -1,14 +1,14 @@
 # Render 单实例部署
 
-这份配置让正式 TalkTo Worker 在一个常驻 Node.js 进程中运行。Miniflare 负责装配本地绑定并启动 workerd，业务代码、Better Auth、Durable Object 和 HTTP/MCP 契约保持原样。
+这份配置让正式 TalkTo Worker 在常驻 workerd 进程中运行。Miniflare 只在启动阶段装配绑定和执行 D1 迁移，随后 Node.js 退出，只有 workerd 常驻。业务代码、Better Auth、Durable Object 和 HTTP/MCP 契约保持原样。
 
 ## 运行方式
 
 - Render Web Service 固定一个实例，使用 `/health` 健康检查。
 - `TALKTO_DATA_DIR` 默认为 `/var/data/talkto`。Blueprint 把 `/var/data` 挂到持久盘，D1、每个 Server 的 Durable Object SQLite 和限流状态都在这里。
 - 启动时先执行尚未应用的 D1 迁移，每个迁移与它的完成记录在同一个批次中提交，完成后才监听端口。
-- 同一进程每分钟调用正式 Worker 的 `scheduled()`。上一轮未完成时跳过下一轮。
-- 收到 `SIGTERM` 后停止新任务并释放 Miniflare，Render 部署和重启使用同一份数据。
+- 一个专用 Durable Object 每分钟通过 `alarm()` 调用正式 Worker 的 `scheduled()`。Durable Object 串行处理 alarm，下一轮在上一轮完成后安排，失败会记录日志并继续调度。
+- `startCommand` 用管道把启动阶段生成的二进制配置直接交给 workerd，因此 Render 的 `SIGTERM` 直接送达 workerd，部署和重启使用同一份数据。
 - 所有密钥由 Render 保存。仓库不包含账号标识、密钥或本地数据。
 
 ## 初始化
@@ -46,4 +46,4 @@ corepack pnpm start:render
 - Swarm Memory 不启用，它不随 D1 和 Durable Object 一起持久化。
 - 必须保持单实例。两个进程同时操作这份本地状态会破坏 Durable Object 的单写入者假设。
 - Render 持久盘的每日快照保留七天。快照用于灾难恢复，不替代消息导出或独立备份。
-- 512 MB 是小规模试用的起点。观察实际峰值，接近上限或出现内存不足重启时升级实例。
+- 512 MB 是小规模试用的起点。观察实际峰值和实例重启记录，优先优化常驻进程的内存占用。

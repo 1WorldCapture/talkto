@@ -1,15 +1,21 @@
-import { createServer } from "node:http";
-import { mkdir, readdir, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Miniflare, convertV4MiniflareOptions } from "miniflare";
+import {
+  Miniflare,
+  NoOpLog,
+  convertV4MiniflareOptions,
+  getGlobalServices,
+  serializeConfig,
+} from "miniflare";
 import { migratePlatform } from "./platform-migrations.mjs";
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url));
 const build = resolve(here("../dist/render"));
 const config = JSON.parse(await readFile(resolve(build, "runtime.json"), "utf8"));
 const origin = process.env.RENDER_EXTERNAL_URL ?? process.env.TALKTO_SERVICE_ORIGIN;
-const port = Number(process.env.PORT ?? 10000);
 const persistence = process.env.TALKTO_DATA_DIR ?? "/var/data/talkto";
 const required = [
   "BETTER_AUTH_SECRET",
@@ -21,9 +27,10 @@ if (!/^https:\/\/[^\s/]+$/.test(origin ?? "")) {
   throw new Error("Set RENDER_EXTERNAL_URL or TALKTO_SERVICE_ORIGIN to the public HTTPS origin.");
 }
 if (required.length > 0) throw new Error(`Missing required environment: ${required.join(", ")}`);
-if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT.");
 
 await mkdir(persistence, { recursive: true });
+const debugPath = join(tmpdir(), `talkto-workerd-${process.pid}.json`);
+process.env.MINIFLARE_WORKERD_CONFIG_DEBUG = debugPath;
 const files = await readdir(build);
 const modules = [
   { type: "ESModule", path: resolve(build, "worker.js") },
@@ -38,6 +45,10 @@ const runtime = new Miniflare(
     modulesRoot: build,
     compatibilityDate: config.compatibilityDate,
     compatibilityFlags: config.compatibilityFlags,
+    host: "127.0.0.1",
+    port: 0,
+    cacheAPI: false,
+    logRequests: false,
     resourcePersistencePath: persistence,
     resourceTmpPath: process.env.TALKTO_TMP_DIR,
     durableObjects: {
@@ -76,108 +87,151 @@ const runtime = new Miniflare(
   }),
 );
 
-let stopping = false;
-let maintenance;
-const close = async () => {
-  if (stopping) return;
-  stopping = true;
-  clearInterval(maintenance);
-  server.close();
-  await runtime.dispose();
-};
-
+let workerdConfig;
 try {
   await runtime.ready;
   const applied = await migratePlatform(await runtime.getD1Database("PLATFORM"));
-  console.info(`Platform migrations ready (${applied} applied)`);
-} catch (error) {
+  console.error(`Platform migrations ready (${applied} applied)`);
+  workerdConfig = JSON.parse(await readFile(debugPath, "utf8"), (key, value) =>
+    value?.type === "Buffer" && Array.isArray(value.data) ? Buffer.from(value.data) : value,
+  );
+} finally {
   await runtime.dispose();
-  throw error;
+  await rm(debugPath, { force: true });
+  delete process.env.MINIFLARE_WORKERD_CONFIG_DEBUG;
 }
 
-const server = createServer(async (incoming, outgoing) => {
-  if (stopping) {
-    outgoing.writeHead(503, { connection: "close" });
-    outgoing.end();
-    return;
-  }
-  try {
-    const path = incoming.url ?? "/";
-    if (path === "/cdn-cgi" || path.startsWith("/cdn-cgi/")) {
-      outgoing.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-      outgoing.end("Not found\n");
-      return;
-    }
-    const headers = new Headers();
-    for (let index = 0; index < incoming.rawHeaders.length; index += 2) {
-      const name = incoming.rawHeaders[index];
-      const value = incoming.rawHeaders[index + 1];
-      if (name.toLowerCase() === "host") continue;
-      headers.append(name, value);
-    }
-    headers.set("host", new URL(origin).host);
-    // Render terminates TLS. TalkTo must see the public HTTPS origin, and clients cannot spoof IP.
-    const forwarded = incoming.headersDistinct["x-forwarded-for"] ?? [];
-    const clientAddress = forwarded
-      .flatMap((value) => value.split(","))
-      .at(-1)
-      ?.trim();
-    headers.set("cf-connecting-ip", clientAddress || incoming.socket.remoteAddress || "");
-    headers.set("x-forwarded-proto", "https");
-    const method = incoming.method ?? "GET";
-    const body = method === "GET" || method === "HEAD" ? undefined : incoming;
-    const response = await runtime.dispatchFetch(new URL(path, origin), {
-      method,
-      headers,
-      body,
-      duplex: "half",
-      redirect: "manual",
-    });
-    const responseHeaders = Object.fromEntries(response.headers);
-    delete responseHeaders["set-cookie"];
-    outgoing.writeHead(response.status, {
-      ...responseHeaders,
-      "set-cookie": response.headers.getSetCookie(),
-    });
-    if (response.body === null) outgoing.end();
-    else {
-      const reader = response.body.getReader();
-      for (;;) {
-        const next = await reader.read();
-        if (next.done) break;
-        if (!outgoing.write(next.value)) await new Promise((done) => outgoing.once("drain", done));
-      }
-      outgoing.end();
-    }
-  } catch (error) {
-    console.error("Render ingress failed", error);
-    if (!outgoing.headersSent) outgoing.writeHead(502);
-    outgoing.end();
-  }
-});
+// The production ingress replaces Miniflare's development router and proxy surface.
+const ingress = `
+import { DurableObject } from "cloudflare:workers";
 
-const worker = await runtime.getWorker();
-let maintaining = false;
-const runMaintenance = async () => {
-  if (maintaining || stopping) return;
-  maintaining = true;
-  try {
-    await worker.scheduled({ cron: "* * * * *", scheduledTime: new Date() });
-  } catch (error) {
-    console.error("Scheduled maintenance failed", error);
-  } finally {
-    maintaining = false;
+export class RenderMaintenance extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    ctx.blockConcurrencyWhile(async () => {
+      if ((await ctx.storage.getAlarm()) === null) await ctx.storage.setAlarm(Date.now());
+    });
   }
+
+  async alarm() {
+    try {
+      const result = await this.env.APP.scheduled({
+        cron: "* * * * *",
+        scheduledTime: new Date(),
+      });
+      if (result.outcome !== "ok") console.error("TalkTo maintenance did not complete", result);
+    } catch (error) {
+      console.error("TalkTo maintenance failed", error);
+    } finally {
+      await this.ctx.storage.setAlarm(Date.now() + 60_000);
+    }
+  }
+
+  fetch() {
+    return new Response(null, { status: 204 });
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    const incoming = new URL(request.url);
+    if (incoming.pathname === "/cdn-cgi" || incoming.pathname.startsWith("/cdn-cgi/")) {
+      return new Response("Not found\\n", { status: 404 });
+    }
+    // Pin this tiny scheduler so the runtime does not evict it between alarms.
+    await env.MAINTENANCE.get(env.MAINTENANCE.idFromName("render-maintenance")).fetch(
+      new Request("https://maintenance.internal/"),
+    );
+    const url = new URL(incoming.pathname + incoming.search, env.TALKTO_SERVICE_ORIGIN);
+    const forwarded = new Request(url, request);
+    forwarded.headers.set("host", url.host);
+    forwarded.headers.set("x-forwarded-proto", "https");
+    const addresses = (request.headers.get("x-forwarded-for") ?? "").split(",");
+    forwarded.headers.set("cf-connecting-ip", addresses.at(-1)?.trim() || "");
+    return env.APP.fetch(forwarded);
+  },
 };
-maintenance = setInterval(runMaintenance, 60_000);
-maintenance.unref();
-for (const signal of ["SIGTERM", "SIGINT"]) {
-  process.once(signal, () => {
-    void close().then(() => process.exit(0));
-  });
+`;
+workerdConfig.services = workerdConfig.services.filter(
+  (service) => !["MINIFLARE_DEV_CONTROL", "email:store", "email:store-disk"].includes(service.name),
+);
+const entry = workerdConfig.services.find((service) => service.name === "core:entry");
+entry.worker.durableObjectStorage = getGlobalServices({
+  sharedOptions: {},
+  allWorkerRoutes: new Map(),
+  fallbackWorkerName: undefined,
+  tmpPath: tmpdir(),
+  log: new NoOpLog(),
+  proxyBindings: [],
+  durableObjectClassNames: new Map(),
+}).find((service) => service.name === "core:entry").worker.durableObjectStorage;
+for (const binding of entry.worker.bindings) {
+  if (binding.name === "TRIGGER_HANDLERS") binding.json = "true";
 }
-await new Promise((resolveListen, rejectListen) => {
-  server.once("error", rejectListen);
-  server.listen(port, "0.0.0.0", resolveListen);
+entry.worker.bindings = entry.worker.bindings.filter(
+  (binding) =>
+    !["MINIFLARE_DEV_CONTROL", "MINIFLARE_EMAIL_STORE"].includes(binding.name) &&
+    !binding.name.startsWith("MINIFLARE_PROXY:cache-internal:"),
+);
+workerdConfig.services.push({
+  name: "talkto:ingress",
+  worker: {
+    compatibilityDate: config.compatibilityDate,
+    compatibilityFlags: ["service_binding_extra_handlers"],
+    modules: [{ name: "ingress.mjs", esModule: ingress }],
+    bindings: [
+      { name: "APP", service: { name: "assets:rpc-proxy:talkto" } },
+      { name: "TALKTO_SERVICE_ORIGIN", text: origin },
+      {
+        name: "MAINTENANCE",
+        durableObjectNamespace: {
+          className: "RenderMaintenance",
+          serviceName: "talkto:ingress",
+        },
+      },
+    ],
+    durableObjectNamespaces: [
+      {
+        className: "RenderMaintenance",
+        uniqueKey: "talkto-RenderMaintenance",
+        preventEviction: true,
+      },
+    ],
+    durableObjectStorage: entry.worker.durableObjectStorage,
+  },
 });
-console.info(`TalkTo listening on 0.0.0.0:${port}; data: ${persistence}`);
+workerdConfig.sockets = [
+  {
+    name: "entry",
+    service: { name: "talkto:ingress" },
+    http: {},
+  },
+];
+
+if (process.argv[2] === "--config") {
+  process.stdout.write(serializeConfig(workerdConfig));
+} else {
+  const miniflarePath = createRequire(import.meta.url).resolve("miniflare");
+  const { spawn } = await import("node:child_process");
+  const workerd = createRequire(miniflarePath)("workerd").default;
+  const port = Number(process.env.PORT ?? 10000);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid port.");
+  const child = spawn(
+    workerd,
+    ["serve", "--binary", "--experimental", `--socket-addr=entry=0.0.0.0:${port}`, "-"],
+    { stdio: ["pipe", "inherit", "inherit"], env: { ...process.env, TZ: "UTC" } },
+  );
+  child.stdin.end(serializeConfig(workerdConfig));
+  child.once("error", (error) => {
+    console.error("Could not start workerd", error);
+    process.exitCode = 1;
+  });
+  child.once("exit", (code, signal) => {
+    if (signal) console.error(`workerd exited (${signal})`);
+    process.exitCode = code ?? 1;
+  });
+  for (const signal of ["SIGTERM", "SIGINT"]) {
+    process.once(signal, () => child.kill(signal));
+  }
+  console.info(`TalkTo listening on 0.0.0.0:${port}; data: ${persistence}`);
+}

@@ -8,7 +8,7 @@ services:
     region: oregon
     numInstances: 1
     buildCommand: corepack pnpm install --frozen-lockfile && corepack pnpm build:render
-    startCommand: corepack pnpm start:render
+    startCommand: node apps/server/tools/render.mjs --config | exec "$(node --input-type=module --eval "import { createRequire } from 'node:module'; const require = createRequire(new URL('apps/server/tools/render.mjs', import.meta.url)); process.stdout.write(createRequire(require.resolve('miniflare'))('workerd').default)")" serve --binary --experimental --socket-addr=entry=0.0.0.0:$PORT --external-addr=loopback=127.0.0.1:65535 -
     healthCheckPath: /health
     autoDeployTrigger: commit
     disk:

@@ -19,6 +19,8 @@ if (process.argv[2] === "config") {
     ...config,
     name: "talkto-render",
     main: "../apps/server/src/worker.ts",
+    // This local build loads the bundle directly and has no source map upload service.
+    upload_source_maps: false,
     assets: { ...config.assets, directory: "../apps/web/dist" },
     d1_databases: config.d1_databases.map((database) => ({
       ...database,
